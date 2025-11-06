@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Tessellation Editor – Phase 3 (Clones, Transforms, Delete)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        background: #18181b;
+        color: #f9fafb;
+      }
+
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        width: 100%;
+      }
+
+      #toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: #111827;
+        border-bottom: 1px solid #27272f;
+        flex-shrink: 0;
+        flex-wrap: wrap;
+      }
+
+      #title {
+        font-weight: 600;
+        margin-right: 12px;
+      }
+
+      .spacer {
+        flex: 1;
+      }
+
+      .tool-button {
+        border: 1px solid #374151;
+        background: #1f2937;
+        color: #e5e7eb;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 13px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        user-select: none;
+        touch-action: manipulation;
+      }
+
+      .tool-button.active {
+        background: #2563eb;
+        border-color: #1d4ed8;
+        color: #f9fafb;
+      }
+
+      #hint {
+        font-size: 12px;
+        color: #9ca3af;
+        margin-top: 4px;
+        width: 100%;
+      }
+
+      #instance-panel {
+        font-size: 12px;
+        color: #e5e7eb;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      #canvas-container {
+        flex: 1;
+        position: relative;
+        background: radial-gradient(circle at top, #020617, #030712);
+      }
+
+      svg#canvas {
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        background: transparent;
+      }
+
+      .grid-rect {
+        fill: none;
+        stroke: #374151;
+        stroke-width: 1;
+      }
+
+      .grid-rect.base {
+        stroke: #f97316;
+        stroke-width: 1.5;
+      }
+
+      .grid-inner {
+        stroke: #27272f;
+        stroke-width: 0.5;
+      }
+
+      .path {
+        fill: none;
+        stroke: #38bdf8;
+        stroke-width: 2;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+
+      .path.instance-selected {
+        stroke: #22c55e;
+      }
+
+      .path.geometry-selected {
+        stroke: #f97316;
+      }
+
+      .point-handle {
+        fill: #0ea5e9;
+        stroke: #0f172a;
+        stroke-width: 1;
+        cursor: pointer;
+      }
+
+      .point-handle.selected {
+        fill: #f97316;
+        stroke: #0f172a;
+        stroke-width: 1.2;
+      }
+
+      .overlay-text {
+        fill: #4b5563;
+        font-size: 12px;
+        pointer-events: none;
+      }
+
+      .badge {
+        padding: 2px 6px;
+        border-radius: 999px;
+        border: 1px solid #4b5563;
+        font-size: 11px;
+        color: #e5e7eb;
+      }
+
+      .pill-button {
+        border-radius: 999px;
+        padding-inline: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="toolbar">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <div id="title">Tessellation Editor – Phase 3</div>
+          <span class="badge">3×3 · clones · delete</span>
+        </div>
+
+        <button class="tool-button active" data-tool="draw">✏️ Draw</button>
+        <button class="tool-button" data-tool="edit">🖱 Edit points</button>
+        <button class="tool-button" data-tool="transform">↔️ Transform</button>
+        <button class="tool-button pill-button" id="clone-btn">
+          🧬 Clone linked
+        </button>
+
+        <div class="spacer"></div>
+
+        <div id="instance-panel">
+          <span>Instance:</span>
+          <span id="instance-label">none</span>
+          <span>|</span>
+          <span>Rot:</span>
+          <span id="instance-rot">0°</span>
+          <span>|</span>
+          <span>Mirror:</span>
+          <span id="instance-mirror">–</span>
+        </div>
+
+        <div id="hint">
+          Draw: D · Edit: E · Transform: T · Toggle grid snap: G ·
+          Toggle curve: click segment and press C · Clone: click "Clone linked" ·
+          Delete point: select and press Del/Backspace · Delete line: Del/Backspace
+          with no point selected (or delete selected instance in Transform mode).
+        </div>
+      </div>
+      <div id="canvas-container">
+        <svg id="canvas"></svg>
+      </div>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>
