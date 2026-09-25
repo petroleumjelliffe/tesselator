@@ -157,6 +157,28 @@
         border-radius: 999px;
         padding-inline: 10px;
       }
+
+      .base-tile-outline {
+        fill: none;
+        stroke: #f97316;
+        stroke-width: 2;
+        stroke-dasharray: 8, 4;
+        pointer-events: none;
+      }
+
+      .subtile {
+        fill: rgba(59, 130, 246, 0.05);
+        stroke: #3b82f6;
+        stroke-width: 1.5;
+        stroke-dasharray: 4, 4;
+      }
+
+      .subtile-selected {
+        fill: rgba(34, 197, 94, 0.1);
+        stroke: #22c55e;
+        stroke-width: 2;
+        stroke-dasharray: 4, 4;
+      }
     </style>
   </head>
   <body>
@@ -188,10 +210,10 @@
         </div>
 
         <div id="hint">
-          Draw: D · Edit: E · Transform: T · Toggle grid snap: G ·
+          Draw: D · Edit: E · Transform: T · Toggle grid snap: G · Toggle 3×3 grid: V ·
           Toggle curve: click segment and press C · Clone: click "Clone linked" ·
           Delete point: select and press Del/Backspace · Delete line: Del/Backspace
-          with no point selected (or delete selected instance in Transform mode).
+          with no point selected (or delete selected subtile in Transform mode).
         </div>
       </div>
       <div id="canvas-container">

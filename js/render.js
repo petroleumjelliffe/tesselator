@@ -2,12 +2,12 @@
 import { state, getGeometryById } from './state.js';
 import { createSvgElement, clearSvg } from './utils.js';
 import { CONFIG } from './config.js';
+import { calculateBaseTileBounds } from './geometry.js';
 
 // Generate SVG path data from geometry points and segments
 function generatePathData(geom) {
   if (geom.points.length === 0) return '';
   if (geom.points.length === 1) {
-    // Single point, just move to it
     const p = geom.points[0];
     return `M ${p.x},${p.y}`;
   }
@@ -16,19 +16,15 @@ function generatePathData(geom) {
   const numPoints = geom.points.length;
   const numSegments = geom.closed ? numPoints : numPoints - 1;
 
-  // Start at first point
   pathData = `M ${geom.points[0].x},${geom.points[0].y}`;
 
-  // Draw each segment
   for (let i = 0; i < numSegments; i++) {
     const p2 = geom.points[(i + 1) % numPoints];
     const segment = geom.segments[i];
 
     if (!segment || segment.type === 'line') {
-      // Line segment
       pathData += ` L ${p2.x},${p2.y}`;
     } else if (segment.type === 'bezier' && segment.cp) {
-      // Quadratic bezier segment
       pathData += ` Q ${segment.cp.x},${segment.cp.y} ${p2.x},${p2.y}`;
     }
   }
@@ -39,37 +35,46 @@ function generatePathData(geom) {
 export function render(svg, updateInstancePanel) {
   clearSvg(svg);
 
-  const w = state.tileSize.x;
-  const h = state.tileSize.y;
-
-  // Root transform for pan/zoom
   const rootGroup = createSvgElement("g", {
     transform: `translate(${state.pan.x},${state.pan.y}) scale(${state.zoom})`,
   });
   svg.appendChild(rootGroup);
 
-  // Layer 1: grid (all tiles)
-  const gridLayer = createSvgElement("g", {});
-  rootGroup.appendChild(gridLayer);
+  // Calculate base tile bounds
+  const baseTile = calculateBaseTileBounds();
 
-  renderGrid(gridLayer, w, h);
+  // Layer 1: Optional 3x3 tiling grid
+  if (state.showTilingGrid) {
+    const gridLayer = createSvgElement("g", {});
+    rootGroup.appendChild(gridLayer);
+    renderTilingGrid(gridLayer, baseTile);
+  }
 
-  // Layer 2: geometry (paths + points) on top of grids
+  // Layer 2: Subtiles and their content
   const contentLayer = createSvgElement("g", {});
   rootGroup.appendChild(contentLayer);
+  renderSubtiles(contentLayer);
 
-  renderContent(contentLayer, w, h);
+  // Layer 3: Base tile outline (for reference)
+  if (state.subtiles.length > 0) {
+    const baseTileOutline = createSvgElement("rect", {
+      x: baseTile.x,
+      y: baseTile.y,
+      width: baseTile.width,
+      height: baseTile.height,
+      class: "base-tile-outline",
+    });
+    contentLayer.appendChild(baseTileOutline);
+  }
 
-  // Overlay status text (below bottom row)
+  // Overlay status text
   const overlay = createSvgElement("text", {
-    x: -w,
-    y: h * 2 + 24,
+    x: baseTile.x,
+    y: baseTile.y + baseTile.height + 24,
     class: "overlay-text",
     textContent: `Tool: ${state.activeTool.toUpperCase()} | Zoom: ${state.zoom.toFixed(
       2
-    )} | Grid Snap: ${state.gridSnapping ? 'ON' : 'OFF'} | Geometries: ${state.geometries.length} | Instances: ${
-      state.instances.length
-    }`,
+    )} | Grid Snap: ${state.gridSnapping ? 'ON' : 'OFF'} | Tiling Grid: ${state.showTilingGrid ? 'ON' : 'OFF'} | Subtiles: ${state.subtiles.length}`,
   });
   rootGroup.appendChild(overlay);
 
@@ -78,11 +83,16 @@ export function render(svg, updateInstancePanel) {
   }
 }
 
-function renderGrid(gridLayer, w, h) {
+function renderTilingGrid(gridLayer, baseTile) {
+  const w = baseTile.width;
+  const h = baseTile.height;
+  const originX = baseTile.x;
+  const originY = baseTile.y;
+
   for (let row = -1; row <= 1; row++) {
     for (let col = -1; col <= 1; col++) {
       const tileGroup = createSvgElement("g", {
-        transform: `translate(${col * w},${row * h})`,
+        transform: `translate(${originX + col * w},${originY + row * h})`,
       });
       gridLayer.appendChild(tileGroup);
 
@@ -98,6 +108,7 @@ function renderGrid(gridLayer, w, h) {
       });
       tileGroup.appendChild(tileRect);
 
+      // Grid lines
       const stepX = w / CONFIG.GRID_DIVISIONS;
       const stepY = h / CONFIG.GRID_DIVISIONS;
       for (let i = 1; i < CONFIG.GRID_DIVISIONS; i++) {
@@ -117,7 +128,7 @@ function renderGrid(gridLayer, w, h) {
           x1: 0,
           y1: y,
           x2: w,
-          y2: h,
+          y2: y,
           class: "grid-inner",
         });
         tileGroup.appendChild(hline);
@@ -126,103 +137,101 @@ function renderGrid(gridLayer, w, h) {
   }
 }
 
-function renderContent(contentLayer, w, h) {
-  for (let row = -1; row <= 1; row++) {
-    for (let col = -1; col <= 1; col++) {
-      const tileGroup = createSvgElement("g", {
-        transform: `translate(${col * w},${row * h})`,
+function renderSubtiles(contentLayer) {
+  state.subtiles.forEach((subtile) => {
+    const geom = getGeometryById(subtile.geometryId);
+    if (!geom) return;
+
+    // Subtile group at its world position
+    const subtileGroup = createSvgElement("g", {
+      transform: `translate(${subtile.x},${subtile.y})`,
+    });
+    contentLayer.appendChild(subtileGroup);
+
+    // Subtile outline
+    const isSelected = subtile.id === state.selectedSubtileId;
+    const subtileRect = createSvgElement("rect", {
+      x: 0,
+      y: 0,
+      width: subtile.width,
+      height: subtile.height,
+      class: isSelected ? "subtile-selected" : "subtile",
+    });
+    subtileGroup.appendChild(subtileRect);
+
+    // Geometry path
+    if (geom.points.length >= 2) {
+      const pathData = generatePathData(geom);
+      let pathClass = "path";
+      if (geom.id === state.selectedGeometryId) {
+        pathClass += " geometry-selected";
+      }
+
+      const pathEl = createSvgElement("path", {
+        d: pathData,
+        class: pathClass,
       });
-      contentLayer.appendChild(tileGroup);
+      subtileGroup.appendChild(pathEl);
+    }
 
-      state.instances.forEach((inst) => {
-        const geom = getGeometryById(inst.geometryId);
-        if (!geom) return;
+    // Points
+    geom.points.forEach((p) => {
+      const isPointSelected =
+        geom.id === state.selectedGeometryId &&
+        p.id === state.selectedPointId;
+      const circle = createSvgElement("circle", {
+        cx: p.x,
+        cy: p.y,
+        r: CONFIG.POINT_RADIUS / state.zoom,
+        class: "point-handle" + (isPointSelected ? " selected" : ""),
+      });
+      subtileGroup.appendChild(circle);
+    });
 
-        const sx = inst.transform.mirrorX ? -1 : 1;
-        const sy = inst.transform.mirrorY ? -1 : 1;
-        const gInst = createSvgElement("g", {
-          transform: `translate(${inst.transform.tx},${inst.transform.ty}) rotate(${inst.transform.rotation}) scale(${sx},${sy})`,
-        });
-        tileGroup.appendChild(gInst);
+    // Control points (in edit mode)
+    if (geom.id === state.selectedGeometryId && state.activeTool === 'edit') {
+      geom.segments.forEach((segment, idx) => {
+        if (segment.type === 'bezier' && segment.cp) {
+          const p1 = geom.points[idx];
+          const p2 = geom.points[(idx + 1) % geom.points.length];
 
-        // Path
-        if (geom.points.length >= 2) {
-          const pathData = generatePathData(geom);
-          let pathClass = "path";
-          if (inst.id === state.selectedInstanceId) {
-            pathClass += " instance-selected";
-          } else if (geom.id === state.selectedGeometryId) {
-            pathClass += " geometry-selected";
-          }
-
-          const pathEl = createSvgElement("path", {
-            d: pathData,
-            class: pathClass,
+          // Guide lines
+          const line1 = createSvgElement("line", {
+            x1: p1.x,
+            y1: p1.y,
+            x2: segment.cp.x,
+            y2: segment.cp.y,
+            stroke: "#6b7280",
+            "stroke-width": 1 / state.zoom,
+            "stroke-dasharray": `${4 / state.zoom},${4 / state.zoom}`,
           });
-          gInst.appendChild(pathEl);
-        }
+          subtileGroup.appendChild(line1);
 
-        // Points (always draw, even if there's only one)
-        geom.points.forEach((p) => {
-          const isSelected =
-            geom.id === state.selectedGeometryId &&
-            p.id === state.selectedPointId;
-          const circle = createSvgElement("circle", {
-            cx: p.x,
-            cy: p.y,
-            r: CONFIG.POINT_RADIUS / state.zoom,
-            class: "point-handle" + (isSelected ? " selected" : ""),
+          const line2 = createSvgElement("line", {
+            x1: segment.cp.x,
+            y1: segment.cp.y,
+            x2: p2.x,
+            y2: p2.y,
+            stroke: "#6b7280",
+            "stroke-width": 1 / state.zoom,
+            "stroke-dasharray": `${4 / state.zoom},${4 / state.zoom}`,
           });
-          gInst.appendChild(circle);
-        });
+          subtileGroup.appendChild(line2);
 
-        // Control points (show when segment is selected or geometry is selected in edit mode)
-        if (geom.id === state.selectedGeometryId && state.activeTool === 'edit') {
-          geom.segments.forEach((segment, idx) => {
-            if (segment.type === 'bezier' && segment.cp) {
-              const p1 = geom.points[idx];
-              const p2 = geom.points[(idx + 1) % geom.points.length];
-
-              // Draw line from p1 to control point
-              const line1 = createSvgElement("line", {
-                x1: p1.x,
-                y1: p1.y,
-                x2: segment.cp.x,
-                y2: segment.cp.y,
-                stroke: "#6b7280",
-                "stroke-width": 1 / state.zoom,
-                "stroke-dasharray": `${4 / state.zoom},${4 / state.zoom}`,
-              });
-              gInst.appendChild(line1);
-
-              // Draw line from control point to p2
-              const line2 = createSvgElement("line", {
-                x1: segment.cp.x,
-                y1: segment.cp.y,
-                x2: p2.x,
-                y2: p2.y,
-                stroke: "#6b7280",
-                "stroke-width": 1 / state.zoom,
-                "stroke-dasharray": `${4 / state.zoom},${4 / state.zoom}`,
-              });
-              gInst.appendChild(line2);
-
-              // Draw control point handle
-              const isControlSelected = state.selectedSegmentIndex === idx;
-              const cpCircle = createSvgElement("circle", {
-                cx: segment.cp.x,
-                cy: segment.cp.y,
-                r: CONFIG.CONTROL_POINT_RADIUS / state.zoom,
-                fill: isControlSelected ? "#f97316" : "#9ca3af",
-                stroke: "#0f172a",
-                "stroke-width": 1 / state.zoom,
-                cursor: "pointer",
-              });
-              gInst.appendChild(cpCircle);
-            }
+          // Control point handle
+          const isControlSelected = state.selectedSegmentIndex === idx;
+          const cpCircle = createSvgElement("circle", {
+            cx: segment.cp.x,
+            cy: segment.cp.y,
+            r: CONFIG.CONTROL_POINT_RADIUS / state.zoom,
+            fill: isControlSelected ? "#f97316" : "#9ca3af",
+            stroke: "#0f172a",
+            "stroke-width": 1 / state.zoom,
+            cursor: "pointer",
           });
+          subtileGroup.appendChild(cpCircle);
         }
       });
     }
-  }
+  });
 }

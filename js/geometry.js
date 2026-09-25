@@ -1,136 +1,165 @@
-// Geometry and instance operations
-import { state, getGeometryById, getInstanceById, getSelectedInstance } from './state.js';
-import { makeId, clone } from './utils.js';
+// Geometry and subtile operations
+import { state, getGeometryById, getSubtileById, getSelectedSubtile } from './state.js';
+import { makeId } from './utils.js';
 import { CONFIG } from './config.js';
 
-export function addGeometryAtPoint(worldPt) {
+// Create a new subtile with new geometry at the given world position
+export function createNewSubtileAt(worldPt) {
   const geom = {
     id: makeId(),
-    points: [{ id: makeId(), x: worldPt.x, y: worldPt.y }],
-    segments: [], // segments[i] connects points[i] to points[i+1]
+    points: [{ id: makeId(), x: 0, y: 0 }], // Start at local (0,0)
+    segments: [],
     closed: false,
   };
   state.geometries.push(geom);
 
-  // Create default instance in base orientation
-  const inst = {
+  const subtile = {
     id: makeId(),
     geometryId: geom.id,
-    transform: {
-      tx: 0,
-      ty: 0,
-      rotation: 0,
-      mirrorX: false,
-      mirrorY: false,
-    },
+    x: worldPt.x,
+    y: worldPt.y,
+    width: CONFIG.TILE_SIZE.x,
+    height: CONFIG.TILE_SIZE.y,
+    rotation: 0,
+    mirrorX: false,
+    mirrorY: false,
   };
-  state.instances.push(inst);
+  state.subtiles.push(subtile);
 
-  state.currentDrawing = geom.id;
+  state.currentDrawing = subtile.id;
   state.selectedGeometryId = geom.id;
   state.selectedPointId = geom.points[0].id;
-  state.selectedInstanceId = inst.id;
-  return geom;
+  state.selectedSubtileId = subtile.id;
+
+  return { geom, subtile };
 }
 
-export function addPointToCurrentDrawing(worldPt) {
+// Add a point to the current drawing (in subtile-local coordinates)
+export function addPointToCurrentDrawing(localPt) {
   if (!state.currentDrawing) return;
-  const geom = getGeometryById(state.currentDrawing);
+  const subtile = getSubtileById(state.currentDrawing);
+  if (!subtile) return;
+
+  const geom = getGeometryById(subtile.geometryId);
   if (!geom) return;
-  const pt = { id: makeId(), x: worldPt.x, y: worldPt.y };
+
+  const pt = { id: makeId(), x: localPt.x, y: localPt.y };
   geom.points.push(pt);
-  // Add a line segment from the previous point to this new point
   geom.segments.push({ type: 'line' });
+
   state.selectedGeometryId = geom.id;
   state.selectedPointId = pt.id;
 }
 
-export function finishCurrentDrawing(worldPt) {
+// Finish the current drawing
+export function finishCurrentDrawing(localPt) {
   if (!state.currentDrawing) return;
-  const geom = getGeometryById(state.currentDrawing);
+  const subtile = getSubtileById(state.currentDrawing);
+  if (!subtile) return;
+
+  const geom = getGeometryById(subtile.geometryId);
   if (!geom || geom.points.length < 2) {
     state.currentDrawing = null;
     return;
   }
 
   const first = geom.points[0];
-  const dx = worldPt.x - first.x;
-  const dy = worldPt.y - first.y;
+  const dx = localPt.x - first.x;
+  const dy = localPt.y - first.y;
   const distSq = dx * dx + dy * dy;
-  const thresholdWorld = (CONFIG.SNAP_CLOSE_THRESHOLD / state.zoom) * (CONFIG.SNAP_CLOSE_THRESHOLD / state.zoom);
-  if (distSq < thresholdWorld) {
+  const thresholdLocal = (CONFIG.SNAP_CLOSE_THRESHOLD / state.zoom);
+
+  if (distSq < thresholdLocal * thresholdLocal) {
     geom.closed = true;
-    // Add closing segment from last point to first point
     geom.segments.push({ type: 'line' });
   }
 
   state.currentDrawing = null;
 }
 
-export function deleteGeometry(geomId) {
-  const geomIndex = state.geometries.findIndex((g) => g.id === geomId);
-  if (geomIndex === -1) return;
-  state.geometries.splice(geomIndex, 1);
+// Clone the selected subtile (creates new subtile with same geometry)
+export function cloneSelectedSubtile() {
+  const baseSubtile = getSelectedSubtile();
+  if (!baseSubtile) return null;
 
-  // Remove all instances of this geometry
-  state.instances = state.instances.filter(
-    (i) => i.geometryId !== geomId
-  );
+  const newSubtile = {
+    id: makeId(),
+    geometryId: baseSubtile.geometryId, // SAME geometry
+    x: baseSubtile.x + 20,
+    y: baseSubtile.y + 20,
+    width: baseSubtile.width,
+    height: baseSubtile.height,
+    rotation: baseSubtile.rotation,
+    mirrorX: baseSubtile.mirrorX,
+    mirrorY: baseSubtile.mirrorY,
+  };
 
-  if (state.selectedGeometryId === geomId) {
-    state.selectedGeometryId = null;
-    state.selectedPointId = null;
-  }
-  if (state.currentDrawing === geomId) {
-    state.currentDrawing = null;
-  }
-  if (state.selectedInstanceId) {
-    const inst = getInstanceById(state.selectedInstanceId);
-    if (!inst || inst.geometryId === geomId) {
-      state.selectedInstanceId = null;
-    }
-  }
+  state.subtiles.push(newSubtile);
+  state.selectedSubtileId = newSubtile.id;
+
+  return newSubtile;
 }
 
-export function deleteInstance(instanceId) {
-  const inst = getInstanceById(instanceId);
-  if (!inst) return;
-  const geomId = inst.geometryId;
+// Delete a subtile
+export function deleteSubtile(subtileId) {
+  const subtile = getSubtileById(subtileId);
+  if (!subtile) return;
 
-  state.instances = state.instances.filter((i) => i.id !== instanceId);
+  const geomId = subtile.geometryId;
+  state.subtiles = state.subtiles.filter((s) => s.id !== subtileId);
 
-  if (state.selectedInstanceId === instanceId) {
-    state.selectedInstanceId = null;
+  if (state.selectedSubtileId === subtileId) {
+    state.selectedSubtileId = null;
   }
 
-  // If no more instances reference this geometry, delete the geometry too
-  const stillUsed = state.instances.some(
-    (i) => i.geometryId === geomId
-  );
+  // If no more subtiles reference this geometry, delete it
+  const stillUsed = state.subtiles.some((s) => s.geometryId === geomId);
   if (!stillUsed) {
     deleteGeometry(geomId);
   }
 }
 
+// Delete a geometry
+export function deleteGeometry(geomId) {
+  const geomIndex = state.geometries.findIndex((g) => g.id === geomId);
+  if (geomIndex === -1) return;
+
+  state.geometries.splice(geomIndex, 1);
+
+  // Remove all subtiles using this geometry
+  state.subtiles = state.subtiles.filter((s) => s.geometryId !== geomId);
+
+  if (state.selectedGeometryId === geomId) {
+    state.selectedGeometryId = null;
+    state.selectedPointId = null;
+  }
+  if (state.currentDrawing) {
+    const drawingSubtile = getSubtileById(state.currentDrawing);
+    if (drawingSubtile && drawingSubtile.geometryId === geomId) {
+      state.currentDrawing = null;
+    }
+  }
+}
+
+// Delete a point from a geometry
 export function deletePoint(geomId, pointId) {
   const geom = getGeometryById(geomId);
   if (!geom) return;
+
   const idx = geom.points.findIndex((p) => p.id === pointId);
   if (idx === -1) return;
 
   geom.points.splice(idx, 1);
 
-  // Remove the segment coming into this point (if not the first point)
+  // Remove the segment coming into this point
   if (idx > 0 && geom.segments.length >= idx) {
     geom.segments.splice(idx - 1, 1);
   }
-  // If this is the first point of a closed shape, remove the closing segment
   if (idx === 0 && geom.closed && geom.segments.length > 0) {
-    geom.segments.pop(); // Remove the closing segment
+    geom.segments.pop();
   }
 
   if (geom.points.length < 2) {
-    // Not enough points to form a line: delete whole geometry
     deleteGeometry(geomId);
     return;
   }
@@ -139,34 +168,7 @@ export function deletePoint(geomId, pointId) {
   state.selectedPointId = geom.points[newIndex].id;
 }
 
-export function cloneSelectedInstance() {
-  const baseInst =
-    getSelectedInstance() ||
-    (state.selectedGeometryId
-      ? state.instances.find(
-          (i) => i.geometryId === state.selectedGeometryId
-        )
-      : null);
-
-  if (!baseInst) return;
-
-  const newInst = {
-    id: makeId(),
-    geometryId: baseInst.geometryId,
-    transform: {
-      tx: baseInst.transform.tx + 20,
-      ty: baseInst.transform.ty + 20,
-      rotation: baseInst.transform.rotation,
-      mirrorX: baseInst.transform.mirrorX,
-      mirrorY: baseInst.transform.mirrorY,
-    },
-  };
-  state.instances.push(newInst);
-  state.selectedInstanceId = newInst.id;
-  return newInst;
-}
-
-// Convert a segment between line and bezier
+// Toggle segment type between line and bezier
 export function toggleSegmentType(geomId, segmentIndex) {
   const geom = getGeometryById(geomId);
   if (!geom || segmentIndex < 0 || segmentIndex >= geom.segments.length) return;
@@ -176,7 +178,6 @@ export function toggleSegmentType(geomId, segmentIndex) {
   const p2 = geom.points[(segmentIndex + 1) % geom.points.length];
 
   if (segment.type === 'line') {
-    // Convert to bezier with control point at midpoint
     const midX = (p1.x + p2.x) / 2;
     const midY = (p1.y + p2.y) / 2;
     geom.segments[segmentIndex] = {
@@ -184,22 +185,30 @@ export function toggleSegmentType(geomId, segmentIndex) {
       cp: { x: midX, y: midY }
     };
   } else {
-    // Convert to line
     geom.segments[segmentIndex] = { type: 'line' };
   }
 }
 
-// Get segment index from two point indices
-export function getSegmentIndex(geom, pointIdx1, pointIdx2) {
-  if (!geom) return -1;
-  const numPoints = geom.points.length;
+// Calculate bounding box of all subtiles (for base tile)
+export function calculateBaseTileBounds() {
+  if (state.subtiles.length === 0) {
+    return { x: 0, y: 0, width: CONFIG.TILE_SIZE.x, height: CONFIG.TILE_SIZE.y };
+  }
 
-  // Check if consecutive points
-  if (pointIdx2 === (pointIdx1 + 1) % numPoints) {
-    return pointIdx1;
-  }
-  if (pointIdx1 === (pointIdx2 + 1) % numPoints) {
-    return pointIdx2;
-  }
-  return -1;
+  let minX = Infinity, minY = Infinity;
+  let maxX = -Infinity, maxY = -Infinity;
+
+  state.subtiles.forEach(subtile => {
+    minX = Math.min(minX, subtile.x);
+    minY = Math.min(minY, subtile.y);
+    maxX = Math.max(maxX, subtile.x + subtile.width);
+    maxY = Math.max(maxY, subtile.y + subtile.height);
+  });
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY
+  };
 }

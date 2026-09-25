@@ -1,8 +1,8 @@
 // Main entry point
-import { state, getSelectedInstance } from './state.js';
+import { state, getSelectedSubtile } from './state.js';
 import { render } from './render.js';
 import { createEventHandlers } from './interaction.js';
-import { cloneSelectedInstance } from './geometry.js';
+import { cloneSelectedSubtile } from './geometry.js';
 
 // Initialize the application
 function init() {
@@ -27,20 +27,20 @@ function init() {
     });
   }
 
-  // Update instance panel
+  // Update instance panel (now shows subtile info)
   function updateInstancePanel() {
-    const inst = getSelectedInstance();
-    if (!inst) {
+    const subtile = getSelectedSubtile();
+    if (!subtile) {
       instanceLabel.textContent = "none";
       instanceRot.textContent = "0°";
       instanceMirror.textContent = "–";
       return;
     }
-    instanceLabel.textContent = inst.id;
-    instanceRot.textContent = `${Math.round(inst.transform.rotation)}°`;
+    instanceLabel.textContent = subtile.id;
+    instanceRot.textContent = `${Math.round(subtile.rotation)}°`;
     let mirror = [];
-    if (inst.transform.mirrorX) mirror.push("X");
-    if (inst.transform.mirrorY) mirror.push("Y");
+    if (subtile.mirrorX) mirror.push("X");
+    if (subtile.mirrorY) mirror.push("Y");
     instanceMirror.textContent = mirror.length ? mirror.join("") : "none";
   }
 
@@ -55,7 +55,7 @@ function init() {
   });
 
   cloneBtn.addEventListener("click", () => {
-    cloneSelectedInstance();
+    cloneSelectedSubtile();
     doRender();
   });
 
@@ -71,9 +71,9 @@ function init() {
     const cx = containerRect.width / 2;
     const cy = containerRect.height / 2;
 
-    // Center on middle (base) tile
-    state.pan.x = cx - (state.tileSize.x * state.zoom) / 2;
-    state.pan.y = cy - (state.tileSize.y * state.zoom) / 2;
+    // Center on origin
+    state.pan.x = cx;
+    state.pan.y = cy;
   }
 
   function onResize() {
