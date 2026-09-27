@@ -8,6 +8,7 @@ export const CONFIG = {
 
   // Interaction thresholds
   POINT_HIT_THRESHOLD: 10, // pixels (screen space)
+  SEGMENT_HIT_THRESHOLD: 10, // pixels (screen space)
   INSTANCE_HIT_THRESHOLD: 20, // pixels (screen space)
   SNAP_CLOSE_THRESHOLD: 10, // pixels (screen space) for closing polylines
 
@@ -16,23 +17,24 @@ export const CONFIG = {
   ZOOM_MAX: 5,
   ZOOM_FACTOR: 1.1,
 
-  // Visual settings
-  POINT_RADIUS: 4, // world space
-  CONTROL_POINT_RADIUS: 3, // world space
+  // Visual settings (screen-space pixels; divide by zoom in world space)
+  POINT_RADIUS: 6,
+  POINT_RADIUS_DIM: 5,
+  CONTROL_HANDLE_SIZE: 8,
+  GHOST_OPACITY: 0.45,
 
   // Transform increments
-  ROTATION_INCREMENT: 15, // degrees
+  ROTATION_INCREMENT: 90, // degrees
 
-  // Colors (for programmatic styling if needed)
+  // Colors (mirrors the CSS custom properties in index.html)
   COLORS: {
-    background: '#18181b',
-    grid: '#374151',
-    gridInner: '#27272f',
-    gridBase: '#f97316',
-    path: '#38bdf8',
-    pathInstanceSelected: '#22c55e',
-    pathGeometrySelected: '#f97316',
-    pointHandle: '#0ea5e9',
-    pointHandleSelected: '#f97316',
+    background: '#f4f2ec',
+    ink: '#1c1b18',
+    muted: '#7a766c',
+    grid: '#e2dfd5',
+    frame: '#b9b5aa',
+    accent: '#3b6fd1',
+    link: 'rgba(59,111,209,0.55)',
+    lattice: '#c2255c',
   },
 };

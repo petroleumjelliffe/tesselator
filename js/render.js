@@ -1,22 +1,21 @@
-// Rendering logic
-import { state, getGeometryById } from './state.js';
+// Rendering logic: clears the SVG and rebuilds it from state on every call
+import { state, getGeometryById, getSubtileById } from './state.js';
 import { createSvgElement, clearSvg } from './utils.js';
 import { CONFIG } from './config.js';
-import { calculateBaseTileBounds } from './geometry.js';
+import { calculateBaseTileBounds, segmentCount, getSegmentHandle } from './geometry.js';
+import { subtileTransformString, subtileLocalToWorld } from './transform.js';
 
 // Generate SVG path data from geometry points and segments
-function generatePathData(geom) {
+export function generatePathData(geom) {
   if (geom.points.length === 0) return '';
   if (geom.points.length === 1) {
     const p = geom.points[0];
     return `M ${p.x},${p.y}`;
   }
 
-  let pathData = '';
   const numPoints = geom.points.length;
   const numSegments = geom.closed ? numPoints : numPoints - 1;
-
-  pathData = `M ${geom.points[0].x},${geom.points[0].y}`;
+  let pathData = `M ${geom.points[0].x},${geom.points[0].y}`;
 
   for (let i = 0; i < numSegments; i++) {
     const p2 = geom.points[(i + 1) % numPoints];
@@ -32,7 +31,7 @@ function generatePathData(geom) {
   return pathData;
 }
 
-export function render(svg, updateInstancePanel) {
+export function render(svg, afterRender) {
   clearSvg(svg);
 
   const rootGroup = createSvgElement("g", {
@@ -40,198 +39,190 @@ export function render(svg, updateInstancePanel) {
   });
   svg.appendChild(rootGroup);
 
-  // Calculate base tile bounds
   const baseTile = calculateBaseTileBounds();
+  const hasContent = state.subtiles.length > 0;
 
-  // Layer 1: Optional 3x3 tiling grid
-  if (state.showTilingGrid) {
-    const gridLayer = createSvgElement("g", {});
-    rootGroup.appendChild(gridLayer);
-    renderTilingGrid(gridLayer, baseTile);
-  }
-
-  // Layer 2: Subtiles and their content
-  const contentLayer = createSvgElement("g", {});
-  rootGroup.appendChild(contentLayer);
-  renderSubtiles(contentLayer);
-
-  // Layer 3: Base tile outline (for reference)
-  if (state.subtiles.length > 0) {
-    const baseTileOutline = createSvgElement("rect", {
+  // Layer 1: 3x3 repeat (frames + ghosted copies of everything)
+  if (state.showTilingGrid && hasContent) {
+    renderTilingFrames(rootGroup, baseTile);
+    renderGhostCopies(rootGroup, baseTile);
+  } else if (state.subtiles.length > 1) {
+    rootGroup.appendChild(createSvgElement("rect", {
       x: baseTile.x,
       y: baseTile.y,
       width: baseTile.width,
       height: baseTile.height,
-      class: "base-tile-outline",
-    });
-    contentLayer.appendChild(baseTileOutline);
+      class: "base-outline",
+    }));
   }
 
-  // Overlay status text
-  const overlay = createSvgElement("text", {
-    x: baseTile.x,
-    y: baseTile.y + baseTile.height + 24,
-    class: "overlay-text",
-    textContent: `Tool: ${state.activeTool.toUpperCase()} | Zoom: ${state.zoom.toFixed(
-      2
-    )} | Grid Snap: ${state.gridSnapping ? 'ON' : 'OFF'} | Tiling Grid: ${state.showTilingGrid ? 'ON' : 'OFF'} | Subtiles: ${state.subtiles.length}`,
-  });
-  rootGroup.appendChild(overlay);
+  // Layer 2: subtiles and their content
+  renderSubtiles(rootGroup);
 
-  if (updateInstancePanel) {
-    updateInstancePanel();
-  }
+  // Layer 3: pen rubber band
+  renderRubberBand(rootGroup);
+
+  if (afterRender) afterRender();
 }
 
-function renderTilingGrid(gridLayer, baseTile) {
-  const w = baseTile.width;
-  const h = baseTile.height;
-  const originX = baseTile.x;
-  const originY = baseTile.y;
-
+function renderTilingFrames(layer, baseTile) {
+  const { width: w, height: h, x: originX, y: originY } = baseTile;
   for (let row = -1; row <= 1; row++) {
     for (let col = -1; col <= 1; col++) {
-      const tileGroup = createSvgElement("g", {
-        transform: `translate(${originX + col * w},${originY + row * h})`,
-      });
-      gridLayer.appendChild(tileGroup);
-
-      const rectClasses = ["grid-rect"];
-      if (row === 0 && col === 0) rectClasses.push("base");
-
-      const tileRect = createSvgElement("rect", {
-        x: 0,
-        y: 0,
+      const isBase = row === 0 && col === 0;
+      layer.appendChild(createSvgElement("rect", {
+        x: originX + col * w,
+        y: originY + row * h,
         width: w,
         height: h,
-        class: rectClasses.join(" "),
-      });
-      tileGroup.appendChild(tileRect);
-
-      // Grid lines
-      const stepX = w / CONFIG.GRID_DIVISIONS;
-      const stepY = h / CONFIG.GRID_DIVISIONS;
-      for (let i = 1; i < CONFIG.GRID_DIVISIONS; i++) {
-        const x = stepX * i;
-        const vline = createSvgElement("line", {
-          x1: x,
-          y1: 0,
-          x2: x,
-          y2: h,
-          class: "grid-inner",
-        });
-        tileGroup.appendChild(vline);
-      }
-      for (let j = 1; j < CONFIG.GRID_DIVISIONS; j++) {
-        const y = stepY * j;
-        const hline = createSvgElement("line", {
-          x1: 0,
-          y1: y,
-          x2: w,
-          y2: y,
-          class: "grid-inner",
-        });
-        tileGroup.appendChild(hline);
-      }
+        class: isBase ? "frame base" : "frame",
+      }));
     }
   }
 }
 
-function renderSubtiles(contentLayer) {
+function renderGhostCopies(layer, baseTile) {
+  for (let row = -1; row <= 1; row++) {
+    for (let col = -1; col <= 1; col++) {
+      if (row === 0 && col === 0) continue;
+      const ghost = createSvgElement("g", {
+        class: "ghost",
+        transform: `translate(${col * baseTile.width},${row * baseTile.height})`,
+      });
+      layer.appendChild(ghost);
+      state.subtiles.forEach((subtile) => {
+        const geom = getGeometryById(subtile.geometryId);
+        if (!geom || geom.points.length < 2) return;
+        const g = createSvgElement("g", { transform: subtileTransformString(subtile) });
+        g.appendChild(createSvgElement("path", { d: generatePathData(geom), class: "path" }));
+        ghost.appendChild(g);
+      });
+    }
+  }
+}
+
+function renderSubtiles(layer) {
+  const z = state.zoom;
+  const tool = state.activeTool;
+
   state.subtiles.forEach((subtile) => {
     const geom = getGeometryById(subtile.geometryId);
     if (!geom) return;
 
-    // Subtile group at its world position
-    const subtileGroup = createSvgElement("g", {
-      transform: `translate(${subtile.x},${subtile.y})`,
-    });
-    contentLayer.appendChild(subtileGroup);
+    const group = createSvgElement("g", { transform: subtileTransformString(subtile) });
+    layer.appendChild(group);
 
-    // Subtile outline
     const isSelected = subtile.id === state.selectedSubtileId;
-    const subtileRect = createSvgElement("rect", {
+    const isLinked = !isSelected && geom.id === state.selectedGeometryId;
+
+    // Container box
+    group.appendChild(createSvgElement("rect", {
       x: 0,
       y: 0,
       width: subtile.width,
       height: subtile.height,
-      class: isSelected ? "subtile-selected" : "subtile",
-    });
-    subtileGroup.appendChild(subtileRect);
+      class: isSelected ? "subtile sel" : "subtile",
+    }));
 
-    // Geometry path
+    // Snap grid, only where it matters
+    const gridTile = tool === "draw" ? subtile.id === state.currentDrawing : tool === "edit" && isSelected;
+    if (state.gridSnapping && gridTile) {
+      renderSnapGrid(group, subtile);
+    }
+
+    // Shape outline
     if (geom.points.length >= 2) {
-      const pathData = generatePathData(geom);
+      const d = generatePathData(geom);
       let pathClass = "path";
-      if (geom.id === state.selectedGeometryId) {
-        pathClass += " geometry-selected";
+      if (isSelected) pathClass += " sel";
+      else if (isLinked) pathClass += " link";
+      group.appendChild(createSvgElement("path", { d, class: pathClass }));
+      if (tool === "edit") {
+        group.appendChild(createSvgElement("path", { d, class: "path-hit" }));
       }
-
-      const pathEl = createSvgElement("path", {
-        d: pathData,
-        class: pathClass,
-      });
-      subtileGroup.appendChild(pathEl);
     }
 
     // Points
-    geom.points.forEach((p) => {
-      const isPointSelected =
-        geom.id === state.selectedGeometryId &&
-        p.id === state.selectedPointId;
-      const circle = createSvgElement("circle", {
-        cx: p.x,
-        cy: p.y,
-        r: CONFIG.POINT_RADIUS / state.zoom,
-        class: "point-handle" + (isPointSelected ? " selected" : ""),
-      });
-      subtileGroup.appendChild(circle);
-    });
-
-    // Control points (in edit mode)
-    if (geom.id === state.selectedGeometryId && state.activeTool === 'edit') {
-      geom.segments.forEach((segment, idx) => {
-        if (segment.type === 'bezier' && segment.cp) {
-          const p1 = geom.points[idx];
-          const p2 = geom.points[(idx + 1) % geom.points.length];
-
-          // Guide lines
-          const line1 = createSvgElement("line", {
-            x1: p1.x,
-            y1: p1.y,
-            x2: segment.cp.x,
-            y2: segment.cp.y,
-            stroke: "#6b7280",
-            "stroke-width": 1 / state.zoom,
-            "stroke-dasharray": `${4 / state.zoom},${4 / state.zoom}`,
-          });
-          subtileGroup.appendChild(line1);
-
-          const line2 = createSvgElement("line", {
-            x1: segment.cp.x,
-            y1: segment.cp.y,
-            x2: p2.x,
-            y2: p2.y,
-            stroke: "#6b7280",
-            "stroke-width": 1 / state.zoom,
-            "stroke-dasharray": `${4 / state.zoom},${4 / state.zoom}`,
-          });
-          subtileGroup.appendChild(line2);
-
-          // Control point handle
-          const isControlSelected = state.selectedSegmentIndex === idx;
-          const cpCircle = createSvgElement("circle", {
-            cx: segment.cp.x,
-            cy: segment.cp.y,
-            r: CONFIG.CONTROL_POINT_RADIUS / state.zoom,
-            fill: isControlSelected ? "#f97316" : "#9ca3af",
-            stroke: "#0f172a",
-            "stroke-width": 1 / state.zoom,
-            cursor: "pointer",
-          });
-          subtileGroup.appendChild(cpCircle);
-        }
+    const showPoints = tool === "edit" || (tool === "draw" && subtile.id === state.currentDrawing);
+    if (showPoints) {
+      const dim = tool === "edit" && geom.id !== state.selectedGeometryId;
+      geom.points.forEach((p) => {
+        const isPointSelected =
+          isSelected && geom.id === state.selectedGeometryId && p.id === state.selectedPointId;
+        let cls = "pt";
+        if (isPointSelected) cls += " sel";
+        if (dim) cls += " dim";
+        group.appendChild(createSvgElement("circle", {
+          cx: p.x,
+          cy: p.y,
+          r: (dim ? CONFIG.POINT_RADIUS_DIM : CONFIG.POINT_RADIUS) / z,
+          class: cls,
+        }));
       });
     }
+
+    // Segment handles (edit mode, selected tile only)
+    if (tool === "edit" && isSelected && geom.id === state.selectedGeometryId) {
+      renderSegmentHandles(group, geom);
+    }
   });
+}
+
+function renderSnapGrid(group, subtile) {
+  const stepX = subtile.width / CONFIG.GRID_DIVISIONS;
+  const stepY = subtile.height / CONFIG.GRID_DIVISIONS;
+  for (let i = 1; i < CONFIG.GRID_DIVISIONS; i++) {
+    group.appendChild(createSvgElement("line", {
+      x1: stepX * i, y1: 0, x2: stepX * i, y2: subtile.height, class: "grid-inner",
+    }));
+    group.appendChild(createSvgElement("line", {
+      x1: 0, y1: stepY * i, x2: subtile.width, y2: stepY * i, class: "grid-inner",
+    }));
+  }
+}
+
+function renderSegmentHandles(group, geom) {
+  const z = state.zoom;
+  const size = CONFIG.CONTROL_HANDLE_SIZE / z;
+  const n = segmentCount(geom);
+
+  for (let idx = 0; idx < n; idx++) {
+    const seg = geom.segments[idx];
+    const isCurve = seg.type === "bezier" && !!seg.cp;
+    const h = getSegmentHandle(geom, idx);
+
+    if (isCurve) {
+      const p1 = geom.points[idx];
+      const p2 = geom.points[(idx + 1) % geom.points.length];
+      group.appendChild(createSvgElement("line", {
+        x1: p1.x, y1: p1.y, x2: h.x, y2: h.y, class: "cp-guide",
+      }));
+      group.appendChild(createSvgElement("line", {
+        x1: h.x, y1: h.y, x2: p2.x, y2: p2.y, class: "cp-guide",
+      }));
+    }
+
+    let cls = "cp";
+    if (isCurve) cls += " curve";
+    if (state.selectedSegmentIndex === idx) cls += " sel";
+    group.appendChild(createSvgElement("rect", {
+      x: h.x - size / 2,
+      y: h.y - size / 2,
+      width: size,
+      height: size,
+      transform: `rotate(45 ${h.x} ${h.y})`,
+      class: cls,
+    }));
+  }
+}
+
+function renderRubberBand(layer) {
+  if (state.activeTool !== "draw" || !state.currentDrawing || !state.cursorWorld) return;
+  const subtile = getSubtileById(state.currentDrawing);
+  const geom = subtile && getGeometryById(subtile.geometryId);
+  if (!geom || geom.points.length === 0) return;
+  const last = subtileLocalToWorld(geom.points[geom.points.length - 1], subtile);
+  layer.appendChild(createSvgElement("line", {
+    x1: last.x, y1: last.y, x2: state.cursorWorld.x, y2: state.cursorWorld.y, class: "rubber",
+  }));
 }

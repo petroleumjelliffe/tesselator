@@ -2,222 +2,492 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Tessellation Editor – Phase 3 (Clones, Transforms, Delete)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tessellation Designer</title>
     <style>
+      :root {
+        --bg: #f4f2ec;
+        --ink: #1c1b18;
+        --muted: #7a766c;
+        --dim: #9c988c;
+        --line: #d8d4c9;
+        --grid: #e2dfd5;
+        --frame: #b9b5aa;
+        --accent: #3b6fd1;
+        --accent-soft: #e6edfa;
+        --accent-hover: rgba(59, 111, 209, 0.18);
+        --link: rgba(59, 111, 209, 0.55);
+        --pink: #c2255c;
+        --panel: #fff;
+        --shadow: 0 2px 8px rgba(28, 27, 24, 0.08);
+      }
+
       html,
       body {
         margin: 0;
-        padding: 0;
         height: 100%;
-        width: 100%;
+        background: var(--bg);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: var(--ink);
         overflow: hidden;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          sans-serif;
-        background: #18181b;
-        color: #f9fafb;
+      }
+
+      button {
+        font: inherit;
+        font-size: 13px;
+        color: var(--ink);
+        cursor: pointer;
+      }
+
+      kbd {
+        font: 11px ui-monospace, Menlo, monospace;
+        border: 1px solid #c9c5ba;
+        border-radius: 3px;
+        padding: 0 4px;
+        background: #fff;
+        color: var(--ink);
       }
 
       #app {
+        position: fixed;
+        inset: 0;
         display: flex;
         flex-direction: column;
-        height: 100%;
-        width: 100%;
-      }
-
-      #toolbar {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        background: #111827;
-        border-bottom: 1px solid #27272f;
-        flex-shrink: 0;
-        flex-wrap: wrap;
-      }
-
-      #title {
-        font-weight: 600;
-        margin-right: 12px;
-      }
-
-      .spacer {
-        flex: 1;
-      }
-
-      .tool-button {
-        border: 1px solid #374151;
-        background: #1f2937;
-        color: #e5e7eb;
-        border-radius: 4px;
-        padding: 4px 8px;
-        font-size: 13px;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        user-select: none;
-        touch-action: manipulation;
-      }
-
-      .tool-button.active {
-        background: #2563eb;
-        border-color: #1d4ed8;
-        color: #f9fafb;
-      }
-
-      #hint {
-        font-size: 12px;
-        color: #9ca3af;
-        margin-top: 4px;
-        width: 100%;
-      }
-
-      #instance-panel {
-        font-size: 12px;
-        color: #e5e7eb;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-
-      #canvas-container {
-        flex: 1;
-        position: relative;
-        background: radial-gradient(circle at top, #020617, #030712);
       }
 
       svg#canvas {
+        flex: 1;
         width: 100%;
         height: 100%;
+        display: block;
         touch-action: none;
+        user-select: none;
+        cursor: crosshair;
+      }
+      #app[data-tool="transform"] svg#canvas {
+        cursor: default;
+      }
+      #app.panning svg#canvas {
+        cursor: grab;
+      }
+
+      /* ---- floating panels ---- */
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+      }
+
+      .top-left {
+        position: absolute;
+        left: 16px;
+        top: 12px;
+        max-width: calc(100% - 200px);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      .tool-group {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+      }
+
+      .tool-button {
+        min-height: 36px;
+        padding: 0 12px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: #fff;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .tool-button:hover {
+        background: var(--bg);
+      }
+      .tool-button.active {
+        background: var(--ink);
+        color: #fff;
+      }
+      .tool-button kbd {
+        border-color: currentColor;
         background: transparent;
+        color: inherit;
+        opacity: 0.7;
       }
 
-      .grid-rect {
+      #selection-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px 6px 12px;
+        font-size: 13px;
+      }
+      #selection-bar[hidden] {
+        display: none;
+      }
+      .sel-label {
+        margin-right: 6px;
+      }
+
+      .btn {
+        min-height: 36px;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: var(--bg);
+      }
+      .btn.primary {
+        background: var(--ink);
+        color: #fff;
+        border-color: var(--ink);
+      }
+      .btn.primary:hover {
+        background: #333;
+      }
+      .btn.primary kbd {
+        border-color: #666;
+        background: transparent;
+        color: #fff;
+      }
+      .btn.on {
+        background: var(--ink);
+        color: #fff;
+        border-color: var(--ink);
+      }
+      .btn.on:hover {
+        background: #333;
+      }
+      .btn.icon {
+        min-width: 40px;
+        padding: 0 8px;
+        font-size: 14px;
+      }
+      .btn.quiet {
+        color: var(--muted);
+      }
+      .readout {
+        font-size: 12px;
+        color: var(--muted);
+        min-width: 32px;
+        text-align: center;
+      }
+      .divider {
+        width: 1px;
+        height: 24px;
+        background: var(--line);
+        margin: 0 4px;
+      }
+
+      .bottom-left {
+        position: absolute;
+        left: 16px;
+        bottom: 12px;
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+      }
+      .history-btn {
+        width: 44px;
+        height: 44px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        font-size: 18px;
+      }
+      .history-btn:hover:not(:disabled) {
+        background: var(--bg);
+      }
+      .history-btn:disabled {
+        opacity: 0.3;
+        cursor: default;
+      }
+
+      .hint-bar {
+        position: absolute;
+        left: 132px;
+        right: 16px;
+        bottom: 12px;
+        min-height: 54px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 24px;
+        color: var(--muted);
+        pointer-events: none;
+      }
+      .hint-bar .hint {
+        flex: 1;
+        min-width: 0;
+        font-size: 13px;
+        text-wrap: pretty;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .hint-bar .counts {
+        flex: none;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .hint-bar button {
+        pointer-events: auto;
+        border-color: var(--ink);
+      }
+      .hint-bar button[hidden] {
+        display: none;
+      }
+
+      .top-right {
+        position: absolute;
+        right: 16px;
+        top: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+      }
+      .top-right .row {
+        display: flex;
+        gap: 8px;
+      }
+      .top-right .row .btn {
+        min-height: 40px;
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+      }
+      .top-right .row .btn.icon {
+        width: 40px;
+        padding: 0;
+        font-size: 15px;
+      }
+
+      .popover {
+        width: 260px;
+        padding: 12px 14px;
+        font-size: 12px;
+        line-height: 1.5;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .popover[hidden] {
+        display: none;
+      }
+      .popover .muted {
+        color: var(--muted);
+      }
+      .popover .shortcuts {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .toggle-row .btn {
+        min-height: 32px;
+        min-width: 52px;
+        padding: 0 10px;
+        font-size: 12px;
+      }
+
+      /* ---- canvas ---- */
+      .frame {
         fill: none;
-        stroke: #374151;
+        stroke: var(--frame);
         stroke-width: 1;
+        stroke-dasharray: 6 5;
+        vector-effect: non-scaling-stroke;
+        pointer-events: none;
       }
-
-      .grid-rect.base {
-        stroke: #f97316;
+      .frame.base {
+        stroke: var(--ink);
         stroke-width: 1.5;
       }
-
-      .grid-inner {
-        stroke: #27272f;
-        stroke-width: 0.5;
+      .base-outline {
+        fill: none;
+        stroke: var(--ink);
+        stroke-width: 1.5;
+        stroke-dasharray: 6 5;
+        vector-effect: non-scaling-stroke;
+        pointer-events: none;
       }
-
+      .grid-inner {
+        stroke: var(--grid);
+        stroke-width: 1;
+        vector-effect: non-scaling-stroke;
+        pointer-events: none;
+      }
+      .subtile {
+        fill: transparent;
+        stroke: var(--frame);
+        stroke-width: 1;
+        stroke-dasharray: 4 3;
+        vector-effect: non-scaling-stroke;
+      }
+      .subtile.sel {
+        stroke: var(--accent);
+      }
       .path {
         fill: none;
-        stroke: #38bdf8;
+        stroke: var(--ink);
         stroke-width: 2;
-        stroke-linejoin: round;
         stroke-linecap: round;
+        stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
+        pointer-events: none;
       }
-
-      .path.instance-selected {
-        stroke: #22c55e;
+      .path.sel {
+        stroke: var(--accent);
+        stroke-width: 2.5;
       }
-
-      .path.geometry-selected {
-        stroke: #f97316;
+      .path.link {
+        stroke: var(--link);
       }
-
-      .point-handle {
-        fill: #0ea5e9;
-        stroke: #0f172a;
-        stroke-width: 1;
+      .path-hit {
+        fill: none;
+        stroke: transparent;
+        stroke-width: 14;
+        vector-effect: non-scaling-stroke;
         cursor: pointer;
       }
-
-      .point-handle.selected {
-        fill: #f97316;
-        stroke: #0f172a;
-        stroke-width: 1.2;
+      .path-hit:hover {
+        stroke: var(--accent-hover);
       }
-
-      .overlay-text {
-        fill: #4b5563;
-        font-size: 12px;
+      .ghost {
+        opacity: 0.45;
         pointer-events: none;
       }
-
-      .badge {
-        padding: 2px 6px;
-        border-radius: 999px;
-        border: 1px solid #4b5563;
-        font-size: 11px;
-        color: #e5e7eb;
-      }
-
-      .pill-button {
-        border-radius: 999px;
-        padding-inline: 10px;
-      }
-
-      .base-tile-outline {
-        fill: none;
-        stroke: #f97316;
-        stroke-width: 2;
-        stroke-dasharray: 8, 4;
-        pointer-events: none;
-      }
-
-      .subtile {
-        fill: rgba(59, 130, 246, 0.05);
-        stroke: #3b82f6;
+      .pt {
+        fill: var(--bg);
+        stroke: var(--ink);
         stroke-width: 1.5;
-        stroke-dasharray: 4, 4;
+        vector-effect: non-scaling-stroke;
+        cursor: pointer;
       }
-
-      .subtile-selected {
-        fill: rgba(34, 197, 94, 0.1);
-        stroke: #22c55e;
-        stroke-width: 2;
-        stroke-dasharray: 4, 4;
+      .pt:hover {
+        stroke: var(--accent);
+        stroke-width: 2.5;
+      }
+      .pt.sel {
+        fill: var(--accent);
+        stroke: var(--accent);
+      }
+      .pt.dim {
+        stroke: var(--dim);
+      }
+      .cp-guide {
+        stroke: var(--accent);
+        stroke-width: 1;
+        stroke-dasharray: 2 3;
+        opacity: 0.7;
+        vector-effect: non-scaling-stroke;
+        pointer-events: none;
+      }
+      .cp {
+        fill: var(--bg);
+        stroke: var(--accent);
+        stroke-width: 1.5;
+        vector-effect: non-scaling-stroke;
+        cursor: grab;
+      }
+      .cp.curve {
+        fill: var(--accent);
+      }
+      .cp:hover,
+      .cp.sel {
+        stroke-width: 2.5;
+      }
+      .rubber {
+        stroke: var(--accent);
+        stroke-width: 1.5;
+        stroke-dasharray: 4 4;
+        vector-effect: non-scaling-stroke;
+        pointer-events: none;
       }
     </style>
   </head>
   <body>
-    <div id="app">
-      <div id="toolbar">
-        <div style="display: flex; align-items: center; gap: 8px">
-          <div id="title">Tessellation Editor – Phase 3</div>
-          <span class="badge">3×3 · clones · delete</span>
+    <div id="app" data-tool="draw">
+      <svg id="canvas"></svg>
+
+      <div class="top-left">
+        <div class="panel tool-group">
+          <button class="tool-button" data-tool="transform" title="Select (V)">↖ Select <kbd>V</kbd></button>
+          <button class="tool-button active" data-tool="draw" title="Pen (P)">✎ Pen <kbd>P</kbd></button>
+          <button class="tool-button" data-tool="edit" title="Edit points (E)">◇ Edit <kbd>E</kbd></button>
         </div>
+        <div id="selection-bar" class="panel" hidden></div>
+      </div>
 
-        <button class="tool-button active" data-tool="draw">✏️ Draw</button>
-        <button class="tool-button" data-tool="edit">🖱 Edit points</button>
-        <button class="tool-button" data-tool="transform">↔️ Transform</button>
-        <button class="tool-button pill-button" id="clone-btn">
-          🧬 Clone linked
-        </button>
-
-        <div class="spacer"></div>
-
-        <div id="instance-panel">
-          <span>Instance:</span>
-          <span id="instance-label">none</span>
-          <span>|</span>
-          <span>Rot:</span>
-          <span id="instance-rot">0°</span>
-          <span>|</span>
-          <span>Mirror:</span>
-          <span id="instance-mirror">–</span>
+      <div class="top-right">
+        <div class="row">
+          <button class="btn" id="tile-btn" title="Tile settings">
+            <span style="color: var(--pink)">▱</span> Tile
+            <span id="tile-label" class="readout"></span>
+          </button>
+          <button class="btn icon" id="help-btn" title="Shortcuts">?</button>
         </div>
-
-        <div id="hint">
-          Draw: D · Edit: E · Transform: T · Toggle grid snap: G · Toggle 3×3 grid: V ·
-          Toggle curve: click segment and press C · Clone: click "Clone linked" ·
-          Delete point: select and press Del/Backspace · Delete line: Del/Backspace
-          with no point selected (or delete selected subtile in Transform mode).
+        <div id="tile-panel" class="panel popover" hidden>
+          <span class="muted">
+            Each tile is a box holding one shape. Linked clones share their shape, so editing
+            one edits all. The base tile is the box around every tile, and the pattern repeats it.
+          </span>
+          <div class="toggle-row">
+            <span>Show 3×3 repeat <kbd>3</kbd></span>
+            <button class="btn" id="tiling-toggle">Off</button>
+          </div>
+          <div class="toggle-row">
+            <span>Snap to grid <kbd>G</kbd></span>
+            <button class="btn" id="snap-toggle">On</button>
+          </div>
+          <div class="toggle-row">
+            <span>Base tile</span>
+            <span id="base-size" class="muted"></span>
+          </div>
+        </div>
+        <div id="help-panel" class="panel popover shortcuts" hidden>
+          <span><kbd>V</kbd> select · <kbd>P</kbd> pen · <kbd>E</kbd> edit points</span>
+          <span>pen: click to place points · click the first point to close · double-click, <kbd>Esc</kbd> or <kbd>↵</kbd> to finish</span>
+          <span>edit: drag points · click a line to select it · click again to insert a point</span>
+          <span>drag ◇ to bend a line · double-click ◇ to straighten · <kbd>C</kbd> toggles curve</span>
+          <span>select: click a tile · drag to move · <kbd>C</kbd> clone linked</span>
+          <span>tile: <kbd>[</kbd> <kbd>]</kbd> rotate 90° · <kbd>X</kbd> <kbd>Y</kbd> mirror</span>
+          <span><kbd>⌫</kbd> delete selection · <kbd>Esc</kbd> clear selection</span>
+          <span><kbd>G</kbd> snap · <kbd>3</kbd> 3×3 repeat · <kbd>Space</kbd>+drag or middle-drag pans · scroll zooms</span>
+          <span><kbd>⌘Z</kbd> undo · <kbd>⇧⌘Z</kbd> redo</span>
         </div>
       </div>
-      <div id="canvas-container">
-        <svg id="canvas"></svg>
+
+      <div class="panel bottom-left">
+        <button class="history-btn" id="undo-btn" title="Undo (⌘Z)">↶</button>
+        <button class="history-btn" id="redo-btn" title="Redo (⇧⌘Z)">↷</button>
+      </div>
+
+      <div class="hint-bar">
+        <span class="hint">
+          <span id="hint"></span>
+          <button class="btn" id="example-btn" hidden>Load example</button>
+        </span>
+        <span id="counts" class="counts"></span>
       </div>
     </div>
 
