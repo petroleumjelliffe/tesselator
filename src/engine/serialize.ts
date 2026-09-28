@@ -1,6 +1,6 @@
 import { CONFIG } from '../config';
 import { windowOffsets, cellPolygon, toUV, toWorld } from './lattice';
-import { IDENTITY, apply, orbit } from './transform';
+import { IDENTITY, apply, ownClones } from './transform';
 import { pathWorld, pathCpsWorld } from './paths';
 import { computeFaces, fillFace, facePathData } from './regions';
 import { pathD } from './svgpath';
@@ -66,7 +66,7 @@ const bbox = (pts: XY[]): Box => ({ x0: Math.min(...pts.map((p) => p.x)), y0: Ma
 function cellDefs(d: Doc): string {
   const strokes = (lyr: 'structure' | 'detail') => d.paths.filter((p) => p.layer === lyr).flatMap((p) => {
     const P = pathWorld(d, p), C = pathCpsWorld(d, p);
-    const Ms = [IDENTITY, ...d.bindings.filter((b) => b.pathId === p.id).flatMap((b) => orbit(b.ops, d.elements, d.lattice, CONFIG.ORBIT_CAP).matrices)];
+    const Ms = [IDENTITY, ...d.bindings.filter((b) => b.pathId === p.id).flatMap((b) => ownClones(b.ops, d.elements, d.lattice, CONFIG.ORBIT_CAP).matrices)];
     return Ms.map((M) => `<path d="${pathD(P.map((q) => apply(M, q)), C.map((c) => c && apply(M, c)))}" fill="none" stroke="${esc(p.style.color)}" stroke-width="${p.style.weight}" stroke-linecap="round" stroke-linejoin="round"/>`);
   }).join('');
   const faces = computeFaces(d);

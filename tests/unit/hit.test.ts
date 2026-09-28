@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
 import { hitTest, anchorsWorld, snapWorld, pointsInRect, projectOnSegment, bboxHandles, scaleFor, scaleMatrix, seedOf, type HitContext } from '../../src/engine/hit';
-import { orbit, apply, cellMatrix, compose } from '../../src/engine/transform';
+import { ownClones, apply, cellMatrix, compose } from '../../src/engine/transform';
 import { windowOffsets } from '../../src/engine/lattice';
 import { computeFaces } from '../../src/engine/regions';
 import { CONFIG } from '../../src/config';
@@ -10,7 +10,7 @@ import type { Doc, CopyInfo, Matrix, Selection } from '../../src/types';
 function makeDoc(): Doc { return { version: 1, lattice: { ...CONFIG.LATTICE_PRESETS.Square }, points: [], paths: [], elements: [], bindings: [], fills: [], newPathOps: [] }; }
 function copiesOf(d: Doc): { copies: CopyInfo[]; cm: Map<string, Matrix[]> } {
   const cm = new Map<string, Matrix[]>();
-  for (const b of d.bindings) cm.set(b.id, orbit(b.ops, d.elements, d.lattice).matrices);
+  for (const b of d.bindings) cm.set(b.id, ownClones(b.ops, d.elements, d.lattice).matrices);
   const copies: CopyInfo[] = [];
   for (const cell of windowOffsets()) for (const p of d.paths) {
     const Mo = cellMatrix(cell, d.lattice);

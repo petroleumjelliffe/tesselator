@@ -1,7 +1,7 @@
 // Draft mutations. Every function takes a Doc draft and mutates it; nothing here touches UI state.
 import { makeId } from '../ids';
 import { toWorld, toUV, cellOf, nodeUV } from './lattice';
-import { IDENTITY, apply, orbit } from './transform';
+import { IDENTITY, apply, ownClones } from './transform';
 import type { Doc, UV, XY, Cell, Node, Segment, Path, Element, Binding, Fill, Matrix, Style, PathLayer, Box } from '../types';
 
 export const getPoint = (doc: Doc, id: string) => doc.points.find((p) => p.id === id) ?? null;
@@ -260,7 +260,7 @@ export function removeBinding(doc: Doc, id: string): void { doc.bindings = doc.b
 
 export function cloneMatrices(doc: Doc, bindingId: string, cap = 12): { matrices: Matrix[]; open: boolean } {
   const b = getBinding(doc, bindingId);
-  return b ? orbit(b.ops, doc.elements, doc.lattice, cap) : { matrices: [], open: false };
+  return b ? ownClones(b.ops, doc.elements, doc.lattice, cap) : { matrices: [], open: false };
 }
 
 export function addFill(doc: Doc, uv: UV, color: string): Fill {

@@ -13,6 +13,7 @@ export const CONFIG = {
   ZOOM_MAX: 8,
   MAX_HISTORY: 50,
   ORBIT_CAP: 12,
+  CLONE_CAP: 48,         // clones per binding across all groups
   MIN_LATTICE_DET: 400,
   VISIBLE_CELL_RADIUS: 3,
   DEFAULT_GRID_DIVISIONS: 8,

@@ -2,7 +2,7 @@
 // become faces (positive area) and holes (negative loops nested in a face of another component).
 import { CONFIG } from '../config';
 import { windowOffsets, toUV, toWorld } from './lattice';
-import { apply, cellMatrix, compose, orbit } from './transform';
+import { apply, cellMatrix, compose, ownClones } from './transform';
 import { pathWorld, pathCpsWorld } from './paths';
 import type { Doc, XY, Lattice, Fill, WorldSeg, Piece, Loop, Face } from '../types';
 
@@ -27,7 +27,7 @@ export function subCurve(s: WorldSeg, t0: number, t1: number): { a: XY; cp: XY; 
 
 export function collectSegments(doc: Doc, cap = CONFIG.ORBIT_CAP): WorldSeg[] {
   const segs: WorldSeg[] = [];
-  const clones = doc.bindings.map((b) => ({ b, ms: orbit(b.ops, doc.elements, doc.lattice, cap).matrices }));
+  const clones = doc.bindings.map((b) => ({ b, ms: ownClones(b.ops, doc.elements, doc.lattice, cap).matrices }));
   for (const cell of windowOffsets()) {
     const Mo = cellMatrix(cell, doc.lattice);
     for (const path of doc.paths) {

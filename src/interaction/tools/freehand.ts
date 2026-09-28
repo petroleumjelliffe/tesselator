@@ -2,7 +2,7 @@
 import { doc } from '../../state/doc';
 import * as A from '../../actions';
 import * as P from '../../engine/paths';
-import { orbit } from '../../engine/transform';
+import { ownClones } from '../../engine/transform';
 import { CONFIG } from '../../config';
 import { startDrag, type ToolModule } from './common';
 import type { Node, Matrix } from '../../types';
@@ -12,7 +12,7 @@ function previewMatrices(startNode: Node | null): Matrix[] {
   const d = doc.value;
   const extendId = startNode ? P.openEndAt(d, startNode.pointId) : null;
   const chains = extendId ? d.bindings.filter((b) => b.pathId === extendId).map((b) => b.ops) : d.newPathOps;
-  return chains.flatMap((ops) => orbit(ops, d.elements, d.lattice, CONFIG.ORBIT_CAP).matrices);
+  return chains.flatMap((ops) => ownClones(ops, d.elements, d.lattice, CONFIG.ORBIT_CAP).matrices);
 }
 
 export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {

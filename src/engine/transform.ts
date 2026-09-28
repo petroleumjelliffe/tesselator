@@ -79,8 +79,9 @@ export function composite(ops: string[], elements: Element[], lat: Lattice): Mat
   return M;
 }
 
-export function orbit(ops: string[], elements: Element[], lat: Lattice, cap = 12): { matrices: Matrix[]; open: boolean } {
-  const M = composite(ops, elements, lat);
+// Own clones of one group: powers of its composite up to, but excluding, the first lattice translation.
+export function ownClones(group: string[], elements: Element[], lat: Lattice, cap = 12): { matrices: Matrix[]; open: boolean } {
+  const M = composite(group, elements, lat);
   const matrices: Matrix[] = [];
   let P = M;
   for (let k = 1; k <= cap; k++) {
@@ -90,6 +91,29 @@ export function orbit(ops: string[], elements: Element[], lat: Lattice, cap = 12
   }
   return { matrices, open: true };
 }
+
+export type Orbit = { matrices: (Matrix | null)[]; open: boolean };
+
+// Clones of a binding: the product of its groups. Tuple (p1 … pk), not all zero, has matrix Gk^pk ∘ … ∘ G1^p1 and
+// index p1 + (n1+1)·p2 + (n1+1)(n2+1)·p3 + …; matrices[index − 1] holds it, or null when it is the source again or
+// coincides (modulo a lattice translation) with a lower-indexed clone. Truncated at cloneCap in index order.
+export function orbit(groups: string[][], elements: Element[], lat: Lattice, ownCap = 12, cloneCap = 48): Orbit {
+  const own = groups.map((g) => ownClones(g, elements, lat, ownCap));
+  const radix = own.map((o) => o.matrices.length + 1);
+  const total = radix.reduce((a, b) => a * b, 1);
+  const matrices: (Matrix | null)[] = [], kept: Matrix[] = [];
+  let open = own.some((o) => o.open);
+  for (let i = 1; i < total; i++) {
+    if (matrices.length >= cloneCap) { open = true; break; }
+    let M: Matrix = IDENTITY, rest = i;
+    own.forEach((o, g) => { const p = rest % radix[g]; rest = Math.floor(rest / radix[g]); if (p) M = compose(o.matrices[p - 1], M); });
+    const dup = isLatticeTranslation(M, lat) || kept.some((K) => isLatticeTranslation(compose(M, invert(K)), lat));
+    if (dup) matrices.push(null); else { matrices.push(M); kept.push(M); }
+  }
+  return { matrices, open };
+}
+
+export const cloneCount = (o: { matrices: (Matrix | null)[] }): number => o.matrices.filter((m) => m !== null).length;
 
 export type Classified =
   | { kind: 'identity' }

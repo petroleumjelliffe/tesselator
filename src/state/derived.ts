@@ -3,20 +3,20 @@ import { CONFIG } from '../config';
 import { doc } from './doc';
 import { view, viewport, drag } from './ui';
 import { visibleOffsets } from '../engine/lattice';
-import { cellMatrix, compose, orbit } from '../engine/transform';
+import { cellMatrix, compose, ownClones } from '../engine/transform';
 import { anchorsWorld } from '../engine/hit';
 import { computeFaces } from '../engine/regions';
 import type { Matrix, Cell, Copy, CopyInfo, Doc, Face } from '../types';
 
 export const cloneMatrices = computed(() => {
   const d = doc.value, m = new Map<string, Matrix[]>();
-  for (const b of d.bindings) m.set(b.id, orbit(b.ops, d.elements, d.lattice, CONFIG.ORBIT_CAP).matrices);
+  for (const b of d.bindings) m.set(b.id, ownClones(b.ops, d.elements, d.lattice, CONFIG.ORBIT_CAP).matrices);
   return m;
 });
 
 export const openElements = computed(() => {
   const d = doc.value;
-  return new Set(d.elements.filter((e) => orbit([e.id], d.elements, d.lattice, CONFIG.ORBIT_CAP).open).map((e) => e.id));
+  return new Set(d.elements.filter((e) => ownClones([e.id], d.elements, d.lattice, CONFIG.ORBIT_CAP).open).map((e) => e.id));
 });
 
 export const visibleCells = computed<Cell[]>(() =>

@@ -5,7 +5,7 @@ import * as UI from '../state/ui';
 import * as A from '../actions';
 import { canUndo, canRedo, historyVersion } from '../state/history';
 import { cloneMatrices, openElements } from '../state/derived';
-import { orbit, mirrorAngle } from '../engine/transform';
+import { ownClones, mirrorAngle } from '../engine/transform';
 import { latticeAngle } from '../engine/lattice';
 import { getPath, getBinding, getElement, getFill } from '../engine/paths';
 import { exportSvg, serializeDoc, parseDoc } from '../engine/serialize';
@@ -16,7 +16,7 @@ import type { Element, Binding, Lattice } from '../types';
 const SYMBOL = { rotate: '↻', mirror: '⟋', translate: '⇢' } as const;
 export function elementLabel(el: Element): string { return `${SYMBOL[el.kind]}${doc.value.elements.indexOf(el) + 1}`; }
 export function chainLabel(ops: string[]): string { return ops.map((id) => { const e = getElement(doc.value, id); return e ? elementLabel(e) : '?'; }).join(' → ') || '(empty chain)'; }
-const orbitOf = (ops: string[]) => orbit(ops, doc.value.elements, doc.value.lattice, CONFIG.ORBIT_CAP);
+const orbitOf = (ops: string[]) => ownClones(ops, doc.value.elements, doc.value.lattice, CONFIG.ORBIT_CAP);
 
 type BtnProps = { on?: boolean; cls?: string; kbd?: string; title?: string; disabled?: boolean; onClick: () => void; children: ComponentChildren };
 function Btn({ on, cls = '', kbd, title, disabled, onClick, children }: BtnProps) {

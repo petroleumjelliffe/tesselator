@@ -1,7 +1,7 @@
 // Geometric hit-testing and snapping. Pure: takes a doc and a context, returns targets.
 import { CONFIG } from '../config';
 import { toWorld, toUV, cellOf, nodeUV, windowOffsets, snapGrid } from './lattice';
-import { apply, cellMatrix, compose, orbit } from './transform';
+import { apply, cellMatrix, compose, ownClones } from './transform';
 import { getPath, pathNodes, pathWorld, pathCpsWorld, boundsWorld, getElement } from './paths';
 import { faceAt, fillOfFace } from './regions';
 import type { Doc, XY, Lattice, Matrix, Copy, CopyInfo, Cell, Face, HitTarget, Layer, Tool, Selection, Box, BoxHandle, Path } from '../types';
@@ -151,7 +151,7 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
 // Every point copy in the 3×3 window, and every clone point (with its binding and power).
 export function anchorsWorld(doc: Doc, skip?: (a: Anchor) => boolean, cap = CONFIG.ORBIT_CAP): Anchor[] {
   const out: Anchor[] = [], lat = doc.lattice;
-  const clones = doc.bindings.map((b) => ({ b, path: getPath(doc, b.pathId), ms: orbit(b.ops, doc.elements, lat, cap).matrices })).filter((c) => c.path);
+  const clones = doc.bindings.map((b) => ({ b, path: getPath(doc, b.pathId), ms: ownClones(b.ops, doc.elements, lat, cap).matrices })).filter((c) => c.path);
   for (const cell of windowOffsets()) {
     const Mo = cellMatrix(cell, lat);
     for (const pt of doc.points) {

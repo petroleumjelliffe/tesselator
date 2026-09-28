@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { IDENTITY, translation, rotation, reflection, compose, invert, apply, power, cellMatrix, matrixOf, isLatticeTranslation, composite, orbit, classify, toSvg, mirrorAngle, mirrorDirFromAngle } from '../../src/engine/transform';
+import { IDENTITY, translation, rotation, reflection, compose, invert, apply, power, cellMatrix, matrixOf, isLatticeTranslation, composite, orbit, ownClones, cloneCount, classify, toSvg, mirrorAngle, mirrorDirFromAngle } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import type { Element, XY } from '../../src/types';
 
@@ -62,8 +62,8 @@ test('isLatticeTranslation accepts integer lattice steps only', () => {
   expect(isLatticeTranslation(IDENTITY, lat)).toBe(true);
 });
 
-test('orbit sizes match the spec table', () => {
-  const n = (ops: string[], L = lat) => orbit(ops, els, L).matrices.length;
+test('one-group orbits match the original spec table', () => {
+  const n = (ops: string[], L = lat) => cloneCount(orbit([ops], els, L));
   expect(n(['r2'])).toBe(1);
   expect(n(['r3'], hex)).toBe(2);
   expect(n(['r4'])).toBe(3);
@@ -75,14 +75,60 @@ test('orbit sizes match the spec table', () => {
   expect(n(['tc'])).toBe(1);
   expect(n(['t1'])).toBe(0);
   expect(n(['r2', 't12'])).toBe(1);
-  expect(n([])).toBe(0);
-  expect(orbit([], els, lat).open).toBe(false);
+  expect(orbit([], els, lat)).toEqual({ matrices: [], open: false });
+  expect(orbit([[]], els, lat)).toEqual({ matrices: [], open: false });
+  expect(ownClones(['r4'], els, lat).matrices).toHaveLength(3);
 });
 
 test('a 5-fold rotation still closes (R⁵ is the identity); a translation by 0.37 never does and is capped open', () => {
-  expect(orbit(['r5'], els, lat).matrices).toHaveLength(4);
-  const o = orbit(['t37'], els, lat, 12);
-  expect(o.matrices).toHaveLength(12); expect(o.open).toBe(true);
+  expect(cloneCount(orbit([['r5']], els, lat))).toBe(4);
+  const o = orbit([['t37']], els, lat, 12);
+  expect(cloneCount(o)).toBe(12); expect(o.open).toBe(true);
+});
+
+const grp: Element[] = [
+  { id: 'ma', kind: 'mirror', u: 0.5, v: 0.5, du: 1, dv: 0 },     // along a through the centre
+  { id: 'mb', kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 },     // along b through the centre
+  { id: 'md', kind: 'mirror', u: 0.5, v: 0.5, du: 1, dv: 1 },     // diagonal through the centre
+  { id: 'ga', kind: 'mirror', u: 0, v: 0.5, du: 1, dv: 0 },       // mirror along a at v = 1/2 …
+  { id: 'ta', kind: 'translate', u: 0.5, v: 0 },                  // … plus half a = glide
+  { id: 'tb', kind: 'translate', u: 0, v: 0.5 },
+  { id: 'r2', kind: 'rotate', u: 0.5, v: 0.5, n: 2 },
+  { id: 'r2b', kind: 'rotate', u: 0.5, v: 0.5, n: 2 },
+  { id: 'r6', kind: 'rotate', u: 0, v: 0, n: 6 },
+  { id: 'mh', kind: 'mirror', u: 0, v: 0, du: 1, dv: 0 },
+];
+
+test('group products match the amendment table', () => {
+  const n = (groups: string[][], L = lat) => cloneCount(orbit(groups, grp, L));
+  expect(n([['ga', 'ta']])).toBe(1);
+  expect(n([['ga', 'ta'], ['mb']])).toBe(3);
+  expect(n([['ma'], ['mb'], ['md']])).toBe(7);          // the corner-mirror group of order 8
+  expect(n([['r6'], ['mh']], hex)).toBe(11);
+  expect(n([['ma'], ['ma']])).toBe(1);                  // same element twice dedups
+  expect(n([['r2'], ['r2b']])).toBe(1);                 // second group's clone coincides with the first, mod lattice
+  expect(n([['ta'], ['tb']])).toBe(3);
+});
+
+test('clone indices are mixed-radix, stable under appending a group, and null slots mark deduplicated clones', () => {
+  const one = orbit([['ma']], grp, lat), two = orbit([['ma'], ['tb']], grp, lat);
+  expect(two.matrices[0]).toEqual(one.matrices[0]);                                // index 1 unchanged
+  expect(two.matrices).toHaveLength(3);
+  near(apply(two.matrices[2]!, { x: 10, y: 20 }), apply(matrixOf(grp[5], lat), apply(matrixOf(grp[0], lat), { x: 10, y: 20 })));   // index 3 = tb ∘ ma
+  const dup = orbit([['ma'], ['ma']], grp, lat);
+  expect(dup.matrices).toEqual([dup.matrices[0], null, null]);                     // (0,1) equals (1,0); (1,1) is the identity
+  expect(dup.matrices[0]).not.toBe(null);
+});
+
+test('the product is truncated at the clone cap in index order and reported open', () => {
+  const many: Element[] = [
+    { id: 'a', kind: 'rotate', u: 0, v: 0, n: 6 }, { id: 'b', kind: 'rotate', u: 0.5, v: 0.5, n: 6 }, { id: 'c', kind: 'rotate', u: 1 / 3, v: 1 / 3, n: 6 },
+  ];
+  const o = orbit([['a'], ['b'], ['c']], many, hex, 12, 48);
+  expect(o.matrices).toHaveLength(48);
+  expect(o.open).toBe(true);
+  const small = orbit([['a'], ['b'], ['c']], many, hex, 12, 5);
+  expect(small.matrices).toHaveLength(5); expect(small.open).toBe(true);
 });
 
 test('composite applies ops left to right', () => {
