@@ -61,7 +61,14 @@ export function setGhostOpacity(x: number): boolean { UI.prefs.value = { ...UI.p
 // that path with no segments; only the pen may own such a path (spec §9), so restoring it resumes drawing it.
 export function undo(): boolean { UI.pen.value = null; UI.cursor.value = null; const ok = hUndo(); rearmPen(); return ok; }
 export function redo(): boolean { UI.pen.value = null; UI.cursor.value = null; const ok = hRedo(); rearmPen(); return ok; }
-function rearmPen(): void { const p = doc.value.paths.find((q) => q.segments.length === 0); if (p) UI.pen.value = { pathId: p.id }; }
+// A zero-segment path exists only while the Pen owns it, so restoring one restores the Pen: tool, layer and pen state together.
+function rearmPen(): void {
+  const p = doc.value.paths.find((q) => q.segments.length === 0);
+  if (!p) return;
+  if (UI.layer.value !== 'drawing') { UI.layer.value = 'drawing'; if (UI.selection.value?.kind === 'element') UI.selection.value = null; }
+  UI.tool.value = 'pen';
+  UI.pen.value = { pathId: p.id };
+}
 
 // --- pen
 

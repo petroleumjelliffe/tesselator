@@ -155,6 +155,19 @@ test('undo after two pen clicks resumes drawing the one-node path instead of lea
   A.redo(); expect(doc.value.paths).toHaveLength(0);         // endPen's delete cleared the redo stack
 });
 
+test('undo that restores a pen path in progress also restores the Pen tool and Drawing layer', () => {
+  fresh();
+  A.penClickEmpty(W(0.1, 0.1), false);
+  A.setTool('select');                                       // endPen commits the delete of the one-node path
+  expect(doc.value.paths).toHaveLength(0);
+  A.setLayer('construction');
+  expect(A.undo()).toBe(true);
+  expect(doc.value.paths).toHaveLength(1);
+  expect(UI.tool.value).toBe('pen');
+  expect(UI.layer.value).toBe('drawing');
+  expect(UI.pen.value).toEqual({ pathId: doc.value.paths[0].id });
+});
+
 test('a region straddling the cell edge is one fill from either side, seeded inside the base cell', () => {
   fresh();
   for (const p of [W(0.75, 0.25), W(1.25, 0.25), W(1.25, 0.75), W(0.75, 0.75)]) A.penClickEmpty(p, false);
