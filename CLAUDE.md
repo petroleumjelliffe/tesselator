@@ -4,53 +4,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A browser-based tessellation editor: vanilla JavaScript ES modules + SVG, no framework, no build step, no dependencies, no tests. Entry point is `index.html`, which loads `js/main.js` as a module.
+A browser-based tessellation editor: Preact + `@preact/signals`, TypeScript (strict), Vite. Runtime dependencies are only `preact` and `@preact/signals`. `?example` in the URL loads a demo document; `?blank` starts empty; otherwise the last autosaved document is restored from localStorage.
 
 ## Running it
 
-ES modules won't load from `file://`, so serve the directory over HTTP:
-
 ```
-python3 -m http.server 5173 --bind 127.0.0.1
+npm run dev      # http://127.0.0.1:5173/ with hot reload
+npm test         # Vitest: engine, state, actions
+npm run e2e      # Playwright is configured (tests/e2e/, reuses a dev server on 5173) but has no specs yet; flows are listed in the plan
+npm run build    # tsc --noEmit && vite build → dist/
 ```
 
-Then open http://127.0.0.1:5173/. There is no hot reload; hard-refresh after edits (Python's server sends cache headers).
+## Design documents
 
-## Live code vs. dead code
+- `docs/superpowers/specs/2026-09-27-engine-rebuild-design.md` is the engine spec and the behavioural reference.
+- `docs/superpowers/plans/2026-09-28-engine-rebuild-preact.md` is the implementation plan it was built from.
+- The Claude Design project "Tessellation Designer v2 Symmetry" was the original prototype.
 
-Only `index.html` and `js/*.js` are live. Ignore these unless asked:
+## Model (all lattice coordinates)
 
-- Root-level `geometry.js`, `state.js`, `transforms.js` — an older class-based design (`StateManager`, `GeometryManager`, `TransformManager`) that nothing imports.
-- `tessellation_editor_phase3_delete.html` — a self-contained single-file prototype that predates the `js/` split.
+Everything in the document is in lattice `(u, v)` coordinates; world position is `u·a + v·b` for the lattice vectors in `doc.lattice`. World space exists only at render and hit-test time, so changing the lattice deforms the whole design affinely.
 
-`FEATURE_SPEC.md` is the roadmap (bezier curves, undo/redo). It describes cubic beziers, but the implementation uses quadratic (single `cp`).
+- **Points** are `(u, v)` in the base cell; a path's nodes are `{ pointId, cell }`, so one point can appear in several cells and a path can leave the tile on one edge and continue from the other.
+- **Paths** are `{ start, segments: [{ to, cp }] }`. `cp` is a quadratic control point relative to the previous node's cell origin. Closed = last node is the start node in the same cell. `layer` is `structure` (below fills) or `detail` (above).
+- **Elements** are the three primitive isometries: `translate {u, v}`, `mirror {u, v, du, dv}` (centre and lattice direction), `rotate {u, v, n}` (1/n turn). There is no glide kind: a glide is a chain `[mirror, translate]`. The lattice is not an element.
+- **Bindings** `{ pathId, ops }` are ordered chains. Clones are never stored: `orbit()` in `src/engine/transform.ts` returns the powers of the chain's composite up to the first lattice translation (cap 12, `open` if it never closes). `doc.newPathOps` lists chains every new path receives.
+- **Fills** are seed points; `src/engine/regions.ts` builds a planar arrangement of every copy in the 3×3 window and each seed paints the face containing it (faces carry holes; even-odd rendering). Seeds are placed at the face centroid when it lies inside.
+- **Copies.** Everything on screen is a `Copy { cell, bindingId, power }` of a path with matrix `cellMatrix ∘ cloneMatrix`. Selection carries the copy the user clicked; handles render there and edits map back through the copy's inverse.
 
 ## Architecture
 
-**State + full re-render.** `js/state.js` exports one mutable `state` object. Every handler mutates it directly, then calls `render()`, which clears the SVG and rebuilds it from scratch (`js/render.js`). There is no diffing and no event bus. Pass the render callback from `main.js` into `createEventHandlers` rather than importing render into interaction code. `render()` takes an `afterRender` callback; `main.js` uses it to refresh the HTML chrome (selection bar, hint, counts, undo buttons) after every paint.
+- `src/engine/*` is pure: takes a `Doc` (or a draft) and returns values. Matrices are `[a, b, c, d, e, f]` in SVG order; `compose(A, B)` applies B then A.
+- `src/state/doc.ts` holds the committed document in a signal; `draft()` clones it. `src/state/history.ts` commits, records one entry per gesture (`beginGesture` / `endGesture`, `abortGesture` reverts), and undoes by reference. `src/state/derived.ts` has the computeds: clone matrices, visible cells, copies, anchors, and `faces` (recomputed on the next frame after a commit, never while a drag is set). `src/state/persist.ts` autosaves the document and prefs.
+- `src/actions.ts` holds every user-level mutation as `mutate(draft => ...)`. Chrome and tools call these.
+- `src/interaction/pointer.ts` is one listener set on the SVG: hit-test geometrically (`src/engine/hit.ts`), dispatch to `src/interaction/tools/*` (`onDown/onMove/onUp`), two pointers = pan and pinch (a second finger reverts a drag), thresholds double for touch.
+- `src/components/Canvas.tsx` renders the base cell once into `<defs>` (`#cell-structure`, `#cell-fills`, `#cell-detail`) and places `<use>` per visible cell; overlays (halos, handles, points, elements) are drawn at the selected copy. `src/components/Chrome.tsx` is the floating chrome.
 
-**Undo/redo** (`js/history.js`) is snapshot-based: `pushHistory()` serialises `geometries` + `subtiles` and must be called *before* a mutation. Drags push once on their first `pointermove` via `state.dragging.historyPushed`. Restoring a snapshot clears all selection.
+## Shortcuts
 
-**Actions** (`js/actions.js`) hold every user-level mutation (clone, rotate, mirror, delete, curve toggle, undo/redo, toggles). Both the toolbar (`main.js`) and keyboard handler (`interaction.js`) call these so the two stay in sync; each action pushes history itself and returns whether it did anything.
+`Tab` layer · `V` `P` `F` `B` tools · `O` `M` `T` add elements · `[` `]` rotate a mirror · `G` snap · `Esc`/`Enter` end pen · `Space`+drag moves elements · `⌫` delete hovered point or selection · `⌘Z` / `⇧⌘Z` · `⌘0` fit · wheel pans, `⌘`+wheel zooms, two fingers pan and pinch. The `?` sheet in `Chrome.tsx` must stay in sync with `onKeyDown` in `pointer.ts`.
 
-**Data model (branch `feature/subtiles`).** Two arrays:
+## Known limitations
 
-- `geometries`: `{id, points:[{id,x,y}], segments:[{type:'line'} | {type:'bezier', cp:{x,y}}], closed}`. Points are in **subtile-local** coordinates. `segments[i]` joins `points[i]` to `points[i+1]`; a closed shape has one extra segment back to `points[0]`. Keep `points` and `segments` in sync when inserting/deleting (see `deletePoint` in `js/geometry.js`).
-- `subtiles`: `{id, geometryId, x, y, width, height, rotation, mirrorX, mirrorY}`. A subtile is a rectangular container placed in world space. "Clone linked" creates a new subtile pointing at the **same** `geometryId`, so edits to points show up in every clone. Deleting the last subtile referencing a geometry deletes the geometry.
-
-`main` still uses the older `instances` model (`{geometryId, transform:{tx,ty,rotation,mirrorX,mirrorY}}`); this branch replaced it with subtiles.
-
-**Coordinate spaces** (`js/transform.js`): screen (pointer event px) → world (divide out `state.pan`/`state.zoom`) → subtile-local via `worldToSubtileLocal`, which inverts the subtile's translate + rotate/mirror about its box centre (`subtileTransformString` produces the matching SVG transform). Rotation/mirroring are rigid, so distance thresholds still work in local space. Hit-test thresholds and handle radii in `js/config.js` are screen-space pixels; divide by `state.zoom` when comparing in world space, as the existing code does. Grid snapping is relative to the subtile (`width / GRID_DIVISIONS`), not the world.
-
-**Base tile** is not stored; `calculateBaseTileBounds()` derives it as the bounding box of all subtile corners (after rotation/mirroring). The optional 3×3 repeat (`3` key, or the Tile popover) draws frames around it plus ghosted copies of every shape in the eight neighbouring cells.
-
-**Interaction** (`js/interaction.js`): behavior is switched on `state.activeTool`. The internal names are `draw` / `edit` / `transform`; the UI calls them Pen (`P`, alias `D`) / Edit (`E`) / Select (`V`, alias `T`). In edit mode hit-test priority is segment handles → points → segments. Segment handles are the curve's control point or, for straight segments, the midpoint; dragging a midpoint converts the segment to a curve on first move, and double-clicking a curve handle straightens it. A second click on an already-selected segment inserts a point. In Pen mode, clicking the first point closes the shape; a repeat click on the last point is ignored so double-click-to-finish doesn't add a stray point. Drags go through `state.dragging.type`. Keyboard shortcuts live in `onKeyDown`; the `?` help popover in `index.html` lists them and should be kept in sync. `C` toggles the curve when a segment is selected in Edit mode, otherwise clones the selected tile in Select mode.
-
-## UI
-
-The look follows the Claude Design prototype "Tessellation Designer": warm light palette (CSS custom properties in `index.html`), floating panels over a full-viewport SVG, a contextual selection bar that changes with the tool and selection, a bottom hint bar with counts, and Tile / `?` popovers top-right. Strokes use `vector-effect: non-scaling-stroke`; handle radii are divided by `state.zoom` so everything stays a constant screen size. The prototype's lattice vectors, freehand tool, bounding-box scaling and pivot/half-step clone locks are **not** implemented because the engine has no lattice model.
-
-## Known gaps in this branch
-
-- `selectedResizeHandle` and the `resizeHandle` drag type are declared in state but not implemented.
-- Edge snapping when dragging subtiles is a TODO in `onPointerMove`.
+- Clones are not composed across bindings (no group closure).
+- Collinear overlapping edges that are not identical are not split against each other.
+- Only the base cell's copies are hit-tested for segments in the visible cells; points are hit in the 3×3 window.
