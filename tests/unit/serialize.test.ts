@@ -51,3 +51,35 @@ test('grid export covers the requested cells with a rect clip', () => {
   expect(() => exportSvg(exampleDoc(), { kind: 'grid', rows: 65, cols: 1 })).toThrow();
   expect(() => exportSvg(exampleDoc(), { kind: 'grid', rows: 0, cols: 3 })).toThrow();
 });
+
+test('a node whose pointId is not in points is refused', () => {
+  const d = exampleDoc();
+  const bad = { ...d, paths: d.paths.map((p, i) => (i === 0 ? { ...p, start: { ...p.start, pointId: 'pt_missing' } } : p)) };
+  expect(parseDoc(JSON.stringify(bad))).toBe(null);
+  const bad2 = { ...d, paths: d.paths.map((p, i) => (i === 0 ? { ...p, segments: p.segments.map((s, j) => (j === 0 ? { ...s, to: { ...s.to, pointId: 'pt_missing' } } : s)) } : p)) };
+  expect(parseDoc(JSON.stringify(bad2))).toBe(null);
+});
+
+test('a binding whose pathId is not in paths is refused', () => {
+  const d = exampleDoc();
+  expect(d.bindings.length).toBeGreaterThan(0);
+  const bad = { ...d, bindings: d.bindings.map((b, i) => (i === 0 ? { ...b, pathId: 'path_missing' } : b)) };
+  expect(parseDoc(JSON.stringify(bad))).toBe(null);
+});
+
+test('unknown element ids are dropped from binding ops and newPathOps; the document is accepted', () => {
+  const d = exampleDoc();
+  const odd = { ...d, bindings: d.bindings.map((b, i) => (i === 0 ? { ...b, ops: [...b.ops, 'el_missing'] } : b)), newPathOps: [...d.newPathOps, ['el_missing'], [d.elements[0].id, 'el_missing']] };
+  const parsed = parseDoc(JSON.stringify(odd))!;
+  expect(parsed).not.toBe(null);
+  expect(parsed.bindings[0].ops).toEqual(d.bindings[0].ops);
+  expect(parsed.newPathOps).toEqual([...d.newPathOps, [d.elements[0].id]]);
+});
+
+test('exported colours are escaped so a hostile colour string cannot break the SVG', () => {
+  const d = exampleDoc();
+  const hostile = { ...d, paths: d.paths.map((p, i) => (i === 0 ? { ...p, style: { ...p.style, color: '"><script>' } } : p)) };
+  const svg = exportSvg(hostile, { kind: 'tile' });
+  expect(svg).not.toContain('<script>');
+  expect(svg).toContain('&quot;&gt;&lt;script&gt;');
+});

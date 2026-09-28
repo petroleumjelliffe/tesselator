@@ -12,6 +12,11 @@ function reject(key: string, raw: string) {
   try { localStorage.setItem(`${key}-rejected`, raw); localStorage.removeItem(key); } catch { /* storage unavailable */ }
 }
 
+// Move the stored document aside (to the -rejected key) when it passed parsing but still could not be used.
+export function rejectStoredDoc(): void {
+  try { const raw = localStorage.getItem(CONFIG.STORAGE_DOC_KEY); if (raw) reject(CONFIG.STORAGE_DOC_KEY, raw); } catch { /* storage unavailable */ }
+}
+
 export function restore(): boolean {
   let loaded = false;
   try {
@@ -27,7 +32,8 @@ export function restore(): boolean {
         UI.prefs.value = { ...UI.prefs.value, ...s.prefs };
         if (s.tool && ['select', 'pen', 'freehand', 'fill'].includes(s.tool)) UI.tool.value = s.tool;
         if (s.sublayer === 'structure' || s.sublayer === 'detail') UI.sublayer.value = s.sublayer;
-        if (s.view && Number.isFinite(s.view.zoom) && s.view.zoom > 0) UI.view.value = s.view;
+        const v = s.view;
+        if (v && Number.isFinite(v.zoom) && v.zoom > 0 && v.pan && Number.isFinite(v.pan.x) && Number.isFinite(v.pan.y)) UI.view.value = { zoom: v.zoom, pan: { x: v.pan.x, y: v.pan.y } };
       } else reject(CONFIG.STORAGE_PREFS_KEY, p);
     }
   } catch (err) { console.warn('restore failed', err); }

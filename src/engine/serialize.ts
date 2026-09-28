@@ -4,12 +4,13 @@ import { IDENTITY, apply, orbit } from './transform';
 import { pathWorld, pathCpsWorld } from './paths';
 import { computeFaces, fillFace, facePathData } from './regions';
 import { pathD } from './svgpath';
-import type { Doc, XY, Cell, Lattice, Box } from '../types';
+import type { Doc, XY, Cell, Lattice, Box, Point, Path, Binding, Element } from '../types';
 
 export function serializeDoc(d: Doc): string { return JSON.stringify(d); }
 
-// Per-entity validation against the Doc shapes in types.ts. Cross-references (e.g. a point id a
-// path's node actually points at) are out of scope; every value's own shape is checked strictly.
+// Per-entity validation against the Doc shapes in types.ts, then references: every node's pointId must name a
+// point and every binding's pathId a path (a dangling one would throw in render on every reload); unknown element
+// ids in binding ops and newPathOps are dropped rather than refused, as deleteElement would have done.
 const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 const isStr = (x: unknown): x is string => typeof x === 'string';
 const isCell = (x: any): boolean => !!x && isNum(x.c) && isNum(x.r);
@@ -45,13 +46,21 @@ export function parseDoc(json: string): Doc | null {
     if (!o.bindings.every(isBinding)) return null;
     if (!o.fills.every(isFill)) return null;
     if (o.newPathOps !== undefined && !isOpsList(o.newPathOps)) return null;
-    return { version: 1, lattice: { ax: l.ax, ay: l.ay, bx: l.bx, by: l.by }, points: o.points, paths: o.paths, elements: o.elements, bindings: o.bindings, fills: o.fills, newPathOps: Array.isArray(o.newPathOps) ? o.newPathOps : [] };
+    const pointIds = new Set<string>(o.points.map((pt: Point) => pt.id));
+    for (const path of o.paths as Path[]) if (!pointIds.has(path.start.pointId) || path.segments.some((sg) => !pointIds.has(sg.to.pointId))) return null;
+    const pathIds = new Set<string>(o.paths.map((path: Path) => path.id));
+    if (!(o.bindings as Binding[]).every((b) => pathIds.has(b.pathId))) return null;
+    const elIds = new Set<string>(o.elements.map((e: Element) => e.id));
+    const known = (ids: string[]) => ids.filter((id) => elIds.has(id));
+    const bindings = (o.bindings as Binding[]).map((b) => ({ ...b, ops: known(b.ops) }));
+    const newPathOps = (Array.isArray(o.newPathOps) ? (o.newPathOps as string[][]) : []).map(known).filter((c) => c.length);
+    return { version: 1, lattice: { ax: l.ax, ay: l.ay, bx: l.bx, by: l.by }, points: o.points, paths: o.paths, elements: o.elements, bindings, fills: o.fills, newPathOps };
   } catch { return null; }
 }
 
 export type ExportMode = { kind: 'tile' } | { kind: 'grid'; rows: number; cols: number };
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const bbox = (pts: XY[]): Box => ({ x0: Math.min(...pts.map((p) => p.x)), y0: Math.min(...pts.map((p) => p.y)), x1: Math.max(...pts.map((p) => p.x)), y1: Math.max(...pts.map((p) => p.y)) });
 
 function cellDefs(d: Doc): string {
