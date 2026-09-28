@@ -2773,7 +2773,7 @@ function Diamonds() {
 
 function Points() {
   const d = doc.value, z = view.value.zoom, sel = selection.value, h = hover.value, pn = pen.value;
-  const showAll = layer.value === 'drawing' && (!!pn || tool.value === 'freehand');
+  const showAll = layer.value === 'drawing' && (!!pn || tool.value === 'pen' || tool.value === 'freehand');
   const show = new Set<string>();
   if (sel && sel.kind === 'points') for (const id of sel.ids) show.add(id);
   const penPath = pn ? getPath(d, pn.pathId) : null, selPath = sel && sel.kind === 'path' ? getPath(d, sel.id) : null;
