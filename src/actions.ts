@@ -57,8 +57,11 @@ export function toggleAddToSelection(): boolean { UI.addToSelection.value = !UI.
 export function toggleHelp(): boolean { UI.showHelp.value = !UI.showHelp.value; return true; }
 export function setGridDivisions(n: number): boolean { UI.prefs.value = { ...UI.prefs.value, gridDivisions: Math.max(2, Math.min(16, Math.round(n))) }; return true; }
 export function setGhostOpacity(x: number): boolean { UI.prefs.value = { ...UI.prefs.value, ghostOpacity: Math.max(0.1, Math.min(1, x)) }; return true; }
-export function undo(): boolean { endPen(); return hUndo(); }
-export function redo(): boolean { endPen(); return hRedo(); }
+// Undo/redo drop the pen without committing (a commit here would itself be undone). A snapshot taken mid-drawing holds
+// that path with no segments; only the pen may own such a path (spec §9), so restoring it resumes drawing it.
+export function undo(): boolean { UI.pen.value = null; UI.cursor.value = null; const ok = hUndo(); rearmPen(); return ok; }
+export function redo(): boolean { UI.pen.value = null; UI.cursor.value = null; const ok = hRedo(); rearmPen(); return ok; }
+function rearmPen(): void { const p = doc.value.paths.find((q) => q.segments.length === 0); if (p) UI.pen.value = { pathId: p.id }; }
 
 // --- pen
 

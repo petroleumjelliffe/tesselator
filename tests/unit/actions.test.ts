@@ -132,3 +132,25 @@ test('straightenPath clears every curved segment on a path, and is a no-op once 
   expect(doc.value.paths[0].segments.every((s) => s.cp === null)).toBe(true);
   expect(A.straightenPath(path.id)).toBe(false);
 });
+
+test('undo right after the first pen click removes the one-node path and its point', () => {
+  fresh();
+  A.penClickEmpty(W(0.1, 0.1), false);
+  expect(doc.value.paths).toHaveLength(1); expect(UI.pen.value).toBeTruthy();
+  expect(A.undo()).toBe(true);
+  expect(doc.value.paths).toHaveLength(0);
+  expect(doc.value.points).toHaveLength(0);
+  expect(UI.pen.value).toBe(null);
+});
+
+test('undo after two pen clicks resumes drawing the one-node path instead of leaving it stranded', () => {
+  fresh();
+  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false);
+  A.undo();
+  const path = doc.value.paths[0];
+  expect(path.segments).toHaveLength(0);
+  expect(UI.pen.value).toEqual({ pathId: path.id });
+  expect(() => A.penClickNode(path.start)).not.toThrow();   // repeat of the last node ends the pen, which deletes the empty path
+  expect(doc.value.paths).toHaveLength(0); expect(UI.pen.value).toBe(null);
+  A.redo(); expect(doc.value.paths).toHaveLength(0);         // endPen's delete cleared the redo stack
+});

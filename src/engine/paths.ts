@@ -126,7 +126,7 @@ export function deletePath(doc: Doc, pathId: string): void {
 }
 
 export function openEndAt(doc: Doc, pointId: string): string | null {
-  const p = doc.paths.find((q) => !isClosed(q) && (q.start.pointId === pointId || q.segments[q.segments.length - 1]?.to.pointId === pointId));
+  const p = doc.paths.find((q) => q.segments.length > 0 && !isClosed(q) && (q.start.pointId === pointId || q.segments[q.segments.length - 1].to.pointId === pointId));
   return p ? p.id : null;
 }
 
@@ -145,7 +145,7 @@ export function reversePath(p: Path): void {
 // Make `pointId` the last node, placed in `cell`, reversing and shifting cells as needed. Relative cps need no change on a shift.
 export function orientToEnd(doc: Doc, pathId: string, pointId: string, cell: Cell): void {
   const p = getPath(doc, pathId);
-  if (!p) return;
+  if (!p || !p.segments.length) return;
   if (p.segments[p.segments.length - 1].to.pointId !== pointId) reversePath(p);
   const last = p.segments[p.segments.length - 1].to;
   const dc = cell.c - last.cell.c, dr = cell.r - last.cell.r;

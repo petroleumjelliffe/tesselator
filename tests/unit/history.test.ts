@@ -80,3 +80,14 @@ test('faces are not recomputed while a drag is set, and catch up when it ends', 
   drag.value = null;
   expect(faces.value).toHaveLength(9);
 });
+
+test('undo during a gesture ends it, so later commits are separate history entries', () => {
+  fresh();
+  beginGesture();
+  const d1 = draft(); P.addPoint(d1, { u: 0.1, v: 0.1 }); commit(d1);
+  expect(undo()).toBe(true);
+  const d2 = draft(); P.addPoint(d2, { u: 0.2, v: 0.2 }); commit(d2);
+  const d3 = draft(); P.addPoint(d3, { u: 0.3, v: 0.3 }); commit(d3);
+  expect(undo()).toBe(true);
+  expect(doc.value).toBe(d2);
+});

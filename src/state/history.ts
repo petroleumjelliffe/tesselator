@@ -35,6 +35,7 @@ export function abortGesture(): void {
 }
 
 export function undo(): boolean {
+  endGesture();   // the drag that owned the gesture is cleared below; its later commits must not coalesce
   if (!past.length) return false;
   future.push(doc.value);
   doc.value = past.pop()!;
@@ -44,6 +45,7 @@ export function undo(): boolean {
 }
 
 export function redo(): boolean {
+  endGesture();
   if (!future.length) return false;
   past.push(doc.value);
   doc.value = future.pop()!;

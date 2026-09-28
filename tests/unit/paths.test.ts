@@ -175,3 +175,10 @@ test('fills are added and removed by id', () => {
   P.removeFill(doc, f.id);
   expect(doc.fills).toHaveLength(0);
 });
+
+test('openEndAt ignores a path with no segments', () => {
+  const doc = makeDoc();
+  const n = P.addPoint(doc, { u: 0.1, v: 0.1 });
+  P.startPath(doc, n, style);
+  expect(P.openEndAt(doc, n.pointId)).toBe(null);
+});

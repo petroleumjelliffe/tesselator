@@ -76,6 +76,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
     if (nav) { if (pointers.size < 2) nav = null; if (pointers.size === 0) navDead = false; return; }
     if (pointers.size === 0) navDead = false;
     const d = UI.drag.value;
+    if (dragTool && !d) { dragTool = null; endGesture(); return; }   // drag cleared under us (undo/redo): close the gesture anyway
     if (!d || d.pointerId !== e.pointerId || !dragTool) return;
     const t = dragTool;
     UI.drag.value = null; dragTool = null;
@@ -87,7 +88,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
   function onCancel(e?: PointerEvent) {
     if (e) pointers.delete(e.pointerId); else pointers.clear();
     if (!pointers.size) { nav = null; navDead = false; }
-    if (UI.drag.value) { UI.drag.value = null; dragTool = null; endGesture(); UI.fillPreview.value = null; }
+    if (UI.drag.value || dragTool) { UI.drag.value = null; dragTool = null; endGesture(); UI.fillPreview.value = null; }
   }
 
   function onDblClick(e: MouseEvent) {
