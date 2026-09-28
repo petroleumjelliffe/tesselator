@@ -1,6 +1,7 @@
 import type { JSX } from 'preact';
-import { useRef } from 'preact/hooks';
+import { useRef, useEffect } from 'preact/hooks';
 import { CONFIG } from '../config';
+import { attachPointer } from '../interaction/pointer';
 import { doc } from '../state/doc';
 import { layer, tool, selection, hover, drag, pen, cursor, view, prefs, space, fillPreview } from '../state/ui';
 import { cloneMatrices, visibleCells, copies, copyMatrix, faces } from '../state/derived';
@@ -250,6 +251,7 @@ const bboxCursor = (i: number) => ['nwse-resize', 'nesw-resize', 'nwse-resize', 
 
 export function Canvas() {
   const ref = useRef<SVGSVGElement>(null);
+  useEffect(() => attachPointer(ref.current!), []);
   const v = view.value;
   const drawing = layer.value === 'drawing';
   return (
