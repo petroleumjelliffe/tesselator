@@ -1,6 +1,6 @@
 import { signal } from '@preact/signals';
 import { CONFIG } from '../config';
-import type { Layer, Tool, PathLayer, Selection, HitTarget, Drag, XY, View, Prefs, PointerKind, Copy } from '../types';
+import type { Layer, Tool, PathLayer, Selection, HitTarget, Drag, XY, View, Prefs, PointerKind, Copy, Lattice } from '../types';
 
 export const layer = signal<Layer>('drawing');
 export const sublayer = signal<PathLayer>('structure');
@@ -31,3 +31,12 @@ export function selectedPathId(): string | null { const s = selection.value; ret
 export function selectedCopy(): Copy | null { const s = selection.value; return s && s.kind === 'path' ? s.copy : null; }
 export function selectedPointIds(): string[] { const s = selection.value; return s && s.kind === 'points' ? s.ids : []; }
 export function selectedElementId(): string | null { const s = selection.value; return s && s.kind === 'element' ? s.id : null; }
+
+export function fitView(lat: Lattice): void {
+  const xs = [0, lat.ax, lat.bx, lat.ax + lat.bx], ys = [0, lat.ay, lat.by, lat.ay + lat.by];
+  const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+  const { width, height } = viewport.value;
+  const zoom = Math.min(CONFIG.ZOOM_MAX, Math.max(CONFIG.ZOOM_MIN, Math.min(width / (w * 1.6), height / (h * 1.6)) || 1));
+  const cx = (Math.max(...xs) + Math.min(...xs)) / 2, cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+  view.value = { zoom, pan: { x: width / 2 - cx * zoom, y: height / 2 - cy * zoom } };
+}
