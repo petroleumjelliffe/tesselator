@@ -33,6 +33,7 @@ const els: Element[] = [
   { id: 't13', kind: 'translate', u: 1 / 3, v: 0 },
   { id: 'tc', kind: 'translate', u: 0.5, v: 0.5 },
   { id: 't1', kind: 'translate', u: 1, v: 0 },
+  { id: 't37', kind: 'translate', u: 0.37, v: 0 },
 ];
 
 test('matrixOf builds each element kind in world space from lattice coordinates', () => {
@@ -68,7 +69,7 @@ test('orbit sizes match the spec table', () => {
   expect(n(['r6'], hex)).toBe(5);
   expect(n(['m'])).toBe(1);
   expect(n(['m', 't12'])).toBe(1);
-  expect(n(['m', 't13'])).toBe(2);
+  expect(n(['m', 't13'])).toBe(5);   // odd powers are reflected copies, even powers translations; M⁶ is the first lattice translation
   expect(n(['t12'])).toBe(1);
   expect(n(['tc'])).toBe(1);
   expect(n(['t1'])).toBe(0);
@@ -77,8 +78,9 @@ test('orbit sizes match the spec table', () => {
   expect(orbit([], els, lat).open).toBe(false);
 });
 
-test('an element that never closes is capped and flagged open', () => {
-  const o = orbit(['r5'], els, lat, 12);
+test('a 5-fold rotation still closes (R⁵ is the identity); a translation by 0.37 never does and is capped open', () => {
+  expect(orbit(['r5'], els, lat).matrices).toHaveLength(4);
+  const o = orbit(['t37'], els, lat, 12);
   expect(o.matrices).toHaveLength(12); expect(o.open).toBe(true);
 });
 
