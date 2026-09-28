@@ -4,6 +4,7 @@ import { doc } from './doc';
 import { view, viewport } from './ui';
 import { visibleOffsets } from '../engine/lattice';
 import { cellMatrix, compose, orbit } from '../engine/transform';
+import { anchorsWorld } from '../engine/hit';
 import type { Matrix, Cell, Copy, CopyInfo, Doc } from '../types';
 
 export const cloneMatrices = computed(() => {
@@ -42,3 +43,5 @@ export const copies = computed<CopyInfo[]>(() => {
   }
   return out;
 });
+
+export const anchors = computed(() => anchorsWorld(doc.value));
