@@ -69,11 +69,11 @@ test('a binding whose pathId is not in paths is refused', () => {
 
 test('unknown element ids are dropped from binding ops and newPathOps; the document is accepted', () => {
   const d = exampleDoc();
-  const odd = { ...d, bindings: d.bindings.map((b, i) => (i === 0 ? { ...b, ops: [...b.ops, 'el_missing'] } : b)), newPathOps: [...d.newPathOps, ['el_missing'], [d.elements[0].id, 'el_missing']] };
+  const odd = { ...d, bindings: d.bindings.map((b, i) => (i === 0 ? { ...b, ops: [...b.ops, 'el_missing'] } : b)), newPathOps: [...d.newPathOps, ['el_missing'], [d.elements[0].id, 'el_missing'], []] };
   const parsed = parseDoc(JSON.stringify(odd))!;
   expect(parsed).not.toBe(null);
   expect(parsed.bindings[0].ops).toEqual(d.bindings[0].ops);
-  expect(parsed.newPathOps).toEqual([...d.newPathOps, [d.elements[0].id]]);
+  expect(parsed.newPathOps).toEqual([...d.newPathOps, [d.elements[0].id], []]);   // a chain emptied by the filter goes; a stored empty chain stays
 });
 
 test('exported colours are escaped so a hostile colour string cannot break the SVG', () => {

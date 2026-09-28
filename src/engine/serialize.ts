@@ -53,7 +53,7 @@ export function parseDoc(json: string): Doc | null {
     const elIds = new Set<string>(o.elements.map((e: Element) => e.id));
     const known = (ids: string[]) => ids.filter((id) => elIds.has(id));
     const bindings = (o.bindings as Binding[]).map((b) => ({ ...b, ops: known(b.ops) }));
-    const newPathOps = (Array.isArray(o.newPathOps) ? (o.newPathOps as string[][]) : []).map(known).filter((c) => c.length);
+    const newPathOps = (Array.isArray(o.newPathOps) ? (o.newPathOps as string[][]) : []).flatMap((c) => { const k = known(c); return k.length || !c.length ? [k] : []; });   // an empty chain is legal; one emptied here is not
     return { version: 1, lattice: { ax: l.ax, ay: l.ay, bx: l.bx, by: l.by }, points: o.points, paths: o.paths, elements: o.elements, bindings, fills: o.fills, newPathOps };
   } catch { return null; }
 }
