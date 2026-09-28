@@ -210,6 +210,7 @@ export function scaleMatrix(ax: number, ay: number, sx: number, sy: number): Mat
 
 export function scaleFor(h: BoxHandle, p: XY, free: boolean): { sx: number; sy: number } {
   const vx = h.x - h.ax, vy = h.y - h.ay;
+  if (!vx && !vy) return { sx: 1, sy: 1 };
   const clamp = (v: number) => (Math.abs(v) < 0.05 ? (v < 0 ? -0.05 : 0.05) : v);
   let sx = 1, sy = 1;
   if (vx && vy) {
