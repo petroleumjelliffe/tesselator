@@ -94,7 +94,7 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
     const knob = { x: (box.x0 + box.x1) / 2, y: box.y0 - CONFIG.BBOX_ROT_OFFSET / z };
     if (dist(w, knob) <= rPoint) return { kind: 'bboxrot' };
   }
-  if ((ctx.tool === 'select' || ctx.tool === 'pen') && selPath && selM && sel && sel.kind === 'path') {
+  if (ctx.tool === 'select' && selPath && selM && sel && sel.kind === 'path') {
     const Pw = pathWorld(doc, selPath).map((p) => apply(selM, p)), C = pathCpsWorld(doc, selPath).map((c) => c && apply(selM, c));
     for (let j = 0; j < selPath.segments.length; j++) {
       const h = C[j] ?? mid(Pw[j], Pw[j + 1]);
@@ -111,13 +111,13 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
     }
     if (best) return best;
   }
-  if (ctx.tool === 'select' || ctx.tool === 'pen' || ctx.tool === 'freehand') {
+  if (ctx.tool === 'select' || ctx.tool === 'pen') {
     const anchorsOf = (p: Path, copy: Copy, M: Matrix): HitTarget | null => {
       const Pw = pathWorld(doc, p).map((q) => apply(M, q)), nodes = pathNodes(p);
       for (let i = 0; i < nodes.length; i++) if (dist(w, Pw[i]) <= rPoint) return { kind: 'canchor', pathId: p.id, pointId: nodes[i].pointId, cell: nodes[i].cell, copy };
       return null;
     };
-    if (ctx.tool === 'freehand' || ctx.tool === 'pen') {
+    if (ctx.tool === 'pen') {
       for (const ci of ctx.copies) { if (!ci.copy.bindingId) continue; const p = getPath(doc, ci.pathId); const t = p && anchorsOf(p, ci.copy, ci.M); if (t) return t; }
     } else if (selPath && selM && sel && sel.kind === 'path' && sel.copy.bindingId) {
       const t = anchorsOf(selPath, sel.copy, selM);

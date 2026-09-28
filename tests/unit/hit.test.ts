@@ -49,8 +49,10 @@ test('priority: bbox handle beats point beats segment; points are only hit when 
   const ctx = ctxFor(d, { selection: sel });
   expect(hitTest(d, ctx, { x: 24, y: 24 })!.kind).toBe('bbox');       // corner handle sits on the point
   expect(hitTest(d, ctx, { x: 60, y: 24 })!.kind).toBe('bbox');       // a zero-height box puts its edge handle on the midpoint too
-  const penSel = ctxFor(d, { tool: 'pen', selection: sel });
-  expect(hitTest(d, penSel, { x: 60, y: 24 })!.kind).toBe('diamond');  // Pen has no bbox, so the midpoint diamond wins
+  P.setControlPointWorld(d, path.id, 0, { x: 50, y: 70 });            // now the box has height and the diamond sits away from every handle
+  expect(hitTest(d, ctxFor(d, { selection: sel }), { x: 50, y: 70 })!.kind).toBe('diamond');
+  expect(hitTest(d, ctxFor(d, { tool: 'pen', selection: sel }), { x: 50, y: 70 })).toBe(null);   // Pen never hits diamonds
+  expect(hitTest(d, ctxFor(d, { tool: 'freehand' }), { x: 216, y: 216 })).toBe(null);           // Freehand never hits clone anchors
   const noSel = ctxFor(d);
   expect(hitTest(d, noSel, { x: 24, y: 24 })!.kind).toBe('segment');  // point not visible with nothing selected
   const penCtx = ctxFor(d, { tool: 'pen' });
