@@ -35,6 +35,8 @@ export function attachPointer(svg: SVGSVGElement): () => void {
 
   function onDown(e: PointerEvent) {
     UI.lastPointerType.value = kindOf(e);
+    if (e.button !== 0) return;                        // never recorded: a right/middle press released elsewhere would strand its id
+    if (e.pointerType === 'mouse') pointers.clear();   // a mouse is one pointer; a stale id would count as a second finger
     pointers.set(e.pointerId, screen(e));
     if (pointers.size === 2) {
       if (UI.drag.value) { abortGesture(); UI.drag.value = null; UI.fillPreview.value = null; dragTool = null; }
@@ -43,7 +45,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
       navDead = true;
       return;
     }
-    if (pointers.size > 2 || navDead || e.button !== 0) return;
+    if (pointers.size > 2 || navDead) return;
     const w = world(e), target = hitTest(doc.value, hitCtx(scaleOf(e)), w);
     let t = activeTool();
     if (UI.space.value && UI.layer.value === 'drawing' && (UI.pen.value || UI.tool.value === 'freehand')) { construct.startMultiDrag(w, target, e); t = construct; }
@@ -89,6 +91,14 @@ export function attachPointer(svg: SVGSVGElement): () => void {
     if (e) pointers.delete(e.pointerId); else pointers.clear();
     if (!pointers.size) { nav = null; navDead = false; }
     if (UI.drag.value || dragTool) { UI.drag.value = null; dragTool = null; endGesture(); UI.fillPreview.value = null; }
+  }
+
+  // Safety net for a release the SVG never sees (over a floating panel, outside the window, or capture lost): forget the
+  // id so it cannot pose as a second pointer later and leave navDead set until reload. Runs after the SVG's own handlers.
+  function onWindowUp(e: PointerEvent) {
+    if (!pointers.delete(e.pointerId)) return;
+    if (pointers.size < 2) nav = null;
+    if (pointers.size === 0) navDead = false;
   }
 
   function onDblClick(e: MouseEvent) {
@@ -148,10 +158,12 @@ export function attachPointer(svg: SVGSVGElement): () => void {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', blur);
+  for (const g of ['pointerup', 'pointercancel', 'lostpointercapture']) window.addEventListener(g, onWindowUp as EventListener);
   return () => {
     svg.removeEventListener('pointerdown', onDown); svg.removeEventListener('pointermove', onMove); svg.removeEventListener('pointerup', onUp);
     svg.removeEventListener('pointercancel', onCancel); svg.removeEventListener('dblclick', onDblClick); svg.removeEventListener('wheel', onWheel);
     svg.removeEventListener('contextmenu', swallow); for (const g of ['gesturestart', 'gesturechange', 'gestureend']) svg.removeEventListener(g, swallow);
     window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', blur);
+    for (const g of ['pointerup', 'pointercancel', 'lostpointercapture']) window.removeEventListener(g, onWindowUp as EventListener);
   };
 }
