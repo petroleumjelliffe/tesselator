@@ -1,0 +1,33 @@
+import { test, expect } from 'vitest';
+import { serializeDoc, parseDoc, exportSvg } from '../../src/engine/serialize';
+import { exampleDoc } from '../../src/example';
+import { CONFIG } from '../../src/config';
+
+test('JSON round trip preserves the document; foreign or malformed input is refused', () => {
+  const d = exampleDoc();
+  expect(parseDoc(serializeDoc(d))).toEqual(d);
+  expect(parseDoc(JSON.stringify({ ...d, version: 2 }))).toBe(null);
+  expect(parseDoc('{"version":1}')).toBe(null);
+  expect(parseDoc('not json')).toBe(null);
+});
+
+test('tile export is clipped to the cell polygon and draws the 3x3 window', () => {
+  const svg = exportSvg(exampleDoc(), { kind: 'tile' });
+  expect(svg).toContain('viewBox="0 0 240 240"');
+  expect(svg).toContain('<clipPath id="clip"><polygon points="0,0 240,0 240,240 0,240"');
+  expect(svg.match(/<use href="#cell-structure"/g)).toHaveLength(9);
+  expect(svg).toContain('id="cell-fills"');
+  expect(svg).toContain('fill-rule="evenodd"');
+});
+
+test('grid export covers the requested cells with a rect clip', () => {
+  const three = exportSvg(exampleDoc(), { kind: 'grid', rows: 3, cols: 3 });
+  expect(three).toContain('viewBox="0 0 720 720"');
+  expect(three.match(/<use href="#cell-fills"/g)).toHaveLength(9);
+  const wall = exportSvg(exampleDoc(), { kind: 'grid', rows: 8, cols: 12 });
+  expect(wall).toContain('viewBox="0 0 2880 1920"');
+  const hex = { ...exampleDoc(), lattice: { ...CONFIG.LATTICE_PRESETS['Hex / triangle'] } };
+  expect((exportSvg(hex, { kind: 'grid', rows: 3, cols: 3 }).match(/<use href="#cell-detail"/g) ?? []).length).toBeGreaterThan(9);
+  expect(() => exportSvg(exampleDoc(), { kind: 'grid', rows: 65, cols: 1 })).toThrow();
+  expect(() => exportSvg(exampleDoc(), { kind: 'grid', rows: 0, cols: 3 })).toThrow();
+});

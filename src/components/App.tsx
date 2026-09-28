@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { Canvas } from './Canvas';
 import { Chrome } from './Chrome';
-import { viewport, lastPointerType, fitView } from '../state/ui';
+import { viewport, lastPointerType, fitView, viewRestored } from '../state/ui';
 import { doc } from '../state/doc';
 
 export function App() {
@@ -10,7 +10,7 @@ export function App() {
     const el = ref.current!;
     const measure = () => { const r = el.getBoundingClientRect(); viewport.value = { width: r.width, height: r.height }; };
     measure();
-    fitView(doc.value.lattice);
+    if (!viewRestored.value) fitView(doc.value.lattice);
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();

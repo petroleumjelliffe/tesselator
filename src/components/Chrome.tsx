@@ -1,4 +1,5 @@
 import type { ComponentChildren } from 'preact';
+import { useState } from 'preact/hooks';
 import { doc } from '../state/doc';
 import * as UI from '../state/ui';
 import * as A from '../actions';
@@ -7,6 +8,7 @@ import { cloneMatrices, openElements } from '../state/derived';
 import { orbit, mirrorAngle } from '../engine/transform';
 import { latticeAngle } from '../engine/lattice';
 import { getPath, getBinding, getElement, getFill } from '../engine/paths';
+import { exportSvg, serializeDoc, parseDoc } from '../engine/serialize';
 import { CONFIG } from '../config';
 import { fmtFrac } from './Canvas';
 import type { Element, Binding, Lattice } from '../types';
@@ -208,9 +210,61 @@ function Help() {
   </div>;
 }
 
+function download(name: string, text: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function ExportPopover() {
+  const [mode, setMode] = useState<'tile' | 'grid3' | 'wall'>('wall');
+  const [rows, setRows] = useState(8);
+  const [cols, setCols] = useState(12);
+  const [error, setError] = useState('');
+  const run = () => {
+    try {
+      const m = mode === 'tile' ? { kind: 'tile' as const } : mode === 'grid3' ? { kind: 'grid' as const, rows: 3, cols: 3 } : { kind: 'grid' as const, rows, cols };
+      download(mode === 'tile' ? 'tile.svg' : `tessellation-${m.kind === 'grid' ? `${m.cols}x${m.rows}` : ''}.svg`, exportSvg(doc.value, m), 'image/svg+xml');
+      UI.exportOpen.value = false;
+    } catch (err) { setError((err as Error).message); }
+  };
+  return <div class="popover" data-testid="export-popover">
+    <div style={{ display: 'flex', gap: '4px' }}>
+      <Btn cls="small" on={mode === 'tile'} title="A single tile, clipped to the cell" onClick={() => setMode('tile')}>Tile</Btn>
+      <Btn cls="small" on={mode === 'grid3'} title="The 3×3 window around the tile" onClick={() => setMode('grid3')}>3×3</Btn>
+      <Btn cls="small" on={mode === 'wall'} title="A rectangular field of columns × rows cells" onClick={() => setMode('wall')}>Wallpaper</Btn>
+    </div>
+    {mode === 'wall' && <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>Columns <input class="field" type="number" min="1" max={CONFIG.MAX_WALLPAPER} value={cols} onInput={(e) => setCols(+(e.currentTarget as HTMLInputElement).value)} /> Rows <input class="field" type="number" min="1" max={CONFIG.MAX_WALLPAPER} value={rows} onInput={(e) => setRows(+(e.currentTarget as HTMLInputElement).value)} /></label>}
+    {error && <Label>⚠ {error}</Label>}
+    <Btn cls="outline" title="Download the exported SVG" onClick={run}>Download SVG</Btn>
+  </div>;
+}
+
+function FileGroup() {
+  const importJson = () => {
+    const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/json,.json' });
+    input.onchange = async () => {
+      const f = input.files?.[0]; if (!f) return;
+      const d = parseDoc(await f.text());
+      if (!d) { alert('That file is not a Tessellator document this version understands.'); return; }
+      if (doc.value.paths.length && !confirm('Replace the current design?')) return;
+      A.importDocument(d); A.fitToTile();
+    };
+    input.click();
+  };
+  return <div class="panel">
+    <Btn cls="small outline" on={UI.exportOpen.value} title="Export as SVG" onClick={() => { UI.exportOpen.value = !UI.exportOpen.value; }}>Export SVG</Btn>
+    <Btn cls="small outline" title="Download the document as JSON" onClick={() => download('tessellation.json', serializeDoc(doc.value), 'application/json')}>Export JSON</Btn>
+    <Btn cls="small outline" title="Load a JSON document" onClick={importJson}>Import JSON</Btn>
+    <Btn cls="small outline" title="Start a new design" onClick={() => { if (!doc.value.paths.length || confirm('Discard the current design?')) A.newDocument(); }}>New</Btn>
+  </div>;
+}
+
 export function TopRight() {
   return <div class="top-right">
-    <div style={{ display: 'flex', gap: '8px' }}><Btn cls="icon outline" title="Shortcuts and settings (?)" onClick={() => A.toggleHelp()}>?</Btn></div>
+    <div style={{ display: 'flex', gap: '8px' }}><FileGroup /><Btn cls="icon outline" title="Shortcuts and settings (?)" onClick={() => A.toggleHelp()}>?</Btn></div>
+    {UI.exportOpen.value && <ExportPopover />}
     {UI.showHelp.value && <Help />}
   </div>;
 }

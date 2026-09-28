@@ -19,6 +19,7 @@ export const exportOpen = signal(false);
 export const lastSavedAt = signal<number | null>(null);
 export const lastPointerType = signal<PointerKind>('mouse');
 export const fillPreview = signal<XY | null>(null);   // world point while a Fill press is held
+export const viewRestored = signal(false);            // true when the initial view came from a saved session; App skips fitView then
 
 export function resetUi(): void {
   layer.value = 'drawing'; sublayer.value = 'structure'; tool.value = 'pen'; pen.value = null; selection.value = null;

@@ -10,10 +10,9 @@ import { IDENTITY, apply, toSvg } from '../engine/transform';
 import { getPath, getElement, pathNodes, pathWorld, pathCpsWorld, boundsWorld, nodeWorld } from '../engine/paths';
 import { bboxHandles, seedOf } from '../engine/hit';
 import { faceAt, facePathData } from '../engine/regions';
+import { segD, pathD } from '../engine/svgpath';
 import type { XY, Path, Matrix, Cell, HitTarget } from '../types';
 
-const segD = (a: XY, b: XY, cp: XY | null) => (cp ? `M${a.x},${a.y} Q${cp.x},${cp.y} ${b.x},${b.y}` : `M${a.x},${a.y} L${b.x},${b.y}`);
-const pathD = (P: XY[], C: (XY | null)[]) => P.slice(1).map((b, j) => segD(P[j], b, C[j])).join(' ');
 const isBase = (o: Cell) => o.c === 0 && o.r === 0;
 const cellKey = (o: Cell) => `${o.c},${o.r}`;
 const sameCopy = (a: { cell: Cell; bindingId: string | null; power: number }, b: typeof a) =>

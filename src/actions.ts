@@ -294,3 +294,4 @@ export function zoomAt(screen: XY, factor: number): boolean {
 export function panBy(dx: number, dy: number): boolean { const v = UI.view.value; UI.view.value = { zoom: v.zoom, pan: { x: v.pan.x + dx, y: v.pan.y + dy } }; return true; }
 export function fitToTile(): boolean { UI.fitView(doc.value.lattice); return true; }
 export function newDocument(): boolean { commit(emptyDoc()); UI.selection.value = null; UI.pen.value = null; return true; }
+export function importDocument(d: Doc): boolean { commit(d); UI.selection.value = null; UI.pen.value = null; return true; }
