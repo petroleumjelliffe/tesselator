@@ -8,6 +8,30 @@ import type { Doc, XY, Cell, Lattice, Box } from '../types';
 
 export function serializeDoc(d: Doc): string { return JSON.stringify(d); }
 
+// Per-entity validation against the Doc shapes in types.ts. Cross-references (e.g. a point id a
+// path's node actually points at) are out of scope; every value's own shape is checked strictly.
+const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+const isStr = (x: unknown): x is string => typeof x === 'string';
+const isCell = (x: any): boolean => !!x && isNum(x.c) && isNum(x.r);
+const isNode = (x: any): boolean => !!x && isStr(x.pointId) && isCell(x.cell);
+const isCp = (x: any): boolean => x === null || (!!x && isNum(x.u) && isNum(x.v));
+const isStyle = (x: any): boolean => !!x && isStr(x.color) && isNum(x.weight);
+const isPoint = (x: any): boolean => !!x && isStr(x.id) && isNum(x.u) && isNum(x.v);
+const isSegment = (x: any): boolean => !!x && isNode(x.to) && isCp(x.cp);
+const isPath = (x: any): boolean =>
+  !!x && isStr(x.id) && isNode(x.start) && isStyle(x.style) && (x.layer === 'structure' || x.layer === 'detail') &&
+  Array.isArray(x.segments) && x.segments.every(isSegment);
+const isElement = (x: any): boolean => {
+  if (!x || !isStr(x.id) || !isNum(x.u) || !isNum(x.v)) return false;
+  if (x.kind === 'translate') return true;
+  if (x.kind === 'mirror') return isNum(x.du) && isNum(x.dv);
+  if (x.kind === 'rotate') return Number.isInteger(x.n) && x.n >= 2;
+  return false;
+};
+const isBinding = (x: any): boolean => !!x && isStr(x.id) && isStr(x.pathId) && Array.isArray(x.ops) && x.ops.every(isStr);
+const isFill = (x: any): boolean => !!x && isStr(x.id) && isNum(x.u) && isNum(x.v) && isStr(x.color);
+const isOpsList = (x: unknown): boolean => Array.isArray(x) && x.every((c) => Array.isArray(c) && c.every(isStr));
+
 export function parseDoc(json: string): Doc | null {
   try {
     const o = JSON.parse(json);
@@ -15,6 +39,12 @@ export function parseDoc(json: string): Doc | null {
     for (const k of ['points', 'paths', 'elements', 'bindings', 'fills']) if (!Array.isArray(o[k])) return null;
     const l = o.lattice;
     if (![l.ax, l.ay, l.bx, l.by].every((x: unknown) => typeof x === 'number' && Number.isFinite(x))) return null;
+    if (!o.points.every(isPoint)) return null;
+    if (!o.paths.every(isPath)) return null;
+    if (!o.elements.every(isElement)) return null;
+    if (!o.bindings.every(isBinding)) return null;
+    if (!o.fills.every(isFill)) return null;
+    if (o.newPathOps !== undefined && !isOpsList(o.newPathOps)) return null;
     return { version: 1, lattice: { ax: l.ax, ay: l.ay, bx: l.bx, by: l.by }, points: o.points, paths: o.paths, elements: o.elements, bindings: o.bindings, fills: o.fills, newPathOps: Array.isArray(o.newPathOps) ? o.newPathOps : [] };
   } catch { return null; }
 }

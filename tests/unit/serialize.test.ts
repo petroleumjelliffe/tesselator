@@ -20,6 +20,26 @@ test('tile export is clipped to the cell polygon and draws the 3x3 window', () =
   expect(svg).toContain('fill-rule="evenodd"');
 });
 
+test('a point missing id is refused', () => {
+  const d = exampleDoc();
+  const bad = { ...d, points: d.points.map((p, i) => (i === 0 ? { u: p.u, v: p.v } : p)) };
+  expect(parseDoc(JSON.stringify(bad))).toBe(null);
+});
+
+test('a segment with a non-numeric control point is refused', () => {
+  const d = exampleDoc();
+  const bad = {
+    ...d,
+    paths: d.paths.map((p, i) => (i === 0 ? { ...p, segments: p.segments.map((s, j) => (j === 0 ? { ...s, cp: { u: 'x', v: 0 } } : s)) } : p)),
+  };
+  expect(parseDoc(JSON.stringify(bad))).toBe(null);
+});
+
+test('the example document still round trips after entity validation', () => {
+  const d = exampleDoc();
+  expect(parseDoc(serializeDoc(d))).toEqual(d);
+});
+
 test('grid export covers the requested cells with a rect clip', () => {
   const three = exportSvg(exampleDoc(), { kind: 'grid', rows: 3, cols: 3 });
   expect(three).toContain('viewBox="0 0 720 720"');
