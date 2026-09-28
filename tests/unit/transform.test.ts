@@ -5,6 +5,7 @@ import type { Element, XY } from '../../src/types';
 
 const lat = CONFIG.LATTICE_PRESETS.Square, hex = CONFIG.LATTICE_PRESETS['Hex / triangle'], rh = CONFIG.LATTICE_PRESETS['Rhombus 60°'];
 const near = (p: XY, q: XY) => { expect(p.x).toBeCloseTo(q.x, 6); expect(p.y).toBeCloseTo(q.y, 6); };
+const mirror = (e: Element) => { if (e.kind !== 'mirror') throw new Error('not a mirror'); return e; };
 
 test('primitive matrices move sample points correctly', () => {
   near(apply(translation(10, -5), { x: 1, y: 1 }), { x: 11, y: -4 });
@@ -48,8 +49,8 @@ test('matrixOf builds each element kind in world space from lattice coordinates'
 });
 
 test('mirror angle round-trips through a lattice direction', () => {
-  expect(mirrorAngle(els[6], lat)).toBeCloseTo(90, 6);
-  expect(mirrorAngle(els[6], rh)).toBeCloseTo(60, 1);
+  expect(mirrorAngle(mirror(els[6]), lat)).toBeCloseTo(90, 6);
+  expect(mirrorAngle(mirror(els[6]), rh)).toBeCloseTo(60, 1);
   const d = mirrorDirFromAngle(45, lat);
   expect(d.du).toBeCloseTo(d.dv, 9);
 });

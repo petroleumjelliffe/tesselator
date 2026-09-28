@@ -46,8 +46,8 @@ export function cellMatrix(cell: Cell, lat: Lattice): Matrix {
   return translation(t.x, t.y);
 }
 
-export function mirrorAngle(el: Element, lat: Lattice): number {
-  const d = toWorld({ u: (el as any).du, v: (el as any).dv }, lat);
+export function mirrorAngle(el: { du: number; dv: number }, lat: Lattice): number {
+  const d = toWorld({ u: el.du, v: el.dv }, lat);
   return (((Math.atan2(d.y, d.x) * 180) / Math.PI) % 180 + 180) % 180;
 }
 
