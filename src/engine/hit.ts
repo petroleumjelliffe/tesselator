@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import { toWorld, toUV, cellOf, nodeUV, windowOffsets, snapGrid } from './lattice';
 import { apply, cellMatrix, compose, orbit } from './transform';
 import { getPath, pathNodes, pathWorld, pathCpsWorld, boundsWorld, getElement } from './paths';
-import { faceAt } from './regions';
+import { faceAt, fillOfFace } from './regions';
 import type { Doc, XY, Lattice, Matrix, Copy, CopyInfo, Cell, Face, HitTarget, Layer, Tool, Selection, Box, BoxHandle, Path } from '../types';
 
 export type HitContext = {
@@ -140,7 +140,7 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
   if (ctx.tool === 'select' || ctx.tool === 'fill') {
     const face = faceAt(ctx.faces, seedOf(w, lat));
     if (face) {
-      const fill = doc.fills.find((f) => faceAt(ctx.faces, toWorld(f, lat)) === face);
+      const fill = fillOfFace(doc.fills, ctx.faces, face, lat);
       if (fill) return { kind: 'fill', fillId: fill.id };
       if (ctx.tool === 'fill') return { kind: 'face', face };
     }

@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
-import { computeFaces, faceAt, seedFor, facePathData, collectSegments, subCurve, faceContains } from '../../src/engine/regions';
+import { computeFaces, faceAt, seedFor, facePathData, collectSegments, subCurve, faceContains, sameRegion } from '../../src/engine/regions';
 import { CONFIG } from '../../src/config';
 import type { Doc, UV } from '../../src/types';
 
@@ -158,4 +158,15 @@ test('two curves crossing twice enclose a lens (curve x curve crossings)', () =>
   expect(lens).toBeTruthy();
   expect(lens.area).toBeGreaterThan(0);
   expect(faceAt(faces, { x: 120, y: 30 })).toBe(null);
+});
+
+test('sameRegion identifies the window copies of one region and separates distinct regions', () => {
+  const doc = makeDoc();
+  square(doc, 180, 60, 300, 180); square(doc, 60, 60, 100, 100);
+  const faces = computeFaces(doc), lat = doc.lattice;
+  const left = faceAt(faces, { x: 200, y: 120 })!, right = faceAt(faces, { x: 250, y: 120 })!, wrapped = faceAt(faces, { x: 10, y: 120 })!;
+  expect(left).toBe(right);                                  // same copy: the face straddling x = 240
+  expect(wrapped).not.toBe(left);                            // the copy in cell (-1, 0)
+  expect(sameRegion(left, wrapped, lat)).toBe(true);
+  expect(sameRegion(left, faceAt(faces, { x: 80, y: 80 })!, lat)).toBe(false);
 });

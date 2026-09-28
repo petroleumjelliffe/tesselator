@@ -2,7 +2,7 @@ import { CONFIG } from '../config';
 import { windowOffsets, cellPolygon, toUV, toWorld } from './lattice';
 import { IDENTITY, apply, orbit } from './transform';
 import { pathWorld, pathCpsWorld } from './paths';
-import { computeFaces, faceAt, facePathData } from './regions';
+import { computeFaces, fillFace, facePathData } from './regions';
 import { pathD } from './svgpath';
 import type { Doc, XY, Cell, Lattice, Box } from '../types';
 
@@ -61,7 +61,7 @@ function cellDefs(d: Doc): string {
     return Ms.map((M) => `<path d="${pathD(P.map((q) => apply(M, q)), C.map((c) => c && apply(M, c)))}" fill="none" stroke="${esc(p.style.color)}" stroke-width="${p.style.weight}" stroke-linecap="round" stroke-linejoin="round"/>`);
   }).join('');
   const faces = computeFaces(d);
-  const fills = d.fills.map((f) => ({ f, face: faceAt(faces, toWorld(f, d.lattice)) })).filter((x) => x.face).sort((a, b) => b.face!.area - a.face!.area)
+  const fills = d.fills.map((f) => ({ f, face: fillFace(faces, f, d.lattice) })).filter((x) => x.face).sort((a, b) => b.face!.area - a.face!.area)
     .map(({ f, face }) => `<path d="${facePathData(face!)}" fill="${esc(f.color)}" fill-rule="evenodd"/>`).join('');
   return `<g id="cell-structure">${strokes('structure')}</g><g id="cell-fills">${fills}</g><g id="cell-detail">${strokes('detail')}</g>`;
 }

@@ -9,7 +9,7 @@ import { toWorld, nodeUV, windowOffsets, cellPolygon } from '../engine/lattice';
 import { IDENTITY, apply, toSvg } from '../engine/transform';
 import { getPath, getElement, pathNodes, pathWorld, pathCpsWorld, boundsWorld, nodeWorld } from '../engine/paths';
 import { bboxHandles, seedOf } from '../engine/hit';
-import { faceAt, facePathData } from '../engine/regions';
+import { faceAt, facePathData, fillFace } from '../engine/regions';
 import { segD, pathD } from '../engine/svgpath';
 import type { XY, Path, Matrix, Cell, HitTarget } from '../types';
 
@@ -32,7 +32,7 @@ function CellDefs() {
     return entriesOf(p).map((M, i) => <path key={`${p.id}:${i}`} class="stroke" d={pathD(P.map((q) => apply(M, q)), C.map((c) => c && apply(M, c)))} stroke={p.style.color} stroke-width={p.style.weight} />);
   });
   const fs = faces.value;
-  const fills = d.fills.map((f) => ({ f, face: faceAt(fs, toWorld(f, d.lattice)) })).filter((x) => x.face).sort((a, b) => b.face!.area - a.face!.area);
+  const fills = d.fills.map((f) => ({ f, face: fillFace(fs, f, d.lattice) })).filter((x) => x.face).sort((a, b) => b.face!.area - a.face!.area);
   return (
     <defs>
       <g id="cell-structure">{strokes('structure')}</g>

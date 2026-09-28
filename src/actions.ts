@@ -7,7 +7,7 @@ import * as P from './engine/paths';
 import { toWorld, toUV, snapGrid, snapFraction } from './engine/lattice';
 import { apply, invert, mirrorAngle, mirrorDirFromAngle } from './engine/transform';
 import { snapWorld, projectOnSegment, seedOf, type Anchor } from './engine/hit';
-import { faceAt, seedFor } from './engine/regions';
+import { faceAt, seedFor, fillOfFace } from './engine/regions';
 import { strokeToPath } from './engine/freehand';
 import { CONFIG } from './config';
 import type { Doc, XY, UV, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer, PathLayer } from './types';
@@ -256,11 +256,11 @@ export function fillAt(w: XY): boolean {
   const face = faceAt(fs, seedOf(w, lat));
   if (!face) return false;
   const color = UI.prefs.value.fillColor;
-  const existing = doc.value.fills.find((f) => faceAt(fs, toWorld(f, lat)) === face);
+  const existing = fillOfFace(doc.value.fills, fs, face, lat);
   let id: string | null = null;
   const ok = mutate((d) => {
     if (existing) { const f = P.getFill(d, existing.id)!; f.color = color; id = f.id; return; }
-    const seed = toUV(seedFor(face, seedOf(w, lat)), lat);
+    const seed = toUV(seedOf(seedFor(face, seedOf(w, lat)), lat), lat);   // the centroid of a straddling copy may lie outside the base cell
     id = P.addFill(d, seed, color).id;
   });
   if (id) UI.selection.value = { kind: 'fill', id };

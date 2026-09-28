@@ -3,6 +3,7 @@ import * as P from '../../src/engine/paths';
 import { hitTest, anchorsWorld, snapWorld, pointsInRect, projectOnSegment, bboxHandles, scaleFor, scaleMatrix, seedOf, type HitContext } from '../../src/engine/hit';
 import { orbit, apply, cellMatrix, compose } from '../../src/engine/transform';
 import { windowOffsets } from '../../src/engine/lattice';
+import { computeFaces } from '../../src/engine/regions';
 import { CONFIG } from '../../src/config';
 import type { Doc, CopyInfo, Matrix, Selection } from '../../src/types';
 
@@ -107,4 +108,18 @@ test('marquee, projection, bbox maths, seedOf', () => {
   expect(Number.isNaN(scaleFor(flat[0], { x: 200, y: 10 }, false).sx)).toBe(false);
   expect(apply(scaleMatrix(0, 0, 2, 2), { x: 10, y: 5 })).toEqual({ x: 20, y: 10 });
   expect(seedOf({ x: 300, y: 120 }, d.lattice)).toEqual({ x: 60, y: 120 });
+});
+
+test('a fill on a region straddling the cell edge is hit from either side of the edge', () => {
+  const d = makeDoc();
+  const pts = [{ u: 0.75, v: 0.25 }, { u: 1.25, v: 0.25 }, { u: 1.25, v: 0.75 }, { u: 0.75, v: 0.75 }].map((p) => P.addPoint(d, p));
+  const path = P.startPath(d, pts[0], { color: '#000', weight: 2 });
+  for (const n of pts.slice(1)) P.appendNode(d, path.id, n);
+  P.appendNode(d, path.id, pts[0]);
+  const fill = P.addFill(d, { u: 0.9, v: 0.5 }, '#f00');                       // seeded left of the edge, inside the base cell
+  const ctx = ctxFor(d, { tool: 'fill', faces: computeFaces(d) });
+  expect(hitTest(d, ctx, { x: 200, y: 120 })).toEqual({ kind: 'fill', fillId: fill.id });
+  expect(hitTest(d, ctx, { x: 250, y: 120 })).toEqual({ kind: 'fill', fillId: fill.id });
+  expect(hitTest(d, ctx, { x: 10, y: 120 })).toEqual({ kind: 'fill', fillId: fill.id });   // the copy in cell (-1, 0)
+  expect(hitTest(d, ctx, { x: 120, y: 20 })).toBe(null);
 });

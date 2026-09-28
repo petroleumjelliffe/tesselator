@@ -154,3 +154,20 @@ test('undo after two pen clicks resumes drawing the one-node path instead of lea
   expect(doc.value.paths).toHaveLength(0); expect(UI.pen.value).toBe(null);
   A.redo(); expect(doc.value.paths).toHaveLength(0);         // endPen's delete cleared the redo stack
 });
+
+test('a region straddling the cell edge is one fill from either side, seeded inside the base cell', () => {
+  fresh();
+  for (const p of [W(0.75, 0.25), W(1.25, 0.25), W(1.25, 0.75), W(0.75, 0.75)]) A.penClickEmpty(p, false);
+  A.penClickNode(doc.value.paths[0].start); A.endPen();
+  A.setTool('fill');
+  expect(A.fillAt({ x: 250, y: 120 })).toBe(true);
+  UI.prefs.value = { ...UI.prefs.value, fillColor: '#123456' };
+  expect(A.fillAt({ x: 200, y: 120 })).toBe(true);
+  expect(doc.value.fills).toHaveLength(1);
+  expect(doc.value.fills[0].color).toBe('#123456');
+  const { u, v } = doc.value.fills[0];
+  expect(u).toBeGreaterThanOrEqual(0); expect(u).toBeLessThan(1); expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThan(1);
+  expect(UI.selection.value).toEqual({ kind: 'fill', id: doc.value.fills[0].id });
+  A.deleteSelection();
+  expect(doc.value.fills).toHaveLength(0);
+});

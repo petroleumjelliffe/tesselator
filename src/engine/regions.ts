@@ -1,12 +1,12 @@
 // Regions: every copy in the 3×3 window is split at crossings, walked into a planar graph, and its loops
 // become faces (positive area) and holes (negative loops nested in a face of another component).
 import { CONFIG } from '../config';
-import { windowOffsets } from './lattice';
+import { windowOffsets, toUV, toWorld } from './lattice';
 import { apply, cellMatrix, compose, orbit } from './transform';
 import { pathWorld, pathCpsWorld } from './paths';
-import type { Doc, XY, WorldSeg, Piece, Loop, Face } from '../types';
+import type { Doc, XY, Lattice, Fill, WorldSeg, Piece, Loop, Face } from '../types';
 
-const MERGE = 1e-4, T_EPS = 1e-7, AREA_EPS = 1e-6;
+const MERGE = 1e-4, T_EPS = 1e-7, AREA_EPS = 1e-6, REGION_EPS = 1e-6;
 
 function bez(s: WorldSeg, t: number): XY {
   if (!s.cp) return { x: s.a.x + (s.b.x - s.a.x) * t, y: s.a.y + (s.b.y - s.a.y) * t };
@@ -246,6 +246,20 @@ export function faceAt(faces: Face[], p: XY): Face | null {
 
 export function seedFor(face: Face, click: XY): XY {
   return faceContains(face, face.centroid) ? face.centroid : click;
+}
+
+// Faces are computed once per window copy, so one region is several Face objects that are lattice translates of one
+// another. Two faces are the same region when their centroids differ by a whole lattice vector and their areas agree.
+export function sameRegion(a: Face, b: Face, lat: Lattice): boolean {
+  if (Math.abs(a.area - b.area) > REGION_EPS * Math.max(1, a.area)) return false;
+  const p = toUV(a.centroid, lat), q = toUV(b.centroid, lat), du = q.u - p.u, dv = q.v - p.v;
+  return Math.abs(du - Math.round(du)) < REGION_EPS && Math.abs(dv - Math.round(dv)) < REGION_EPS;
+}
+
+// The face copy a fill's seed lands in (the seed is kept in the base cell), and the fill that colours a face's region.
+export function fillFace(faces: Face[], fill: Fill, lat: Lattice): Face | null { return faceAt(faces, toWorld(fill, lat)); }
+export function fillOfFace(fills: Fill[], faces: Face[], face: Face, lat: Lattice): Fill | null {
+  return fills.find((f) => { const g = fillFace(faces, f, lat); return !!g && sameRegion(g, face, lat); }) ?? null;
 }
 
 function loopPathData(loop: Loop): string {
