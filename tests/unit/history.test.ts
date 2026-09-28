@@ -2,8 +2,8 @@ import { test, expect } from 'vitest';
 import { doc, draft, emptyDoc } from '../../src/state/doc';
 import { commit, beginGesture, endGesture, abortGesture, undo, redo, canUndo, canRedo, reset } from '../../src/state/history';
 import { selection, resetUi } from '../../src/state/ui';
-import { copies, cloneMatrices, visibleCells } from '../../src/state/derived';
-import { viewport } from '../../src/state/ui';
+import { copies, cloneMatrices, visibleCells, faces } from '../../src/state/derived';
+import { viewport, drag } from '../../src/state/ui';
 import * as P from '../../src/engine/paths';
 
 function fresh() { reset(); resetUi(); doc.value = emptyDoc(); }
@@ -65,4 +65,18 @@ test('derived copies list the source and every clone per visible cell', () => {
   const perCell = copies.value.filter((c) => c.copy.cell.c === 0 && c.copy.cell.r === 0);
   expect(perCell).toHaveLength(4);
   expect(copies.value.length).toBe(visibleCells.value.length * 4);
+});
+
+test('faces are not recomputed while a drag is set, and catch up when it ends', () => {
+  fresh();
+  const d = draft();
+  const pts = [{ u: 0.25, v: 0.25 }, { u: 0.75, v: 0.25 }, { u: 0.75, v: 0.75 }, { u: 0.25, v: 0.75 }].map((p) => P.addPoint(d, p));
+  const path = P.startPath(d, pts[0], { color: '#000', weight: 1 });
+  for (const n of pts.slice(1)) P.appendNode(d, path.id, n);
+  P.appendNode(d, path.id, pts[0]);
+  drag.value = { kind: 'click', target: null, start: { x: 0, y: 0 }, moved: false, pointerId: 1, hitScale: 1 };
+  commit(d);
+  expect(faces.value).toHaveLength(0);
+  drag.value = null;
+  expect(faces.value).toHaveLength(9);
 });

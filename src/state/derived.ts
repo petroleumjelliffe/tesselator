@@ -1,11 +1,12 @@
-import { computed } from '@preact/signals';
+import { computed, signal, effect } from '@preact/signals';
 import { CONFIG } from '../config';
 import { doc } from './doc';
-import { view, viewport } from './ui';
+import { view, viewport, drag } from './ui';
 import { visibleOffsets } from '../engine/lattice';
 import { cellMatrix, compose, orbit } from '../engine/transform';
 import { anchorsWorld } from '../engine/hit';
-import type { Matrix, Cell, Copy, CopyInfo, Doc } from '../types';
+import { computeFaces } from '../engine/regions';
+import type { Matrix, Cell, Copy, CopyInfo, Doc, Face } from '../types';
 
 export const cloneMatrices = computed(() => {
   const d = doc.value, m = new Map<string, Matrix[]>();
@@ -45,3 +46,14 @@ export const copies = computed<CopyInfo[]>(() => {
 });
 
 export const anchors = computed(() => anchorsWorld(doc.value));
+
+// Faces are recomputed on the next frame after a commit, never while a drag is in progress.
+export const faces = signal<Face[]>([]);
+const raf: (cb: () => void) => void = typeof requestAnimationFrame === 'function' ? (cb) => { requestAnimationFrame(cb); } : (cb) => cb();
+let scheduled = false;
+effect(() => {
+  doc.value;
+  if (drag.value || scheduled) return;
+  scheduled = true;
+  raf(() => { scheduled = false; faces.value = computeFaces(doc.peek()); });
+});
