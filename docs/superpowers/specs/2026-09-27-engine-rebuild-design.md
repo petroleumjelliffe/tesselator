@@ -140,7 +140,7 @@ One representation everywhere: `type Matrix = readonly [a, b, c, d, e, f]` in SV
 - `cellMatrix(cell, lattice)` → `T(L(c, r))`; `copyMatrix(copy, doc)` → `cellMatrix ∘ cloneMatrix`.
 - `compose(A, B)` (apply B then A), `invert(M)`, `apply(M, p)`, `power(M, k)`.
 - `isLatticeTranslation(M, lattice)`: linear part is the identity within 1e-6 and `L⁻¹` of the translation is an integer pair within 1e-6.
-- `orbit(ops, elements, lattice, cap = 12)`: composite `M`; return `[M¹, M², …, M^(k-1)]` where `M^k` is the first lattice translation. If none within `cap`, return `cap` powers and `open: true` so the UI can warn that the element does not close on this lattice.
+- `orbit(ops, elements, lattice, cap = 12)`: composite `M`; return `[M¹, M², …, M^(k-1)]` where `M^k` is the first lattice translation. If none within `cap`, return `cap` powers and `open: true` so the UI can warn that the element does not close on this lattice. Rotations always close (Rⁿ is the identity); `open` arises from translations by fractions that are not small rationals, such as `translate(0.37, 0)`.
 - `classify(M)` → `'identity' | 'translation' | 'rotation' | 'reflection' | 'glide'` with centre / line / vector, for labels and hints only.
 
 Orbit sizes the tests pin down:
@@ -150,7 +150,7 @@ Orbit sizes the tests pin down:
 | rotate n | n − 1 |
 | mirror | 1 |
 | mirror, translate(1/2 along the line) | 1 |
-| mirror, translate(1/3 along the line) | 2 |
+| mirror, translate(1/3 along the line) | 5 (odd powers are reflected copies, even powers translations; M⁶ is the first lattice translation) |
 | translate(1/2, 0) | 1 |
 | translate(1/2, 1/2) | 1 |
 | translate(1, 0) | 0 |
@@ -336,7 +336,7 @@ The selection bar for a path gains End path (visible while the pen is active), S
 **Vitest** (`npm test`):
 
 - `lattice`: `L` / `L⁻¹` round trip for every preset; `cellOf` on boundaries; grid and fraction snapping in `(u, v)`; `isDegenerate`.
-- `transform`: `matrixOf` for each primitive against hand-computed points, including a mirror whose direction is a lattice direction on a skewed lattice; `copyMatrix`; `compose` / `invert` / `power`; `isLatticeTranslation`; `orbit` sizes for every row of the table in §4 including the empty chain, plus the `open` flag for rotate 5; `classify` of `[mirror, translate]` is a glide and of `[rotate 2, translate]` is a rotation with the expected centre.
+- `transform`: `matrixOf` for each primitive against hand-computed points, including a mirror whose direction is a lattice direction on a skewed lattice; `copyMatrix`; `compose` / `invert` / `power`; `isLatticeTranslation`; `orbit` sizes for every row of the table in §4 including the empty chain, plus the `open` flag for translate(0.37); `classify` of `[mirror, translate]` is a glide and of `[rotate 2, translate]` is a rotation with the expected centre.
 - `paths`: append / insert keep segments consistent; delete points splits paths, removes both occurrences of a closed path's shared node, and prunes orphans; `openEndAt` / `orientToEnd` shift cells and control points together; `movePoint` shifts adjacent control points by half; `transformPath` given a world matrix at a copy maps back correctly; a wrap-around path is not closed, a path returning to its first node in the same cell is; `toggleOp` ordering; changing the lattice leaves every `(u, v)` untouched.
 - `hit`: priority order (a handle beats a point beats a segment beats a fill); a segment of a copy in cell (1, 0) is hit and reports that copy; a clone segment reports its binding and power; thresholds scale with zoom and double for `pointerType: 'touch'`; `snapWorld` prefers an anchor in a neighbouring cell over the grid; `skip` excludes the dragged point but not its clone images; bbox handles and matrices.
 - `regions`: a closed square → one face; two crossing lines inside a square → four faces; a dangling stroke inside a face does not split it; source edges plus a 180° rotation → two faces per cell; a face straddling the cell edge is found once; coincident edges from a mirror on the path are deduplicated; a closed loop inside a face becomes a hole, `faceAt` inside the hole is null, `facePathData` has two subpaths; `seedFor` returns the centroid for a convex face and the click for a crescent whose centroid is outside; a seed outside every region is null; a curved edge split at `t` reproduces the original curve; memoised per document reference.
