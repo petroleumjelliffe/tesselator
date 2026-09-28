@@ -102,8 +102,8 @@ function SelectionBar() {
     const b = s.copy.bindingId ? getBinding(d, s.copy.bindingId) : null;
     inner = <>
       <Label>{b ? `Clone of path ${d.paths.indexOf(path) + 1} via ${chainLabel(b.ops)} · power ${s.copy.power}` : `Path ${d.paths.indexOf(path) + 1}`}</Label>
-      {b && <Btn cls="small violet" onClick={() => { if (b.ops[0]) { A.selectElement(b.ops[0]); UI.layer.value = 'construction'; } }}>Select its element</Btn>}
-      {b && <Btn cls="small outline" onClick={() => A.selectPathAt(path.id)}>Select source path</Btn>}
+      {b && <Btn cls="small violet" title="Select the first element of this clone's chain (switches to Construction)" onClick={() => { if (b.ops[0]) { A.selectElement(b.ops[0]); A.setLayer('construction'); } }}>Select its element</Btn>}
+      {b && <Btn cls="small outline" title="Select the source path in the base cell" onClick={() => A.selectPathAt(path.id)}>Select source path</Btn>}
       {d.bindings.filter((x) => x.pathId === path.id).map((x) => <ChainRow key={x.id} b={x} />)}
       <Btn cls="small outline" title="Start an empty chain; click element chips to fill it" onClick={() => A.addChain(path.id)}>+ chain</Btn>
       <Btn cls="small violet" title="New rotation cloning this path" onClick={() => A.addElement('rotate')}>+ ↻</Btn>
@@ -128,7 +128,7 @@ function SelectionBar() {
   } else if (s.kind === 'fill') {
     inner = <Label>Fill · pick a colour in the palette</Label>;
   }
-  return <div class="panel bar">{inner}<Sep /><Btn cls="small outline" kbd="⌫" onClick={() => A.deleteSelection()}>{s.kind === 'path' && s.copy.bindingId ? 'Unlink' : 'Delete'}</Btn></div>;
+  return <div class="panel bar">{inner}<Sep /><Btn cls="small outline" kbd="⌫" title={s.kind === 'path' && s.copy.bindingId ? 'Remove this clone chain (⌫)' : 'Delete the selection (⌫)'} onClick={() => A.deleteSelection()}>{s.kind === 'path' && s.copy.bindingId ? 'Unlink' : 'Delete'}</Btn></div>;
 }
 
 function Palette() {
