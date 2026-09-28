@@ -1688,8 +1688,10 @@ test('priority: bbox handle beats point beats segment; points are only hit when 
   const ctx = ctxFor(d, { selection: sel });
   expect(hitTest(d, ctx, { x: 24, y: 24 })!.kind).toBe('bbox');       // corner handle sits on the point
   expect(hitTest(d, ctx, { x: 60, y: 24 })!.kind).toBe('bbox');       // a zero-height box puts its edge handle on the midpoint too
-  const penSel = ctxFor(d, { tool: 'pen', selection: sel });
-  expect(hitTest(d, penSel, { x: 60, y: 24 })!.kind).toBe('diamond');  // Pen has no bbox, so the midpoint diamond wins
+  P.setControlPointWorld(d, path.id, 0, { x: 50, y: 70 });            // now the box has height and the diamond sits away from every handle
+  expect(hitTest(d, ctxFor(d, { selection: sel }), { x: 50, y: 70 })!.kind).toBe('diamond');
+  expect(hitTest(d, ctxFor(d, { tool: 'pen', selection: sel }), { x: 50, y: 70 })).toBe(null);   // Pen never hits diamonds
+  expect(hitTest(d, ctxFor(d, { tool: 'freehand' }), { x: 216, y: 216 })).toBe(null);           // Freehand never hits clone anchors
   const noSel = ctxFor(d);
   expect(hitTest(d, noSel, { x: 24, y: 24 })!.kind).toBe('segment');  // point not visible with nothing selected
   const penCtx = ctxFor(d, { tool: 'pen' });
@@ -1847,7 +1849,7 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
     const knob = { x: (box.x0 + box.x1) / 2, y: box.y0 - CONFIG.BBOX_ROT_OFFSET / z };
     if (dist(w, knob) <= rPoint) return { kind: 'bboxrot' };
   }
-  if ((ctx.tool === 'select' || ctx.tool === 'pen') && selPath && selM && sel && sel.kind === 'path') {
+  if (ctx.tool === 'select' && selPath && selM && sel && sel.kind === 'path') {
     const Pw = pathWorld(doc, selPath).map((p) => apply(selM, p)), C = pathCpsWorld(doc, selPath).map((c) => c && apply(selM, c));
     for (let j = 0; j < selPath.segments.length; j++) {
       const h = C[j] ?? mid(Pw[j], Pw[j + 1]);
@@ -1864,13 +1866,13 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
     }
     if (best) return best;
   }
-  if (ctx.tool === 'select' || ctx.tool === 'pen' || ctx.tool === 'freehand') {
+  if (ctx.tool === 'select' || ctx.tool === 'pen') {
     const anchorsOf = (p: Path, copy: Copy, M: Matrix): HitTarget | null => {
       const Pw = pathWorld(doc, p).map((q) => apply(M, q)), nodes = pathNodes(p);
       for (let i = 0; i < nodes.length; i++) if (dist(w, Pw[i]) <= rPoint) return { kind: 'canchor', pathId: p.id, pointId: nodes[i].pointId, cell: nodes[i].cell, copy };
       return null;
     };
-    if (ctx.tool === 'freehand' || ctx.tool === 'pen') {
+    if (ctx.tool === 'pen') {
       for (const ci of ctx.copies) { if (!ci.copy.bindingId) continue; const p = getPath(doc, ci.pathId); const t = p && anchorsOf(p, ci.copy, ci.M); if (t) return t; }
     } else if (selPath && selM && sel && sel.kind === 'path' && sel.copy.bindingId) {
       const t = anchorsOf(selPath, sel.copy, selM);
@@ -2764,7 +2766,7 @@ function BBox() {
 }
 
 function Diamonds() {
-  if (layer.value !== 'drawing' || tool.value === 'freehand' || tool.value === 'fill') return null;
+  if (layer.value !== 'drawing' || tool.value !== 'select') return null;
   const sc = selectedCopy(); if (!sc) return null;
   const d = doc.value, z = view.value.zoom, s = CONFIG.HANDLE_PX * 1.4 / z, h = hover.value;
   const P = pathWorld(d, sc.p).map((q) => apply(sc.M, q)), C = pathCpsWorld(d, sc.p).map((c) => c && apply(sc.M, c));
