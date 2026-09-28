@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { Canvas } from './Canvas';
+import { Chrome } from './Chrome';
 import { viewport, lastPointerType, fitView } from '../state/ui';
 import { doc } from '../state/doc';
 
@@ -14,5 +15,5 @@ export function App() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  return <div ref={ref} class="app" data-pointer={lastPointerType.value}><Canvas /><div class="chrome" /></div>;
+  return <div ref={ref} class="app" data-pointer={lastPointerType.value}><Canvas /><Chrome /></div>;
 }
