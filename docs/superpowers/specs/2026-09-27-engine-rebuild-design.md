@@ -1,6 +1,6 @@
 # Engine rebuild (Project 1 of 2) — design
 
-Date: 2026-09-27, revised 2026-09-28 (Preact + Vite + TypeScript; lattice coordinates throughout; geometric hit-testing; editable copies; holes; persistence; export)
+Date: 2026-09-27, revised 2026-09-28 (Preact + Vite + TypeScript; lattice coordinates throughout; geometric hit-testing; editable copies; holes; persistence; export; touch and pen)
 Branch: `feature/rebuild`
 Behavioural reference: Claude Design project "Tessellation Designer v2 Symmetry" (the working prototype). Layout for this project is the prototype's own floating-panel chrome. The Layers / Properties chrome from "Editing UI Wireframes" turn 2 is Project 2.
 
@@ -203,6 +203,14 @@ Computed by `regions.ts` from a `Doc` in world space, memoised on the document r
 
 All pointer handling is one listener set on the SVG (`pointer.ts`). On pointerdown it calls `hitTest` and dispatches to the active tool's `onDown(target, world, e)`; every pointerdown creates a `drag`; a click is a drag that never moved past 3 px. On pointermove without a drag it updates `hover` (which drives cursor and highlight). Pointer capture keeps a gesture alive off the canvas; `pointercancel` and window `blur` end it without further changes.
 
+**Touch and pen.** Pointer Events serve mouse, pen and touch alike; `touch-action: none` on the SVG stops the browser from scrolling or zooming the page. Three rules make touch usable without a separate code path:
+
+- **Two pointers = navigation.** While two pointers are down no tool runs. The gesture pans by the delta of the pointers' midpoint and zooms by the ratio of their distance, about the midpoint. A second pointer landing during a one-pointer drag cancels that drag exactly as `pointercancel` would (the gesture's history entry stays as it was at that moment). When one pointer lifts, the other does not resume a tool; the gesture ends when both are up. Safari's `gesturestart` / `gesturechange` events are prevented and ignored in favour of pointer tracking.
+- **Thresholds follow the pointer type.** When `pointerType` is `touch`, the snap, handle and segment hit radii in `config.ts` double; `pen` and `mouse` use the base values. Handles render at their normal size because hit-testing is geometric (§4), so the picture does not change, only the tolerance.
+- **Nothing requires hover or a modifier key.** Every hover behaviour has a press path: the Fill tool tints the region on pointerdown and commits on pointerup, so a finger can see the region before lifting, and moving the finger before lifting re-targets. Every modifier has a chrome control: End path (for `Esc` / `Enter`), Straighten (for double-click on a diamond), a Free toggle in the selection bar that stands in for `⇧` while scaling, an Add toggle that stands in for `⇧` while marquee-selecting, and the existing Snap button for `⇧`-inverted snapping. `Space`-drag stays keyboard-only; on touch, elements are moved on the Construction layer.
+
+Out of scope for Project 1: palm rejection beyond the two-pointer rule, pen pressure and tilt, a phone-sized layout, and long-press menus.
+
 **Editing through a copy.** Whatever copy the user clicks, in a neighbouring cell or through a symmetry, becomes the focus: the path is selected with that copy, handles and anchors render at that copy, and every drag maps the pointer through the copy's inverse matrix before touching the document. The source and all other copies follow. The user never has to look back at the base cell.
 
 ### Layers
@@ -235,8 +243,8 @@ Press and drag on empty space or on a point. The raw stroke is previewed live, p
 
 ### Fill (B)
 
-- Hovering tints the region under the cursor in every cell, so closure is visible before committing.
-- Click inside a region: place a seed (§4.7) with `fillColor`, replacing any seed whose face is the same region. Click in a hole or outside every region: no-op.
+- Hovering tints the region under the cursor in every cell, so closure is visible before committing. With a pointer down (finger or otherwise) the tint follows the pointer and nothing is committed until release, so touch users get the same preview.
+- Release inside a region: place a seed (§4.7) with `fillColor`, replacing any seed whose face is the same region. Release in a hole or outside every region: no-op.
 - Click an existing fill: recolour it to `fillColor`.
 - The palette shows Fill swatches while the Fill tool is active or a fill is selected, Stroke swatches otherwise.
 
@@ -269,7 +277,7 @@ Grid divisions (2–16), ghost opacity (0.1–1), and a Reset view button. Both 
 
 ### View
 
-Wheel = pan. `⌘`/`Ctrl`+wheel and pinch = zoom about the cursor (clamped). `⌘0` = fit.
+Wheel = pan. `⌘`/`Ctrl`+wheel and trackpad pinch = zoom about the cursor (clamped). Two-finger touch = pan and pinch zoom (see Touch and pen above). `⌘0` and the Reset view button = fit.
 
 ### History and help
 
@@ -306,7 +314,9 @@ Floating panels over a full-viewport SVG, warm palette (`#f4f2ec` background, `#
 - Bottom: hint text and counts.
 - Top-right: the File group and `?` with the shortcut sheet and settings.
 
-All controls are `<button>`s with `title`s and 36 px minimum hit targets.
+All controls are `<button>`s with `title`s and 36 px minimum hit targets, growing to 44 px when the last pointer seen was a touch. Panels wrap so the chrome fits a tablet in landscape (1024 px wide) without covering the base cell.
+
+The selection bar for a path gains End path (visible while the pen is active), Straighten (visible when the selected segment is curved), and the Free and Add toggles described under Touch and pen. These are always present, not touch-only, so the app has no hidden modes.
 
 ## 9. Error handling
 
@@ -319,6 +329,7 @@ All controls are `<button>`s with `title`s and 36 px minimum hit targets.
 - Region computation is wrapped so a numerical failure logs and renders no fills for that document rather than breaking the render.
 - A corrupt or foreign-version document or prefs value in localStorage or an import is refused with a message and the app starts from defaults; the bad value is left under a `-rejected` key.
 - Wallpaper export refuses sizes over 64×64 with a message.
+- A third pointer landing during a two-pointer gesture is ignored; the gesture continues with the first two until either lifts.
 
 ## 10. Testing
 
@@ -327,7 +338,7 @@ All controls are `<button>`s with `title`s and 36 px minimum hit targets.
 - `lattice`: `L` / `L⁻¹` round trip for every preset; `cellOf` on boundaries; grid and fraction snapping in `(u, v)`; `isDegenerate`.
 - `transform`: `matrixOf` for each primitive against hand-computed points, including a mirror whose direction is a lattice direction on a skewed lattice; `copyMatrix`; `compose` / `invert` / `power`; `isLatticeTranslation`; `orbit` sizes for every row of the table in §4 including the empty chain, plus the `open` flag for rotate 5; `classify` of `[mirror, translate]` is a glide and of `[rotate 2, translate]` is a rotation with the expected centre.
 - `paths`: append / insert keep segments consistent; delete points splits paths, removes both occurrences of a closed path's shared node, and prunes orphans; `openEndAt` / `orientToEnd` shift cells and control points together; `movePoint` shifts adjacent control points by half; `transformPath` given a world matrix at a copy maps back correctly; a wrap-around path is not closed, a path returning to its first node in the same cell is; `toggleOp` ordering; changing the lattice leaves every `(u, v)` untouched.
-- `hit`: priority order (a handle beats a point beats a segment beats a fill); a segment of a copy in cell (1, 0) is hit and reports that copy; a clone segment reports its binding and power; thresholds scale with zoom; `snapWorld` prefers an anchor in a neighbouring cell over the grid; `skip` excludes the dragged point but not its clone images; bbox handles and matrices.
+- `hit`: priority order (a handle beats a point beats a segment beats a fill); a segment of a copy in cell (1, 0) is hit and reports that copy; a clone segment reports its binding and power; thresholds scale with zoom and double for `pointerType: 'touch'`; `snapWorld` prefers an anchor in a neighbouring cell over the grid; `skip` excludes the dragged point but not its clone images; bbox handles and matrices.
 - `regions`: a closed square → one face; two crossing lines inside a square → four faces; a dangling stroke inside a face does not split it; source edges plus a 180° rotation → two faces per cell; a face straddling the cell edge is found once; coincident edges from a mirror on the path are deduplicated; a closed loop inside a face becomes a hole, `faceAt` inside the hole is null, `facePathData` has two subpaths; `seedFor` returns the centroid for a convex face and the click for a crescent whose centroid is outside; a seed outside every region is null; a curved edge split at `t` reproduces the original curve; memoised per document reference.
 - `freehand`: RDP on a straight line returns two points; a sampled arc yields a control point near the true one; a short jitter stroke is rejected.
 - `doc` / `history`: commit pushes and clears redo; a gesture records one entry; cap at 50; undo restores the exact previous reference and clears selection; faces are not recomputed while a drag is set.
@@ -341,6 +352,8 @@ All controls are `<button>`s with `title`s and 36 px minimum hit targets.
 - Fill: draw a closed loop, press `B`, click inside, assert a filled `<path>` with the chosen colour; reload and assert it is still there (autosave), and that the tool and snap setting were restored.
 - Undo a drag: drag a point, press `⌘Z`, assert its position returned.
 - Export: choose Wallpaper 4×3, assert a download whose SVG has the expected `viewBox` and `<use>` count.
+- Touch: dispatch two synthetic `touch` pointers, move them apart, assert the zoom increased and the midpoint stayed fixed; start a one-finger drag on a point, land a second finger, assert the point returned to its pre-drag position and the two-finger pan took over; tap a segment with a `touch` pointer at 1.5× the mouse threshold and assert it was selected.
+- Fill by touch: press inside a region with a `touch` pointer, assert the tint appears before release, release, assert the fill exists.
 
 ## 11. Implementation order
 
@@ -356,4 +369,5 @@ All controls are `<button>`s with `title`s and 36 px minimum hit targets.
 10. `engine/freehand.ts` + tests; Freehand tool. Bounding box scale / rotate. Fill tool.
 11. `Chrome.tsx`: bars, palette, hint, help with settings, view pan / zoom / fit.
 12. `state/persist.ts` (document and prefs), `engine/serialize.ts` + tests; File group with the export popover; Playwright flows.
-13. Rewrite `CLAUDE.md`.
+13. Touch: two-pointer navigation in `pointer.ts`, pointer-type thresholds, press-to-preview fill, the End path / Straighten / Free / Add controls, touch hit sizes; Playwright touch flows.
+14. Rewrite `CLAUDE.md`.
