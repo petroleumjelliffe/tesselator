@@ -66,8 +66,12 @@ function intersect(p1: XY, p2: XY, p3: XY, p4: XY): { t: number; u: number } | n
   return { t: Math.min(1, Math.max(0, t)), u: Math.min(1, Math.max(0, u)) };
 }
 
-function splitParams(segs: WorldSeg[]): number[][] {
-  const ps = pieces(segs), params = segs.map(() => [0, 1]);
+// A split of a segment: the parameter on the true curve and the vertex position, which is the crossing point on the
+// flattened chord so that both segments through a crossing land on one shared vertex (the true-curve points at their
+// respective parameters differ by the chord sagitta, far more than MERGE). The outline still uses subCurve(t0, t1).
+type Split = { t: number; p: XY };
+function splitParams(segs: WorldSeg[]): Split[][] {
+  const ps = pieces(segs), params: Split[][] = segs.map((s) => [{ t: 0, p: s.a }, { t: 1, p: s.b }]);
   if (!ps.length) return params;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const pc of ps) { minX = Math.min(minX, pc.p.x, pc.q.x); maxX = Math.max(maxX, pc.p.x, pc.q.x); minY = Math.min(minY, pc.p.y, pc.q.y); maxY = Math.max(maxY, pc.p.y, pc.q.y); }
@@ -87,17 +91,18 @@ function splitParams(segs: WorldSeg[]): number[][] {
     seen.add(key);
     const h = intersect(A.p, A.q, B.p, B.q);
     if (!h) continue;
-    params[A.si].push(A.t0 + (A.t1 - A.t0) * h.t);
-    params[B.si].push(B.t0 + (B.t1 - B.t0) * h.u);
+    const x: XY = { x: A.p.x + (A.q.x - A.p.x) * h.t, y: A.p.y + (A.q.y - A.p.y) * h.t };
+    params[A.si].push({ t: A.t0 + (A.t1 - A.t0) * h.t, p: x });
+    params[B.si].push({ t: B.t0 + (B.t1 - B.t0) * h.u, p: x });
   }
-  return params.map((list) => { const s = list.sort((a, b) => a - b), out = [s[0]]; for (const t of s) if (t - out[out.length - 1] > T_EPS) out.push(t); return out; });
+  return params.map((list) => { const s = list.sort((a, b) => a.t - b.t), out = [s[0]]; for (const x of s) if (x.t - out[out.length - 1].t > T_EPS) out.push(x); return out; });
 }
 
 type Vert = { x: number; y: number; out: number[]; comp: number };
 type Edge = { va: number; vb: number; poly: XY[]; seg: WorldSeg; t0: number; t1: number };
 type Half = { from: number; to: number; edge: number; rev: boolean; angle: number; twin: number; next: number };
 
-function buildGraph(segs: WorldSeg[], params: number[][]) {
+function buildGraph(segs: WorldSeg[], params: Split[][]) {
   const verts: Vert[] = [], grid = new Map<string, number[]>();
   const vertexAt = (p: XY): number => {
     const gx = Math.round(p.x / MERGE), gy = Math.round(p.y / MERGE);
@@ -115,11 +120,12 @@ function buildGraph(segs: WorldSeg[], params: number[][]) {
   segs.forEach((s, si) => {
     const ts = params[si];
     for (let k = 0; k < ts.length - 1; k++) {
-      const t0 = ts[k], t1 = ts[k + 1];
+      const { t: t0, p: pa } = ts[k], { t: t1, p: pb } = ts[k + 1];
       const n = s.cp ? Math.max(2, Math.ceil(sampleCount(s) * (t1 - t0))) : 1;
-      const poly: XY[] = [];
-      for (let i = 0; i <= n; i++) poly.push(bez(s, t0 + ((t1 - t0) * i) / n));
-      const va = vertexAt(poly[0]), vb = vertexAt(poly[n]);
+      const poly: XY[] = [pa];
+      for (let i = 1; i < n; i++) poly.push(bez(s, t0 + ((t1 - t0) * i) / n));
+      poly.push(pb);
+      const va = vertexAt(pa), vb = vertexAt(pb);
       if (va === vb) continue;
       const m = bez(s, (t0 + t1) / 2);
       const key = `${Math.min(va, vb)}:${Math.max(va, vb)}:${Math.round(m.x / MERGE)},${Math.round(m.y / MERGE)}`;

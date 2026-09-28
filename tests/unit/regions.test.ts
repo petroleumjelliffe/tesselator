@@ -133,3 +133,29 @@ test('collectSegments skips zero-length segments', () => {
   path.segments.push({ to: { pointId: 'dup', cell: { c: 0, r: 0 } }, cp: null });
   expect(collectSegments(doc)).toHaveLength(9);
 });
+
+test('a curved chord through a square splits it in two (straight x curve crossings)', () => {
+  const doc = makeDoc(); square(doc);
+  const chord = polyline(doc, [{ u: S(30), v: S(120) }, { u: S(210), v: S(120) }]);   // endpoints outside the square
+  P.setControlPointAbs(doc, chord.id, 0, { u: S(120), v: S(60) });                    // apex at y = 90, inside the square
+  const faces = computeFaces(doc);
+  expect(faces).toHaveLength(18);
+  const above = faceAt(faces, { x: 120, y: 70 })!, below = faceAt(faces, { x: 120, y: 150 })!;
+  expect(above).toBeTruthy(); expect(below).toBeTruthy();
+  expect(above.area + below.area).toBeCloseTo(14400, 0);
+  expect(facePathData(above)).toMatch(/Q/);
+});
+
+test('two curves crossing twice enclose a lens (curve x curve crossings)', () => {
+  const doc = makeDoc();
+  const a = polyline(doc, [{ u: S(40), v: S(100) }, { u: S(200), v: S(100) }]);
+  P.setControlPointAbs(doc, a.id, 0, { u: S(120), v: S(20) });    // bows up to y = 60
+  const b = polyline(doc, [{ u: S(40), v: S(60) }, { u: S(200), v: S(60) }]);
+  P.setControlPointAbs(doc, b.id, 0, { u: S(120), v: S(140) });   // bows down to y = 100
+  const faces = computeFaces(doc);
+  expect(faces).toHaveLength(9);
+  const lens = faceAt(faces, { x: 120, y: 80 })!;
+  expect(lens).toBeTruthy();
+  expect(lens.area).toBeGreaterThan(0);
+  expect(faceAt(faces, { x: 120, y: 30 })).toBe(null);
+});
