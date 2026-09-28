@@ -53,6 +53,8 @@ function ToolBar() {
     <Btn on={UI.sublayer.value === 'detail'} cls="small" title="New paths go above fills" onClick={() => A.setSublayer('detail')}>Detail</Btn>
     <Sep />
     <Btn on={p.snap} cls="small" kbd="G" title="Grid snapping (G); hold Shift to invert" onClick={() => A.toggleSnap()}>⌗ Snap</Btn>
+    {UI.pen.value && <><Sep /><Btn cls="small outline" kbd="↵" title="End the current path (Enter / Esc)" onClick={() => A.endPen()}>End path</Btn></>}
+    {t === 'select' && <Btn cls="small" on={UI.addToSelection.value} title="Add to the selection while marquee-selecting (stands in for Shift)" onClick={() => A.toggleAddToSelection()}>Add</Btn>}
   </div>;
 }
 
@@ -113,6 +115,8 @@ function SelectionBar() {
       <Btn cls="small violet" title="New translation cloning this path" onClick={() => A.addElement('translate')}>+ ⇢</Btn>
       <Sep />
       <Btn cls="small outline" title="Structure paths sit below fills, detail paths above" onClick={() => A.togglePathLayer(path.id)}>{path.layer === 'detail' ? 'Above fills' : 'Below fills'}</Btn>
+      {path.segments.some((x) => x.cp) && <Btn cls="small outline" title="Straighten every curved segment (double-click a diamond for one)" onClick={() => A.straightenPath(path.id)}>Straighten</Btn>}
+      <Btn cls="small" on={UI.freeScale.value} title="Scale freely from the box corners (stands in for Shift)" onClick={() => A.toggleFreeScale()}>Free</Btn>
     </>;
   } else if (s.kind === 'element') {
     const el = getElement(d, s.id); if (!el) return null;

@@ -36,7 +36,7 @@ function startBBox(t: HitTarget, w: XY, e: PointerEvent, hitScale: number): void
 }
 
 export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
-  if (!t) { startDrag(e, null, w, ctx.hitScale, { kind: 'marquee', cur: w, add: e.shiftKey }); if (!e.shiftKey) UI.selection.value = null; return; }
+  if (!t) { startDrag(e, null, w, ctx.hitScale, { kind: 'marquee', cur: w, add: e.shiftKey || UI.addToSelection.value }); if (!e.shiftKey && !UI.addToSelection.value) UI.selection.value = null; return; }
   switch (t.kind) {
     case 'point': return pointDown(t, w, e, ctx.hitScale);
     case 'segment': {
@@ -96,7 +96,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
         if (ctx.snapOn) th = Math.round(th / (Math.PI / 12)) * (Math.PI / 12);
         T = rotation(th, d.cx, d.cy);
       } else {
-        const { sx, sy } = scaleFor(d.h, w, e.shiftKey);
+        const { sx, sy } = scaleFor(d.h, w, e.shiftKey || UI.freeScale.value);
         T = scaleMatrix(d.h.ax, d.h.ay, sx, sy);
       }
       const Mc = copyMatrix(d.copy, d.startDoc);
@@ -121,7 +121,7 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
   if (d.moved || !d.target) return;
   const t = d.target, s = UI.selection.value;
   switch (t.kind) {
-    case 'point': if (e.shiftKey) A.togglePointSelection(t.pointId); else A.selectPoints([t.pointId]); return;
+    case 'point': if (e.shiftKey || UI.addToSelection.value) A.togglePointSelection(t.pointId); else A.selectPoints([t.pointId]); return;
     case 'segment':
       if (s && s.kind === 'path' && s.id === t.pathId && sameCopy(s.copy, t.copy)) A.insertNodeOnSegment(t.pathId, t.j, w, t.copy, ctx.snapOn);
       else A.selectPathAt(t.pathId, t.copy);

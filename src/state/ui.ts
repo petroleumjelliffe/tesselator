@@ -20,11 +20,14 @@ export const lastSavedAt = signal<number | null>(null);
 export const lastPointerType = signal<PointerKind>('mouse');
 export const fillPreview = signal<XY | null>(null);   // world point while a Fill press is held
 export const viewRestored = signal(false);            // true when the initial view came from a saved session; App skips fitView then
+export const freeScale = signal(false);        // touch stand-in for Shift while scaling
+export const addToSelection = signal(false);   // touch stand-in for Shift while marquee-selecting
 
 export function resetUi(): void {
   layer.value = 'drawing'; sublayer.value = 'structure'; tool.value = 'pen'; pen.value = null; selection.value = null;
   hover.value = null; drag.value = null; cursor.value = null; view.value = { pan: { x: 0, y: 0 }, zoom: 1 }; space.value = false;
   showHelp.value = false; exportOpen.value = false; fillPreview.value = null;
+  freeScale.value = false; addToSelection.value = false;
 }
 
 export function clearSelection(): void { selection.value = null; }

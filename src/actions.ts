@@ -52,6 +52,8 @@ export function setLayer(l: Layer): boolean {
 }
 export function setSublayer(s: PathLayer): boolean { UI.sublayer.value = s; return true; }
 export function toggleSnap(): boolean { UI.prefs.value = { ...UI.prefs.value, snap: !UI.prefs.value.snap }; return true; }
+export function toggleFreeScale(): boolean { UI.freeScale.value = !UI.freeScale.value; return true; }
+export function toggleAddToSelection(): boolean { UI.addToSelection.value = !UI.addToSelection.value; return true; }
 export function toggleHelp(): boolean { UI.showHelp.value = !UI.showHelp.value; return true; }
 export function setGridDivisions(n: number): boolean { UI.prefs.value = { ...UI.prefs.value, gridDivisions: Math.max(2, Math.min(16, Math.round(n))) }; return true; }
 export function setGhostOpacity(x: number): boolean { UI.prefs.value = { ...UI.prefs.value, ghostOpacity: Math.max(0.1, Math.min(1, x)) }; return true; }
@@ -139,6 +141,12 @@ export function straightenSegment(pathId: string, j: number): boolean {
   const path = P.getPath(doc.value, pathId);
   if (!path || !path.segments[j]?.cp) return false;
   return mutate((d) => { P.setControlPointAbs(d, pathId, j, null); });
+}
+
+export function straightenPath(pathId: string): boolean {
+  const path = P.getPath(doc.value, pathId);
+  if (!path || !path.segments.some((s) => s.cp)) return false;
+  return mutate((d) => { const p = P.getPath(d, pathId)!; p.segments.forEach((s) => { s.cp = null; }); });
 }
 
 // --- delete

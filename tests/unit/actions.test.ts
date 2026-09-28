@@ -120,3 +120,15 @@ test('a gesture of many mutate() calls is one undo step', () => {
   A.undo();
   expect(P.getPoint(doc.value, pid)!.u).toBeCloseTo(0.1, 9);
 });
+
+test('straightenPath clears every curved segment on a path, and is a no-op once straight', () => {
+  fresh();
+  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.penClickEmpty(W(0.4, 0.4), false); A.endPen();
+  const path = doc.value.paths[0];
+  A.mutate((d) => { const p = P.getPath(d, path.id)!; p.segments[0].cp = { u: 0.25, v: 0.05 }; p.segments[1].cp = { u: 0.45, v: 0.25 }; });
+  expect(doc.value.paths[0].segments.some((s) => s.cp)).toBe(true);
+  A.selectPathAt(path.id);
+  expect(A.straightenPath(path.id)).toBe(true);
+  expect(doc.value.paths[0].segments.every((s) => s.cp === null)).toBe(true);
+  expect(A.straightenPath(path.id)).toBe(false);
+});
