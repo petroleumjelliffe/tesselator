@@ -56,3 +56,7 @@ __pycache__/
 tmp/
 temp/
 *.tmp
+
+# Vite / Playwright build outputs
+test-results/
+playwright-report/
