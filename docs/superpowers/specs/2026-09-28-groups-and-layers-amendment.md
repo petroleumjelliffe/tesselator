@@ -40,7 +40,7 @@ Orbit sizes the tests pin down, in addition to the original table (which now des
 | [rotate 2], [rotate 2 about the same centre] | 1 (second group's clone coincides with the first, mod lattice) |
 | [translate ½ along a], [translate ½ along b] | 3 |
 
-**Defaults and construction.** `O`, `M`, `T` create the element and append it as a new one-element group to `newPathGroups`. If a path is selected, the element is also appended as a new group to that path's first binding (created if the path has none). "Apply to new paths" on an element toggles its one-element group in `newPathGroups`. A new path gets one binding with `newPathGroups` (empty groups list → no binding).
+**Defaults and construction.** `O`, `M`, `T` create the element and append it as a new one-element group to `newPathGroups`. If a path is selected, the element is also appended as a new group to that path's first binding (created if the path has none). "Apply to new paths" on an element is lit when the element appears anywhere in `newPathGroups`; turning it off removes the element from whichever group holds it (a group left empty is dropped), turning it on appends it as its own one-element group. A new path gets one binding with `newPathGroups` (empty groups list → no binding).
 
 **Drags.** Dragging a clone copy's body moves the first element of the **first group that contributes to the dragged copy** (the first group with a nonzero power in the copy's clone index) by the existing inverse formulas. That is exact when the other contributing groups are translations and follows in the transformed frame otherwise. `Space`+drag while drawing moves the first element of the first group of each of the path's bindings.
 
