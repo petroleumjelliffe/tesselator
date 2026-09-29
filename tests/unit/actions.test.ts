@@ -236,6 +236,13 @@ test('group editing actions move an element between groups and clear the pending
   A.addElementToNewChain(doc.value.paths[0].id, m);
   expect(doc.value.bindings[0].groups).toEqual([[m]]);
   expect(UI.pendingGroup.value).toBe(null);
+  // A selected clone whose power slot disappears when a removeElementFromBinding drops the binding's clone count
+  // (here 3 clones down to 1, so power 2's slot no longer exists) falls back to the base copy.
+  const nb = doc.value.bindings[0];
+  A.startGroup(nb.id); A.placeElementInGroup(nb.id, r, nb.groups.length);
+  UI.selection.value = { kind: 'path', id: doc.value.paths[0].id, copy: { cell: { c: 0, r: 0 }, bindingId: nb.id, power: 2 } };
+  A.removeElementFromBinding(nb.id, r);
+  expect((UI.selection.value as { kind: 'path'; copy: { bindingId: string | null } }).copy.bindingId).toBe(null);
 });
 
 test('"Apply to new paths" keeps newPathGroups free of repeats, so a new path\'s binding always reloads', () => {

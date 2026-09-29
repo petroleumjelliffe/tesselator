@@ -1,4 +1,5 @@
 import type { ComponentChildren } from 'preact';
+import { Fragment } from 'preact';
 import { useState } from 'preact/hooks';
 import { doc } from '../state/doc';
 import * as UI from '../state/ui';
@@ -91,14 +92,39 @@ function LatticeBar() {
   </div>;
 }
 
+// One cluster per group: every element is a chip; lit = in this group. Clicking a lit chip removes the element from
+// the binding; clicking an unlit one moves the element into this group (an element appears at most once per binding).
+function GroupCluster({ b, gi, group, pending }: { b: Binding; gi: number; group: string[]; pending?: boolean }) {
+  const d = doc.value;
+  return <span class={pending ? 'group pending' : 'group'}>
+    {d.elements.map((e) => { const here = group.includes(e.id); return <Btn key={e.id} cls="small violet" on={here} title={here ? 'Remove this element from the binding' : gi === b.groups.length ? 'Start the new group with this element' : 'Put this element in this group (moves it out of another group)'} onClick={() => (here ? A.removeElementFromBinding(b.id, e.id) : A.placeElementInGroup(b.id, e.id, gi))}>{elementLabel(e)}</Btn>; })}
+    {pending && <Btn cls="small" title="Cancel the new group" onClick={() => A.cancelPending()}>✕</Btn>}
+  </span>;
+}
+
 function ChainRow({ b }: { b: Binding }) {
-  const o = orbitOf(b.groups), n = cloneCount(o);
+  const o = orbitOf(b.groups), n = cloneCount(o), pending = UI.pendingGroup.value;
+  const pendingHere = !!pending && 'bindingId' in pending && pending.bindingId === b.id;
   return <>
-    <Label>{chainLabel(b.groups)} · {n} clone{n === 1 ? '' : 's'}{o.open ? ' ⚠' : ''}</Label>
-    <Btn cls="small" on={A.isNewPathGroups(b.groups)} title="Give new paths this binding" onClick={() => A.setNewPathGroups(b.groups)}>★</Btn>
-    <Btn cls="small" title="Remove this binding" onClick={() => A.removeBinding(b.id)}>✕</Btn>
+    <Label>{n} clone{n === 1 ? '' : 's'}{o.open ? ' ⚠' : ''}:</Label>
+    {b.groups.map((g, gi) => <Fragment key={gi}>{gi > 0 && <Label>then</Label>}<GroupCluster b={b} gi={gi} group={g} /></Fragment>)}
+    {pendingHere
+      ? <><Label>then</Label><GroupCluster b={b} gi={b.groups.length} group={[]} pending /></>
+      : <Btn cls="small outline" title="Add a group that applies to the source and to every clone so far" onClick={() => A.startGroup(b.id)}>+ then</Btn>}
+    <Btn cls="small" on={A.isNewPathGroups(b.groups)} title="Give every new path this binding (★ lit = they get it now)" onClick={() => A.setNewPathGroups(b.groups)}>★</Btn>
+    <Btn cls="small" title="Remove this binding and its clones" onClick={() => A.removeBinding(b.id)}>✕</Btn>
     <Sep />
   </>;
+}
+
+// "+ chain": a second, independent binding on the path. It exists only once it has an element.
+function NewChain({ pathId }: { pathId: string }) {
+  const d = doc.value, pending = UI.pendingGroup.value;
+  if (!(pending && 'pathId' in pending && pending.pathId === pathId)) return <Btn cls="small outline" title="Start another binding on this path (independent clones)" onClick={() => A.startChain(pathId)}>+ chain</Btn>;
+  return <span class="group pending">
+    {d.elements.map((e) => <Btn key={e.id} cls="small violet" title="Start the new binding with this element" onClick={() => A.addElementToNewChain(pathId, e.id)}>{elementLabel(e)}</Btn>)}
+    <Btn cls="small" title="Cancel the new binding" onClick={() => A.cancelPending()}>✕</Btn>
+  </span>;
 }
 
 function SelectionBar() {
@@ -113,9 +139,10 @@ function SelectionBar() {
       {b && <Btn cls="small violet" title="Select the first element of this clone's chain (switches to Construction)" onClick={() => { const first = b.groups[0]?.[0]; if (first) { A.selectElement(first); A.setLayer('construction'); } }}>Select its element</Btn>}
       {b && <Btn cls="small outline" title="Select the source path in the base cell" onClick={() => A.selectPathAt(path.id)}>Select source path</Btn>}
       {d.bindings.filter((x) => x.pathId === path.id).map((x) => <ChainRow key={x.id} b={x} />)}
-      <Btn cls="small violet" title="New rotation cloning this path" onClick={() => A.addElement('rotate')}>+ ↻</Btn>
-      <Btn cls="small violet" title="New mirror cloning this path" onClick={() => A.addElement('mirror')}>+ ⟋</Btn>
-      <Btn cls="small violet" title="New translation cloning this path" onClick={() => A.addElement('translate')}>+ ⇢</Btn>
+      {d.elements.length === 0 ? <Label>add an element with O, M or T</Label> : <NewChain pathId={path.id} />}
+      <Btn cls="small violet" title="New rotation, stacked as a group on this path's binding" onClick={() => A.addElement('rotate')}>+ ↻</Btn>
+      <Btn cls="small violet" title="New mirror, stacked as a group on this path's binding" onClick={() => A.addElement('mirror')}>+ ⟋</Btn>
+      <Btn cls="small violet" title="New translation, stacked as a group on this path's binding" onClick={() => A.addElement('translate')}>+ ⇢</Btn>
       <Sep />
       {path.segments.some((x) => x.cp) && <Btn cls="small outline" title="Straighten every curved segment (double-click a diamond for one)" onClick={() => A.straightenPath(path.id)}>Straighten</Btn>}
       <Btn cls="small" on={UI.freeScale.value} title="Scale freely from the box corners (stands in for Shift)" onClick={() => A.toggleFreeScale()}>Free</Btn>

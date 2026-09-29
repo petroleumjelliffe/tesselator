@@ -89,3 +89,5 @@ body { background: var(--bg); color: var(--ink); font-family: ui-sans-serif, sys
 .fill-hover { fill: var(--accent); opacity: 0.25; fill-rule: evenodd; }
 .free { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .inactive-layer { opacity: 0.45; }
+.group { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px dashed var(--element); border-radius: 9px; }
+.group.pending { border-style: dotted; }

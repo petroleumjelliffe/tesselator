@@ -2,7 +2,7 @@
 import { doc, draft, emptyDoc } from './state/doc';
 import { commit, undo as hUndo, redo as hRedo } from './state/history';
 import * as UI from './state/ui';
-import { copyMatrix, faces } from './state/derived';
+import { copyMatrix, cloneMatrices, faces } from './state/derived';
 import * as P from './engine/paths';
 import { toWorld, toUV, snapGrid, snapFraction } from './engine/lattice';
 import { apply, invert, mirrorAngle, mirrorDirFromAngle } from './engine/transform';
@@ -30,6 +30,13 @@ export function snapDeltaUV(dw: XY, on: boolean): UV {
   return on ? snapGrid(d, UI.prefs.value.gridDivisions) : d;
 }
 const baseCopy: Copy = { cell: { c: 0, r: 0 }, bindingId: null, power: 0 };
+// After a binding's groups change, a selected clone's power can point past the end of (or at a deduped-null slot in)
+// the new cloneMatrices; fall back to the base copy rather than let the selection silently act on the source path.
+function resetCloneSelectionIfGone(bindingId: string): void {
+  const s = UI.selection.value;
+  if (!s || s.kind !== 'path' || s.copy.bindingId !== bindingId) return;
+  if ((cloneMatrices.value.get(bindingId) ?? [])[s.copy.power - 1] == null) UI.selection.value = { kind: 'path', id: s.id, copy: baseCopy };
+}
 
 // --- tools, layers, prefs
 
@@ -271,13 +278,12 @@ export function setNewPathGroups(groups: string[][]): boolean {
 }
 export function placeElementInGroup(bindingId: string, elementId: string, gi: number): boolean {
   const ok = mutate((d) => { if (!P.getBinding(d, bindingId) || !P.getElement(d, elementId)) return false; return P.placeInGroup(d, bindingId, elementId, gi); });
-  if (ok) UI.pendingGroup.value = null;
+  if (ok) { UI.pendingGroup.value = null; resetCloneSelectionIfGone(bindingId); }
   return ok;
 }
 export function removeElementFromBinding(bindingId: string, elementId: string): boolean {
   const ok = mutate((d) => { const b = P.getBinding(d, bindingId); if (!b || !b.groups.some((g) => g.includes(elementId))) return false; P.removeFromBinding(d, bindingId, elementId); });
-  const s = UI.selection.value;
-  if (ok && s && s.kind === 'path' && s.copy.bindingId === bindingId && !P.getBinding(doc.value, bindingId)) UI.selection.value = { kind: 'path', id: s.id, copy: baseCopy };
+  if (ok) resetCloneSelectionIfGone(bindingId);
   return ok;
 }
 export function startGroup(bindingId: string): boolean { UI.pendingGroup.value = { bindingId }; return true; }
