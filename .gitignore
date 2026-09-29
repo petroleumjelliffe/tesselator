@@ -59,3 +59,6 @@ temp/
 # Vite / Playwright build outputs
 test-results/
 playwright-report/
+
+# Personal exports (SVG / JSON saved from the app)
+saves/
