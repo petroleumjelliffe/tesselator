@@ -21,7 +21,7 @@ export function pointDown(t: Extract<HitTarget, { kind: 'point' }>, w: XY, e: Po
     startDrag(e, t, w, hitScale, { kind: 'pts', ids: selPts.slice(), startPos: P.snapshotPositions(doc.value, selPts) });
     return;
   }
-  startDrag(e, t, w, hitScale, { kind: 'pt', pointId: t.pointId, cell: t.cell });
+  startDrag(e, t, w, hitScale, { kind: 'pt', pointId: t.pointId, cell: t.cell, snapTo: null });
 }
 
 function startBBox(t: HitTarget, w: XY, e: PointerEvent, hitScale: number): void {

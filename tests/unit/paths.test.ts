@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
 import { rotation, cloneCount } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
-import type { Doc, UV } from '../../src/types';
+import type { Doc, UV, XY } from '../../src/types';
 
 function makeDoc(): Doc {
   return { version: 2, lattice: { ...CONFIG.LATTICE_PRESETS.Square }, points: [], paths: [], elements: [], bindings: [], fills: [], layers: [{ id: 'L1', name: 'Layer 1' }], newPathGroups: [] };
@@ -231,4 +231,109 @@ test('openEndAt ignores a path with no segments', () => {
   const n = P.addPoint(doc, { u: 0.1, v: 0.1 });
   P.startPath(doc, n, style, 'L1');
   expect(P.openEndAt(doc, n.pointId)).toBe(null);
+});
+
+const bez = (a: UV, c: UV | null, b: UV, t: number): UV => {
+  if (!c) return { u: a.u + (b.u - a.u) * t, v: a.v + (b.v - a.v) * t };
+  const s = 1 - t; return { u: s * s * a.u + 2 * s * t * c.u + t * t * b.u, v: s * s * a.v + 2 * s * t * c.v + t * t * b.v };
+};
+
+test('insertNodeAt splits a curve at any t without changing its outline', () => {
+  const doc = makeDoc();
+  const path = polyline(doc, [{ u: 0.1, v: 0.1 }, { u: 0.9, v: 0.2 }]);
+  P.setControlPointAbs(doc, path.id, 0, { u: 0.5, v: 0.8 });
+  const A = P.nodeUVAbs(doc, path.start), B = P.nodeUVAbs(doc, path.segments[0].to), C = P.cpAbs(path, 0)!;
+  const node = P.insertNodeAt(doc, path.id, 0, 0.3);
+  expect(path.segments).toHaveLength(2);
+  const m = P.nodeUVAbs(doc, node), e = bez(A, C, B, 0.3);
+  expect(m.u).toBeCloseTo(e.u, 12); expect(m.v).toBeCloseTo(e.v, 12);
+  for (let i = 0; i <= 10; i++) {
+    const s = i / 10;
+    const first = bez(A, P.cpAbs(path, 0), P.nodeUVAbs(doc, node), s), orig = bez(A, C, B, 0.3 * s);
+    expect(first.u).toBeCloseTo(orig.u, 9); expect(first.v).toBeCloseTo(orig.v, 9);
+    const second = bez(P.nodeUVAbs(doc, node), P.cpAbs(path, 1), B, s), orig2 = bez(A, C, B, 0.3 + 0.7 * s);
+    expect(second.u).toBeCloseTo(orig2.u, 9); expect(second.v).toBeCloseTo(orig2.v, 9);
+  }
+  const straight = polyline(doc, [{ u: 0, v: 0.5 }, { u: 0.4, v: 0.5 }]);
+  const n2 = P.insertNodeAt(doc, straight.id, 0, 0.25);
+  expect(P.nodeUVAbs(doc, n2)).toEqual({ u: 0.1, v: 0.5 });
+  expect(straight.segments.map((s) => s.cp)).toEqual([null, null]);
+});
+
+test('nearestT finds the closest parameter on straight and curved segments, clamped away from the ends', () => {
+  expect(P.nearestT({ x: 0, y: 0 }, null, { x: 100, y: 0 }, { x: 30, y: 7 })).toBeCloseTo(0.3, 9);
+  expect(P.nearestT({ x: 0, y: 0 }, null, { x: 100, y: 0 }, { x: -50, y: 0 })).toBe(0.02);
+  expect(P.nearestT({ x: 0, y: 0 }, null, { x: 100, y: 0 }, { x: 500, y: 0 })).toBe(0.98);
+  const a = { x: 0, y: 0 }, c = { x: 50, y: 100 }, b = { x: 100, y: 0 };
+  const q = (t: number) => ({ x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * c.x + t * t * b.x, y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * c.y + t * t * b.y });
+  for (const t0 of [0.2, 0.5, 0.77]) {
+    const p = q(t0), d = { x: 2 * ((1 - t0) * (c.x - a.x) + t0 * (b.x - c.x)), y: 2 * ((1 - t0) * (c.y - a.y) + t0 * (b.y - c.y)) }, L = Math.hypot(d.x, d.y);
+    expect(P.nearestT(a, c, b, p)).toBeCloseTo(t0, 6);                                                        // on the curve
+    expect(P.nearestT(a, c, b, { x: p.x - (3 * d.y) / L, y: p.y + (3 * d.x) / L })).toBeCloseTo(t0, 3);   // 3px along the normal
+  }
+});
+
+test('via nodes: world position goes through the copy; sameNode and isClosed respect via; orientToEnd shifts via.cell', () => {
+  const doc = makeDoc();
+  const body = polyline(doc, [{ u: 0.1, v: 0.1 }, { u: 0.5, v: 0.1 }]);
+  const m = P.addElement(doc, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+  const b = P.addBinding(doc, body.id, [[m.id]]);
+  const via = { cell: { c: 0, r: 1 }, bindingId: b.id, power: 1 };
+  const tail = P.startPath(doc, { pointId: body.start.pointId, cell: body.start.cell, via }, style, 'L1');
+  P.appendNode(doc, tail.id, P.addPoint(doc, { u: 0.9, v: 0.9 }));
+  const w = P.nodeWorld(doc, tail.start);
+  expect(w.x).toBeCloseTo(240 - 24, 9); expect(w.y).toBeCloseTo(24 + 240, 9);            // mirrored about x = 120, one cell down
+  expect(P.nodeUVAbs(doc, tail.start).u).toBeCloseTo(0.9, 9); expect(P.nodeUVAbs(doc, tail.start).v).toBeCloseTo(1.1, 9);
+  expect(P.sameNode(tail.start, { pointId: body.start.pointId, cell: body.start.cell })).toBe(false);
+  expect(P.sameNode(tail.start, { pointId: body.start.pointId, cell: body.start.cell, via: { ...via } })).toBe(true);
+  P.appendNode(doc, tail.id, tail.start);
+  expect(P.isClosed(tail)).toBe(true);
+  expect(P.appendNode(doc, tail.id, { ...tail.start, via: { ...via } })).toBe(false);   // repeat of the last node
+  const open = P.startPath(doc, { pointId: body.start.pointId, cell: body.start.cell, via }, style, 'L1');
+  const end = P.addPoint(doc, { u: 0.8, v: 0.8 });
+  P.appendNode(doc, open.id, end);
+  P.orientToEnd(doc, open.id, open.start.pointId, { c: 1, r: 0 });                   // reverse, then shift so the via node lands in cell (1,0)
+  const last = open.segments[open.segments.length - 1].to;
+  expect(last.via).toEqual({ cell: { c: 1, r: 1 }, bindingId: b.id, power: 1 });
+  expect(last.cell).toEqual(body.start.cell);
+  expect(open.start.cell).toEqual({ c: 1, r: 0 });
+});
+
+test('mergePoints rewrites every reference with the cell offset, re-bases control points, collapses a zero-length segment and deletes the point', () => {
+  const doc = makeDoc();
+  const a = polyline(doc, [{ u: 0.1, v: 0.1 }, { u: 0.5, v: 0.1 }, { u: 0.5, v: 0.5 }]);
+  P.setControlPointAbs(doc, a.id, 1, { u: 0.7, v: 0.3 });
+  const b = polyline(doc, [{ u: 0.9, v: 0.5 }, { u: 0.9, v: 0.9 }]);
+  const from = a.segments[1].to, to = b.start;                       // drag a's last point (cell 0,0) onto b's start seen in cell (1,0)
+  P.mergePoints(doc, from.pointId, from.cell, to.pointId, { c: 1, r: 0 });
+  expect(doc.points.some((p) => p.id === from.pointId)).toBe(false);
+  expect(a.segments[1].to).toEqual({ pointId: to.pointId, cell: { c: 1, r: 0 } });
+  expect(P.cpAbs(a, 1)!.u).toBeCloseTo(0.7, 9); expect(P.cpAbs(a, 1)!.v).toBeCloseTo(0.3, 9);   // absolute cp unchanged
+  expect(a.segments[1].cp).toEqual({ u: 0.7 - 0, v: 0.3 - 0 });                                   // relative to the previous node's cell (0,0)
+  // merging consecutive nodes collapses the segment between them
+  const c = polyline(doc, [{ u: 0.2, v: 0.2 }, { u: 0.25, v: 0.2 }, { u: 0.6, v: 0.6 }]);
+  const mid = c.segments[0].to;
+  P.mergePoints(doc, mid.pointId, mid.cell, c.start.pointId, c.start.cell);
+  expect(c.segments).toHaveLength(1);
+  expect(c.segments[0].to.pointId).not.toBe(c.start.pointId);
+});
+
+test('withViaRepair materialises a via node at its last world position when its binding, element or slot goes away', () => {
+  const make = () => {
+    const doc = makeDoc();
+    const body = polyline(doc, [{ u: 0.1, v: 0.1 }, { u: 0.5, v: 0.1 }]);
+    const m = P.addElement(doc, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+    const r = P.addElement(doc, { kind: 'rotate', u: 0.5, v: 0.5, n: 2 });
+    const b = P.addBinding(doc, body.id, [[m.id], [r.id]]);                       // slots: m, r, r∘m
+    const tail = P.startPath(doc, { pointId: body.start.pointId, cell: body.start.cell, via: { cell: { c: 0, r: 0 }, bindingId: b.id, power: 3 } }, style, 'L1');
+    P.appendNode(doc, tail.id, P.addPoint(doc, { u: 0.9, v: 0.9 }));
+    return { doc, body, m, r, b, tail, before: P.nodeWorld(doc, tail.start) };
+  };
+  const near = (p: XY, q: XY) => { expect(p.x).toBeCloseTo(q.x, 6); expect(p.y).toBeCloseTo(q.y, 6); };
+  { const s = make(); P.removeBinding(s.doc, s.b.id); expect(s.tail.start.via).toBeUndefined(); near(P.nodeWorld(s.doc, s.tail.start), s.before); expect(s.doc.points).toHaveLength(4); }
+  { const s = make(); P.deleteElement(s.doc, s.r.id); expect(s.tail.start.via).toBeUndefined(); near(P.nodeWorld(s.doc, s.tail.start), s.before); }
+  { const s = make(); P.removeFromBinding(s.doc, s.b.id, s.r.id); expect(s.tail.start.via).toBeUndefined(); near(P.nodeWorld(s.doc, s.tail.start), s.before); }
+  { const s = make(); P.placeInGroup(s.doc, s.b.id, s.r.id, 0); expect(s.tail.start.via).toBeUndefined(); near(P.nodeWorld(s.doc, s.tail.start), s.before); }   // [[m, r]] has one slot; slot 3 is gone
+  { const s = make(); P.deletePath(s.doc, s.body.id); expect(s.tail.start.via).toBeUndefined(); near(P.nodeWorld(s.doc, s.tail.start), s.before); }
+  { const s = make(); P.deleteElement(s.doc, s.m.id); expect(s.tail.start.via).toBeUndefined(); near(P.nodeWorld(s.doc, s.tail.start), s.before); }   // [[r]] has one slot; slot 3 is gone
 });

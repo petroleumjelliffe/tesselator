@@ -1,8 +1,9 @@
 // Draft mutations. Every function takes a Doc draft and mutates it; nothing here touches UI state.
 import { makeId } from '../ids';
 import { toWorld, toUV, cellOf, nodeUV } from './lattice';
-import { IDENTITY, apply, orbit, clonePowers, type Orbit } from './transform';
-import type { Doc, UV, XY, Cell, Node, Segment, Path, Element, Binding, Fill, Matrix, Style, Box, DocLayer, Lattice } from '../types';
+import { IDENTITY, apply, orbit, clonePowers, cellMatrix, compose, type Orbit } from './transform';
+import { CONFIG } from '../config';
+import type { Doc, UV, XY, Cell, Node, Segment, Path, Element, Binding, Fill, Matrix, Style, Box, DocLayer, Lattice, Copy } from '../types';
 
 export const getPoint = (doc: Doc, id: string) => doc.points.find((p) => p.id === id) ?? null;
 export const getPath = (doc: Doc, id: string) => doc.paths.find((p) => p.id === id) ?? null;
@@ -10,20 +11,34 @@ export const getElement = (doc: Doc, id: string) => doc.elements.find((e) => e.i
 export const getBinding = (doc: Doc, id: string) => doc.bindings.find((b) => b.id === id) ?? null;
 export const getFill = (doc: Doc, id: string) => doc.fills.find((f) => f.id === id) ?? null;
 
-export function sameNode(a: Node, b: Node): boolean {
-  return a.pointId === b.pointId && a.cell.c === b.cell.c && a.cell.r === b.cell.r;
-}
-const cloneNode = (n: Node): Node => ({ pointId: n.pointId, cell: { c: n.cell.c, r: n.cell.r } });
+const sameCell = (a: Cell, b: Cell) => a.c === b.c && a.r === b.r;
+const sameVia = (a?: Copy, b?: Copy) => (!a && !b) || (!!a && !!b && sameCell(a.cell, b.cell) && a.bindingId === b.bindingId && a.power === b.power);
+export function sameNode(a: Node, b: Node): boolean { return a.pointId === b.pointId && sameCell(a.cell, b.cell) && sameVia(a.via, b.via); }
+const cloneNode = (n: Node): Node => ({ pointId: n.pointId, cell: { c: n.cell.c, r: n.cell.r }, ...(n.via ? { via: { cell: { ...n.via.cell }, bindingId: n.via.bindingId, power: n.via.power } } : {}) });
 
 export function pathNodes(path: Path): Node[] { return [path.start, ...path.segments.map((s) => s.to)]; }
 export function prevNode(path: Path, j: number): Node { return j === 0 ? path.start : path.segments[j - 1].to; }
 
+// The world matrix of a copy: cell translation composed with the clone matrix (identity for a slot that is missing).
+export function viaMatrix(doc: Doc, via: Copy): Matrix {
+  const Mo = cellMatrix(via.cell, doc.lattice);
+  const M = via.bindingId ? cloneMatrices(doc, via.bindingId).matrices[via.power - 1] : null;
+  return M ? compose(Mo, M) : Mo;
+}
+export function viaLive(doc: Doc, via: Copy): boolean { return !!via.bindingId && !!cloneMatrices(doc, via.bindingId).matrices[via.power - 1]; }
+
+export function nodeWorld(doc: Doc, node: Node): XY {
+  const p = getPoint(doc, node.pointId);
+  if (!p) throw new Error(`missing point ${node.pointId}`);
+  const w = toWorld(nodeUV(p, node.cell), doc.lattice);
+  return node.via ? apply(viaMatrix(doc, node.via), w) : w;
+}
 export function nodeUVAbs(doc: Doc, node: Node): UV {
+  if (node.via) return toUV(nodeWorld(doc, node), doc.lattice);
   const p = getPoint(doc, node.pointId);
   if (!p) throw new Error(`missing point ${node.pointId}`);
   return nodeUV(p, node.cell);
 }
-export function nodeWorld(doc: Doc, node: Node): XY { return toWorld(nodeUVAbs(doc, node), doc.lattice); }
 export function pathWorld(doc: Doc, path: Path): XY[] { return pathNodes(path).map((n) => nodeWorld(doc, n)); }
 
 // Absolute lattice coordinates of a control point (relative cp + previous node's cell).
@@ -67,26 +82,54 @@ export function appendNode(doc: Doc, pathId: string, node: Node): boolean {
   return true;
 }
 
-// Split segment j. Straight: at `uv` (absolute). Curved: at t = 0.5, ignoring `uv`. Affine, so lattice coords are fine.
-export function insertNode(doc: Doc, pathId: string, j: number, uv: UV | null): Node {
+const lerp = (a: UV, b: UV, t: number): UV => ({ u: a.u + (b.u - a.u) * t, v: a.v + (b.v - a.v) * t });
+
+// Split segment j at parameter t (de Casteljau for a curve, linear for a straight segment). The outline is unchanged.
+// Affine, so lattice coords are fine.
+export function insertNodeAt(doc: Doc, pathId: string, j: number, t: number): Node {
   const p = getPath(doc, pathId);
   if (!p) throw new Error('no path');
   const seg = p.segments[j], prev = prevNode(p, j);
   const A = nodeUVAbs(doc, prev), B = nodeUVAbs(doc, seg.to), cp = cpAbs(p, j);
   let m: UV, c0: UV | null, c1: UV | null;
-  if (cp) {
-    m = { u: 0.25 * A.u + 0.5 * cp.u + 0.25 * B.u, v: 0.25 * A.v + 0.5 * cp.v + 0.25 * B.v };
-    c0 = { u: (A.u + cp.u) / 2, v: (A.v + cp.v) / 2 };
-    c1 = { u: (cp.u + B.u) / 2, v: (cp.v + B.v) / 2 };
-  } else {
-    if (!uv) throw new Error('straight insert needs a position');
-    m = uv; c0 = null; c1 = null;
-  }
+  if (cp) { c0 = lerp(A, cp, t); c1 = lerp(cp, B, t); m = lerp(c0, c1, t); }
+  else { m = lerp(A, B, t); c0 = null; c1 = null; }
   const node = addPoint(doc, m);
-  const s0: Segment = { to: node, cp: c0 && rel(c0, prev.cell) };
-  const s1: Segment = { to: seg.to, cp: c1 && rel(c1, node.cell) };
-  p.segments.splice(j, 1, s0, s1);
+  p.segments.splice(j, 1, { to: node, cp: c0 && rel(c0, prev.cell) }, { to: seg.to, cp: c1 && rel(c1, node.cell) });
   return node;
+}
+
+// Split segment j. Straight: at `uv` (absolute). Curved: at t = 0.5, ignoring `uv`.
+export function insertNode(doc: Doc, pathId: string, j: number, uv: UV | null): Node {
+  const p = getPath(doc, pathId);
+  if (!p) throw new Error('no path');
+  if (p.segments[j].cp) return insertNodeAt(doc, pathId, j, 0.5);
+  if (!uv) throw new Error('straight insert needs a position');
+  const seg = p.segments[j];
+  const node = addPoint(doc, uv);
+  p.segments.splice(j, 1, { to: node, cp: null }, { to: seg.to, cp: null });
+  return node;
+}
+
+// Parameter on a world-space segment nearest to p, clamped away from the ends (the endpoints are hit as points).
+export function nearestT(a: XY, cp: XY | null, b: XY, p: XY): number {
+  const clamp = (t: number) => Math.max(0.02, Math.min(0.98, t));
+  if (!cp) { const dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy || 1; return clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / L); }
+  const q = (t: number): XY => { const s = 1 - t; return { x: s * s * a.x + 2 * s * t * cp.x + t * t * b.x, y: s * s * a.y + 2 * s * t * cp.y + t * t * b.y }; };
+  const d1 = (t: number): XY => ({ x: 2 * ((1 - t) * (cp.x - a.x) + t * (b.x - cp.x)), y: 2 * ((1 - t) * (cp.y - a.y) + t * (b.y - cp.y)) });
+  const d2: XY = { x: 2 * (a.x - 2 * cp.x + b.x), y: 2 * (a.y - 2 * cp.y + b.y) };
+  let best = 0, bd = Infinity;
+  for (let i = 0; i <= 32; i++) { const t = i / 32, r = q(t), d = (r.x - p.x) ** 2 + (r.y - p.y) ** 2; if (d < bd) { bd = d; best = t; } }
+  let t = best;
+  for (let k = 0; k < 6; k++) {
+    const r = q(t), v = d1(t);
+    const f = (r.x - p.x) * v.x + (r.y - p.y) * v.y, fp = v.x * v.x + v.y * v.y + (r.x - p.x) * d2.x + (r.y - p.y) * d2.y;
+    if (!fp) break;
+    const next = Math.max(0, Math.min(1, t - f / fp));
+    if (Math.abs(next - t) < 1e-12) { t = next; break; }
+    t = next;
+  }
+  return clamp(t);
 }
 
 export function pruneOrphans(doc: Doc): void {
@@ -114,15 +157,19 @@ export function deletePoints(doc: Doc, ids: string[]): void {
     if (start && segs.length >= 1) { p.start = start; p.segments = segs; keep.push(p); }
   }
   const kept = new Set(keep.map((p) => p.id));
-  doc.paths = keep;
-  doc.bindings = doc.bindings.filter((b) => kept.has(b.pathId));
-  pruneOrphans(doc);
+  withViaRepair(doc, () => {
+    doc.paths = keep;
+    doc.bindings = doc.bindings.filter((b) => kept.has(b.pathId));
+    pruneOrphans(doc);
+  });
 }
 
 export function deletePath(doc: Doc, pathId: string): void {
-  doc.paths = doc.paths.filter((p) => p.id !== pathId);
-  doc.bindings = doc.bindings.filter((b) => b.pathId !== pathId);
-  pruneOrphans(doc);
+  withViaRepair(doc, () => {
+    doc.paths = doc.paths.filter((p) => p.id !== pathId);
+    doc.bindings = doc.bindings.filter((b) => b.pathId !== pathId);
+    pruneOrphans(doc);
+  });
 }
 
 export function openEndAt(doc: Doc, pointId: string): string | null {
@@ -150,7 +197,9 @@ export function orientToEnd(doc: Doc, pathId: string, pointId: string, cell: Cel
   const last = p.segments[p.segments.length - 1].to;
   const dc = cell.c - last.cell.c, dr = cell.r - last.cell.r;
   if (!dc && !dr) return;
-  const shift = (n: Node): Node => ({ pointId: n.pointId, cell: { c: n.cell.c + dc, r: n.cell.r + dr } });
+  const shift = (n: Node): Node => n.via
+    ? { pointId: n.pointId, cell: { ...n.cell }, via: { ...n.via, cell: { c: n.via.cell.c + dc, r: n.via.cell.r + dr } } }
+    : { pointId: n.pointId, cell: { c: n.cell.c + dc, r: n.cell.r + dr } };
   p.start = shift(p.start);
   p.segments = p.segments.map((s) => ({ to: shift(s.to), cp: s.cp }));
 }
@@ -189,6 +238,26 @@ export function movePointsBy(doc: Doc, ids: string[], startPos: Record<string, U
   const ddu = startPos[ids[0]].u + du - first.u, ddv = startPos[ids[0]].v + dv - first.v;
   for (const id of ids) { const p = getPoint(doc, id); if (p) { p.u = startPos[id].u + du; p.v = startPos[id].v + dv; } }
   shiftControlPoints(doc, ids, ddu, ddv);
+}
+
+// Replace every reference to `fromId` (seen in `fromCell`) by `toId` at the same place (seen in `toCell`), keeping
+// absolute control points, dropping a segment that becomes zero-length, then deleting the point. A via node that
+// referenced `fromId` is rewritten the same way (its world position is unchanged, since the copy sees the same place).
+export function mergePoints(doc: Doc, fromId: string, fromCell: Cell, toId: string, toCell: Cell): void {
+  if (fromId === toId) return;
+  const dc = toCell.c - fromCell.c, dr = toCell.r - fromCell.r;
+  for (const p of doc.paths) {
+    const abs = p.segments.map((_, j) => cpAbs(p, j));
+    const map = (n: Node): Node => (n.pointId === fromId ? cloneNode({ ...n, cell: { c: n.cell.c + dc, r: n.cell.r + dr }, pointId: toId }) : n);
+    p.start = map(p.start);
+    p.segments = p.segments.map((s, j) => ({ to: map(s.to), cp: abs[j] }));           // cp temporarily absolute
+    const nodes = pathNodes(p), keep: Segment[] = [];
+    let prev = nodes[0];
+    p.segments.forEach((s) => { if (sameNode(prev, s.to)) return; keep.push({ to: s.to, cp: s.cp && rel(s.cp, prev.cell) }); prev = s.to; });
+    p.segments = keep;
+  }
+  doc.paths = doc.paths.filter((p) => p.segments.length > 0);
+  pruneOrphans(doc);
 }
 
 export function setControlPointAbs(doc: Doc, pathId: string, j: number, abs: UV | null): void {
@@ -239,13 +308,37 @@ export function addElement(doc: Doc, spec: ElementSpec): Element {
 
 const pruneGroups = (groups: string[][], id: string): string[][] => groups.map((g) => g.filter((x) => x !== id)).filter((g) => g.length);
 
+// Snapshot every via node's world position, apply a change that may remove bindings or clone slots, then turn every
+// via node whose copy is no longer live into a plain node at a new free point where it was. Nesting is harmless: the
+// inner call repairs first and the outer one finds nothing left to repair.
+export function withViaRepair(doc: Doc, fn: () => void): void {
+  const before = new Map<Node, XY>();
+  for (const p of doc.paths) for (const n of pathNodes(p)) if (n.via) before.set(n, nodeWorld(doc, n));
+  fn();
+  if (!before.size) return;
+  let repaired = false;
+  for (const p of doc.paths) {
+    const fix = (n: Node): Node => {
+      if (!n.via || viaLive(doc, n.via)) return n;
+      const w = before.get(n) ?? nodeWorld(doc, n);
+      repaired = true;
+      return addPoint(doc, toUV(w, doc.lattice));
+    };
+    p.start = fix(p.start);
+    for (const s of p.segments) s.to = fix(s.to);
+  }
+  if (repaired) pruneOrphans(doc);   // the point a materialised node used to see may now be unreferenced
+}
+
 // Deleting an element removes it from every group (in place, so a held Binding stays current); an emptied group
 // goes, and a binding with no groups goes.
 export function deleteElement(doc: Doc, id: string): void {
-  doc.elements = doc.elements.filter((e) => e.id !== id);
-  for (const b of doc.bindings) b.groups = pruneGroups(b.groups, id);
-  doc.bindings = doc.bindings.filter((b) => b.groups.length);
-  doc.newPathGroups = pruneGroups(doc.newPathGroups, id);
+  withViaRepair(doc, () => {
+    doc.elements = doc.elements.filter((e) => e.id !== id);
+    for (const b of doc.bindings) b.groups = pruneGroups(b.groups, id);
+    doc.bindings = doc.bindings.filter((b) => b.groups.length);
+    doc.newPathGroups = pruneGroups(doc.newPathGroups, id);
+  });
 }
 
 export function addBinding(doc: Doc, pathId: string, groups: string[][] = []): Binding {
@@ -273,18 +366,22 @@ export function placeInGroup(doc: Doc, bindingId: string, elementId: string, gi:
   gi = Math.max(0, Math.min(gi, groups.length));
   if (gi === groups.length) groups.push([elementId]); else groups[gi].push(elementId);
   if (sameGroups(groups, b.groups)) return false;
-  b.groups = groups;
+  withViaRepair(doc, () => { b.groups = groups; });
   return true;
 }
 
 export function removeFromBinding(doc: Doc, bindingId: string, elementId: string): void {
   const b = getBinding(doc, bindingId);
   if (!b) return;
-  b.groups = pruneGroups(b.groups, elementId);
-  if (!b.groups.length) removeBinding(doc, bindingId);
+  withViaRepair(doc, () => {
+    b.groups = pruneGroups(b.groups, elementId);
+    if (!b.groups.length) removeBinding(doc, bindingId);
+  });
 }
 
-export function removeBinding(doc: Doc, id: string): void { doc.bindings = doc.bindings.filter((b) => b.id !== id); }
+export function removeBinding(doc: Doc, id: string): void {
+  withViaRepair(doc, () => { doc.bindings = doc.bindings.filter((b) => b.id !== id); });
+}
 
 // The group a drag of clone `power`'s body should drive: the first group with a nonzero power in the copy's clone
 // index (moving its first element moves that copy), or the first group when the index decodes to all zeros.
@@ -294,7 +391,7 @@ export function dragGroupFor(b: Binding, power: number, elements: Element[], lat
   return b.groups[gi >= 0 ? gi : 0];
 }
 
-export function cloneMatrices(doc: Doc, bindingId: string, ownCap = 12, cloneCap = 48): Orbit {
+export function cloneMatrices(doc: Doc, bindingId: string, ownCap = CONFIG.ORBIT_CAP, cloneCap = CONFIG.CLONE_CAP): Orbit {
   const b = getBinding(doc, bindingId);
   return b ? orbit(b.groups, doc.elements, doc.lattice, ownCap, cloneCap) : { matrices: [], open: false };
 }

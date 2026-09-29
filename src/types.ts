@@ -4,7 +4,7 @@ export type Cell = { c: number; r: number };
 export type Lattice = { ax: number; ay: number; bx: number; by: number };
 export type Matrix = readonly [number, number, number, number, number, number];
 
-export type Node = { pointId: string; cell: Cell };
+export type Node = { pointId: string; cell: Cell; via?: Copy };   // via: the copy this node is seen through (bindingId never null)
 export type Segment = { to: Node; cp: UV | null };          // cp relative to the previous node's cell origin
 export type Style = { color: string; weight: number };
 export type DocLayer = { id: string; name: string };                     // a document layer (the UI mode type below is `Layer`)
@@ -61,7 +61,7 @@ export type HitTarget =
   | { kind: 'bbox'; h: number }
   | { kind: 'bboxrot' }
   | { kind: 'diamond'; pathId: string; j: number; copy: Copy }
-  | { kind: 'point'; pointId: string; cell: Cell }
+  | { kind: 'point'; pointId: string; cell: Cell; via?: Copy }
   | { kind: 'canchor'; pathId: string; pointId: string; cell: Cell; copy: Copy }
   | { kind: 'segment'; pathId: string; j: number; copy: Copy }
   | { kind: 'fill'; fillId: string }
@@ -77,7 +77,7 @@ export type DragBase = { target: HitTarget | null; start: XY; moved: boolean; po
 export type Drag = DragBase & (
   | { kind: 'click' }
   | { kind: 'marquee'; cur: XY; add: boolean }
-  | { kind: 'pt'; pointId: string; cell: Cell }
+  | { kind: 'pt'; pointId: string; cell: Cell; via?: Copy; snapTo: { pointId: string; cell: Cell } | null }
   | { kind: 'pts'; ids: string[]; startPos: Record<string, UV> }
   | { kind: 'body'; pathId: string; copy: Copy; ids: string[]; startPos: Record<string, UV>; startEls: Element[] }
   | { kind: 'canchor'; pathId: string; pointId: string; cell: Cell; copy: Copy }
