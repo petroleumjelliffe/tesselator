@@ -1,14 +1,16 @@
 // Undo/redo over document references. A gesture records one entry however many commits it makes.
 import { signal } from '@preact/signals';
 import { CONFIG } from '../config';
-import { doc } from './doc';
+import { doc, draft } from './doc';
 import { selection, pen, hover, drag, pendingGroup } from './ui';
-import type { Doc } from '../types';
+import { viaSnapshot, repairVia, pathNodes, viaLive } from '../engine/paths';
+import type { Doc, XY } from '../types';
 
 const past: Doc[] = [];
 const future: Doc[] = [];
 let inGesture = false;
 let gestureBase: Doc | null = null;
+let gestureSnap: Map<string, XY> | null = null;   // every via node's world position when the gesture began
 export const historyVersion = signal(0);
 
 function trim() { while (past.length > CONFIG.MAX_HISTORY) past.shift(); }
@@ -24,13 +26,21 @@ export function commit(next: Doc): void {
   historyVersion.value++;
 }
 
-export function beginGesture(): void { inGesture = true; gestureBase = null; }
-export function endGesture(): void { inGesture = false; gestureBase = null; }
+export function gestureActive(): boolean { return inGesture; }
+const hasDeadVia = (d: Doc) => d.paths.some((p) => pathNodes(p).some((n) => !!n.via && !viaLive(d, n.via)));
+
+// A gesture's commits skip via repair (mutate defers it to here): a via node whose clone slot the gesture removed is
+// materialised where the gesture found it, in a commit that still coalesces into the gesture's one history entry.
+export function beginGesture(): void { inGesture = true; gestureBase = null; gestureSnap = viaSnapshot(doc.value); }
+export function endGesture(): void {
+  if (inGesture && gestureSnap && hasDeadVia(doc.value)) { const d = draft(); repairVia(d, gestureSnap); commit(d); }
+  inGesture = false; gestureBase = null; gestureSnap = null;
+}
 
 // Revert everything the current gesture did and forget it.
 export function abortGesture(): void {
   if (inGesture && gestureBase) { past.pop(); doc.value = gestureBase; }
-  inGesture = false; gestureBase = null;
+  inGesture = false; gestureBase = null; gestureSnap = null;
   historyVersion.value++;
 }
 
@@ -56,4 +66,4 @@ export function redo(): boolean {
 
 export function canUndo(): boolean { historyVersion.value; return past.length > 0; }
 export function canRedo(): boolean { historyVersion.value; return future.length > 0; }
-export function reset(): void { past.length = 0; future.length = 0; inGesture = false; gestureBase = null; historyVersion.value++; }
+export function reset(): void { past.length = 0; future.length = 0; inGesture = false; gestureBase = null; gestureSnap = null; historyVersion.value++; }

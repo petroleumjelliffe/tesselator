@@ -2,7 +2,7 @@ import { CONFIG } from '../config';
 import { makeId } from '../ids';
 import { windowOffsets, cellPolygon, toUV, toWorld } from './lattice';
 import { IDENTITY, apply, orbit } from './transform';
-import { pathWorld, pathCpsWorld } from './paths';
+import { pathWorld, pathCpsWorld, repairVia } from './paths';
 import { computeFaces, fillFace, facePathData } from './regions';
 import { pathD } from './svgpath';
 import type { Doc, XY, Cell, Lattice, Box, Matrix, Point, Path, Fill, Element, DocLayer } from '../types';
@@ -106,7 +106,9 @@ export function parseDoc(json: string): Doc | null {
     if (bindings.some((b) => hasRepeat(b.groups))) return null;
     const bindingIds = new Set(bindings.map((b) => b.id));   // a via must name a binding that survives (v1 documents have no via)
     for (const p of o.paths as Path[]) for (const n of [p.start, ...p.segments.map((s) => s.to)]) if (n.via && !bindingIds.has(n.via.bindingId!)) return null;
-    return { version: 2, lattice, points: o.points, paths: o.paths, elements: o.elements, bindings, fills: o.fills, layers: o.layers, newPathGroups: dedupeGroups(knownGroups(Array.isArray(o.newPathGroups) ? o.newPathGroups : [])) };
+    const d: Doc = { version: 2, lattice, points: o.points, paths: o.paths, elements: o.elements, bindings, fills: o.fills, layers: o.layers, newPathGroups: dedupeGroups(knownGroups(Array.isArray(o.newPathGroups) ? o.newPathGroups : [])) };
+    repairVia(d, new Map());   // a via whose clone slot no longer exists (a file saved before repair was centralised) is materialised at its cell position, the best the file can tell us
+    return d;
   } catch { return null; }
 }
 

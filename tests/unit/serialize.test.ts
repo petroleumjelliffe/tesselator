@@ -2,6 +2,7 @@ import { test, expect } from 'vitest';
 import { serializeDoc, parseDoc, exportSvg } from '../../src/engine/serialize';
 import { exampleDoc } from '../../src/example';
 import { CONFIG } from '../../src/config';
+import { nodeWorld } from '../../src/engine/paths';
 
 test('JSON round trip preserves the document; foreign or malformed input is refused', () => {
   const d = exampleDoc();
@@ -94,4 +95,25 @@ test('a via node round-trips; a via naming a missing binding is refused', () => 
   expect(parseDoc(serializeDoc(withVia))).toEqual(withVia);
   const bad = { ...withVia, paths: withVia.paths.map((p) => (p.id === 'path_via' ? { ...p, start: { ...p.start, via: { ...p.start.via!, bindingId: 'bind_missing' } } } : p)) };
   expect(parseDoc(JSON.stringify(bad))).toBe(null);
+});
+
+test('a v2 document with a via whose power exceeds the binding\'s slot count parses with that node materialised', () => {
+  const d = exampleDoc();
+  const b = d.bindings[0], host = d.paths.find((p) => p.id === b.pathId)!;
+  const via = { cell: { c: 1, r: 0 }, bindingId: b.id, power: 99 };
+  const tail = { id: 'path_via', start: { pointId: host.start.pointId, cell: host.start.cell, via }, segments: [{ to: { pointId: d.points[3].id, cell: { c: 0, r: 0 } }, cp: null }], style: { color: '#000', weight: 1 }, layerId: d.layers[0].id };
+  const dangling = { ...d, paths: [...d.paths, tail] };
+  const parsed = parseDoc(serializeDoc(dangling))!;
+  expect(parsed).not.toBe(null);
+  const t = parsed.paths.find((p) => p.id === 'path_via')!;
+  expect(t.start.via).toBeUndefined();
+  expect(t.start.pointId).not.toBe(host.start.pointId);                                          // a new free point where the node fell back to
+  const w = nodeWorld(parsed, t.start), expected = nodeWorld(dangling, host.start);
+  expect(w.x).toBeCloseTo(expected.x + d.lattice.ax, 6); expect(w.y).toBeCloseTo(expected.y + d.lattice.ay, 6);   // the cell-matrix position of via.cell (1,0)
+  expect(t.segments).toEqual(tail.segments);
+  expect(parsed.paths.filter((p) => p.id !== 'path_via')).toEqual(d.paths);
+  expect(parsed.points).toHaveLength(d.points.length + 1);
+  expect(parsed.points.slice(0, d.points.length)).toEqual(d.points);
+  expect({ ...parsed, paths: [], points: [] }).toEqual({ ...d, paths: [], points: [] });
+  expect(parseDoc(serializeDoc(parsed))).toEqual(parsed);
 });

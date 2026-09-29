@@ -327,29 +327,30 @@ export function addElement(doc: Doc, spec: ElementSpec): Element {
 
 const pruneGroups = (groups: string[][], id: string): string[][] => groups.map((g) => g.filter((x) => x !== id)).filter((g) => g.length);
 
-// Snapshot every via node's world position, apply a change that may remove bindings or clone slots, then turn every
-// via node whose copy is no longer live into a plain node at a new free point where it was. Only the outermost call
-// snapshots and repairs (an inner one would snapshot a half-applied change); nested calls just run their body.
-// Control points stay where they were: a materialised node's cell generally differs from the via node's, so the cp of
-// the segment leaving it is re-based.
-let viaRepairDepth = 0;
-export function withViaRepair(doc: Doc, fn: () => void): void {
-  if (viaRepairDepth > 0) { fn(); return; }
-  const before = new Map<Node, XY>();
-  for (const p of doc.paths) for (const n of pathNodes(p)) if (n.via) before.set(n, nodeWorld(doc, n));
-  viaRepairDepth++;
-  try { fn(); } finally { viaRepairDepth--; }
-  if (!before.size) return;
+// A via node's identity, stable across structuredClone of a draft: the same node in a snapshot and in the draft share it.
+const viaKey = (n: Node) => `${n.pointId}|${n.cell.c}|${n.cell.r}|${n.via!.cell.c}|${n.via!.cell.r}|${n.via!.bindingId}|${n.via!.power}`;
+
+// Every via node's world position, keyed by identity: take it before a change that may remove bindings or clone slots.
+export function viaSnapshot(doc: Doc): Map<string, XY> {
+  const out = new Map<string, XY>();
+  for (const p of doc.paths) for (const n of pathNodes(p)) if (n.via) { const k = viaKey(n); if (!out.has(k)) out.set(k, nodeWorld(doc, n)); }
+  return out;
+}
+
+// Turn every via node whose copy is no longer live into a plain node at a new free point where the snapshot saw it
+// (or, for a node the snapshot does not know, where it is now). One new point per dead via identity, so a path
+// closed on it stays closed. Control points stay where they were: a materialised node's cell generally differs from
+// the via node's, so the cp of the segment leaving it is re-based. Returns whether anything was materialised.
+export function repairVia(doc: Doc, snap: Map<string, XY>): boolean {
   let repaired = false;
-  const made = new Map<string, Node>();   // one new point per dead via node identity, so a path closed on it stays closed
-  const identity = (n: Node) => `${n.pointId}|${n.cell.c},${n.cell.r}|${n.via!.cell.c},${n.via!.cell.r}|${n.via!.bindingId}|${n.via!.power}`;
+  const made = new Map<string, Node>();
   for (const p of doc.paths) {
     const prevs = p.segments.map((_, j) => prevNode(p, j)), abs = p.segments.map((_, j) => cpAbs(p, j));
     const fix = (n: Node): Node => {
       if (!n.via || viaLive(doc, n.via)) return n;
-      const key = identity(n);
+      const key = viaKey(n);
       let m = made.get(key);
-      if (!m) { const w = before.get(n) ?? nodeWorld(doc, n); m = addPoint(doc, toUV(w, doc.lattice)); made.set(key, m); repaired = true; }
+      if (!m) { const w = snap.get(key) ?? nodeWorld(doc, n); m = addPoint(doc, toUV(w, doc.lattice)); made.set(key, m); repaired = true; }
       return cloneNode(m);
     };
     p.start = fix(p.start);
@@ -357,6 +358,20 @@ export function withViaRepair(doc: Doc, fn: () => void): void {
     p.segments.forEach((s, j) => { const c = abs[j], q = prevNode(p, j); if (c && q !== prevs[j]) s.cp = rel(c, q.cell); });   // re-base only after a replaced node
   }
   if (repaired) pruneOrphans(doc);   // the point a materialised node used to see may now be unreferenced
+  return repaired;
+}
+
+// viaSnapshot, apply a change that may remove bindings or clone slots, then repairVia. Only the outermost call
+// snapshots and repairs (an inner one would snapshot a half-applied change); nested calls just run their body.
+// `mutate` (actions.ts) and gestures (state/history.ts) do the same around every user-level mutation, so a draft
+// change that forgets this wrapper is still repaired; the wrapper remains for engine-level callers and tests.
+let viaRepairDepth = 0;
+export function withViaRepair(doc: Doc, fn: () => void): void {
+  if (viaRepairDepth > 0) { fn(); return; }
+  const snap = viaSnapshot(doc);
+  viaRepairDepth++;
+  try { fn(); } finally { viaRepairDepth--; }
+  if (snap.size) repairVia(doc, snap);
 }
 
 // Deleting an element removes it from every group (in place, so a held Binding stays current); an emptied group

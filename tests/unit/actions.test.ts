@@ -5,7 +5,7 @@ import * as A from '../../src/actions';
 import * as P from '../../src/engine/paths';
 import { reset, canUndo, commit, beginGesture, endGesture, historyVersion } from '../../src/state/history';
 import { parseDoc, serializeDoc } from '../../src/engine/serialize';
-import { faces, copyMatrix } from '../../src/state/derived';
+import { faces, copyMatrix, cloneMatrices } from '../../src/state/derived';
 import { apply, invert } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import * as select from '../../src/interaction/tools/select';
@@ -480,4 +480,63 @@ test('regions: a straight and a curved T-junction drawn with the Pen through pen
   A.mutate((d) => { P.setControlPointAbs(d, sq2.id, 1, { u: 220 / 240, v: 0.5 }); });   // right edge bulges to x = 200
   chord(sq2, { x: 195, y: 100 });
   expect(computeFaces(doc.value)).toHaveLength(18);
+});
+
+// --- final fix wave: via repair centralised in mutate and gestures
+
+// Body (0.1,0.3)→(0.4,0.3) under a 4-fold rotation about the centre; a tail starts on the body's clone of power 3.
+function bodyWithFourFoldAndPower3Tail() {
+  fresh(); A.addElement('rotate');
+  const el = doc.value.elements[0];
+  A.setRotationOrder(el.id, 4);
+  A.setTool('pen');
+  A.penClickEmpty(W(0.1, 0.3), false); A.penClickEmpty(W(0.4, 0.3), false); A.endPen();
+  const body = doc.value.paths[0], b = doc.value.bindings[0];
+  expect(cloneMatrices.value.get(b.id)).toHaveLength(3);
+  const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 3 };
+  A.setTool('pen');
+  A.penClickSegment(body.id, 0, clone, apply(copyMatrix(clone), W(0.25, 0.3)), false);
+  A.penClickEmpty(W(0.8, 0.8), false); A.endPen();
+  const tail = doc.value.paths[1];
+  expect(tail.start.via).toEqual(clone);
+  return { el, b, tail, before: P.nodeWorld(doc.value, tail.start) };
+}
+
+test('setRotationOrder 4→2 materialises a power-3 via node where it was', () => {
+  const { el, before } = bodyWithFourFoldAndPower3Tail();
+  expect(A.setRotationOrder(el.id, 2)).toBe(true);
+  const start = doc.value.paths[1].start;
+  expect(start.via).toBeUndefined();
+  const after = P.nodeWorld(doc.value, start);
+  expect(Math.abs(after.x - before.x)).toBeLessThan(1e-6); expect(Math.abs(after.y - before.y)).toBeLessThan(1e-6);
+  expect(parseDoc(serializeDoc(doc.value))).toEqual(doc.value);
+});
+
+test('a gesture whose element edits remove a clone slot materialises the via node where it was, in the gesture\'s one history entry', () => {
+  fresh(); A.addElement('translate');
+  const el = doc.value.elements[0];
+  A.setTranslation(el.id, 1 / 3, 0);                                                   // T, T² are clones; T³ is the lattice
+  A.setTool('pen');
+  A.penClickEmpty(W(0.1, 0.3), false); A.penClickEmpty(W(0.3, 0.3), false); A.endPen();
+  const body = doc.value.paths[0], b = doc.value.bindings[0];
+  expect(cloneMatrices.value.get(b.id)).toHaveLength(2);
+  const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 2 };
+  A.setTool('pen');
+  A.penClickSegment(body.id, 0, clone, apply(copyMatrix(clone), W(0.2, 0.3)), false);
+  A.penClickEmpty(W(0.8, 0.8), false); A.endPen();
+  const pre = doc.value, before = P.nodeWorld(pre, pre.paths[1].start);
+  expect(pre.paths[1].start.via).toEqual(clone);
+  beginGesture();                                                                      // a translation-tip drag, as pointer.ts runs it
+  A.setTranslation(el.id, 0.4, 0);                                                     // 4 slots: still live
+  A.setTranslation(el.id, 0.45, 0);
+  A.setTranslation(el.id, 0.5, 0);                                                     // 1 slot: power 2 is gone
+  endGesture();
+  const start = doc.value.paths[1].start;
+  expect(start.via).toBeUndefined();
+  const after = P.nodeWorld(doc.value, start);
+  expect(Math.abs(after.x - before.x)).toBeLessThan(1e-6); expect(Math.abs(after.y - before.y)).toBeLessThan(1e-6);
+  expect(A.undo()).toBe(true);
+  expect(doc.value).toBe(pre);                                                         // one entry: the repair went with the gesture
+  expect(A.undo()).toBe(true);                                                         // the next entry is the tail's last click, not a stray repair
+  expect(doc.value.paths[1].segments).toHaveLength(0);
 });

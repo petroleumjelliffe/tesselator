@@ -1,6 +1,6 @@
 // Every user-level mutation. Chrome and tools call these so they stay in sync. Each returns whether it changed anything.
 import { doc, draft, emptyDoc } from './state/doc';
-import { commit, undo as hUndo, redo as hRedo } from './state/history';
+import { commit, undo as hUndo, redo as hRedo, gestureActive } from './state/history';
 import * as UI from './state/ui';
 import { copyMatrix, cloneMatrices, faces } from './state/derived';
 import * as P from './engine/paths';
@@ -12,9 +12,14 @@ import { strokeToPath } from './engine/freehand';
 import { CONFIG } from './config';
 import type { Doc, XY, UV, Cell, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer } from './types';
 
+// Every mutation is bracketed by via repair, so a change that removes a binding or clone slot (element edits, lattice
+// edits, deletions) materialises the via nodes that depended on it where they were, whether or not `fn` remembered
+// P.withViaRepair. Inside a gesture the repair waits for endGesture (history.ts), which holds the gesture's snapshot.
 export function mutate(fn: (d: Doc) => boolean | void): boolean {
   const d = draft();
+  const snap = gestureActive() ? null : P.viaSnapshot(d);
   if (fn(d) === false) return false;
+  if (snap) P.repairVia(d, snap);
   commit(d);
   return true;
 }
