@@ -22,23 +22,21 @@ const hoverIs = (h: HitTarget | null, kind: HitTarget['kind']) => !!h && h.kind 
 // Base cell geometry: every source and clone, at cell (0,0), in world coordinates.
 function entriesOf(p: Path): Matrix[] {
   const d = doc.value, cm = cloneMatrices.value;
-  return [IDENTITY, ...d.bindings.filter((b) => b.pathId === p.id).flatMap((b) => cm.get(b.id) ?? [])];
+  return [IDENTITY, ...d.bindings.filter((b) => b.pathId === p.id).flatMap((b) => (cm.get(b.id) ?? []).filter((M): M is Matrix => M !== null))];
 }
 
+// One <g> per layer, bottom to top: that layer's seeded faces, then every source and clone stroke of its paths.
 function CellDefs() {
-  const d = doc.value;
-  const strokes = (lyr: 'structure' | 'detail') => d.paths.filter((p) => p.layer === lyr).flatMap((p) => {
-    const P = pathWorld(d, p), C = pathCpsWorld(d, p);
-    return entriesOf(p).map((M, i) => <path key={`${p.id}:${i}`} class="stroke" d={pathD(P.map((q) => apply(M, q)), C.map((c) => c && apply(M, c)))} stroke={p.style.color} stroke-width={p.style.weight} />);
-  });
-  const fs = faces.value;
-  const fills = d.fills.map((f) => ({ f, face: fillFace(fs, f, d.lattice) })).filter((x) => x.face).sort((a, b) => b.face!.area - a.face!.area);
+  const d = doc.value, fs = faces.value;
   return (
-    <defs>
-      <g id="cell-structure">{strokes('structure')}</g>
-      <g id="cell-fills">{fills.map(({ f, face }) => <path key={f.id} class="fill" d={facePathData(face!)} fill={f.color} />)}</g>
-      <g id="cell-detail">{strokes('detail')}</g>
-    </defs>
+    <defs>{d.layers.map((l) => {
+      const fills = d.fills.filter((f) => f.layerId === l.id).map((f) => ({ f, face: fillFace(fs, f, d.lattice) })).filter((x) => x.face).sort((a, b) => b.face!.area - a.face!.area);
+      const strokes = d.paths.filter((p) => p.layerId === l.id).flatMap((p) => {
+        const P = pathWorld(d, p), C = pathCpsWorld(d, p);
+        return entriesOf(p).map((M, i) => <path key={`${p.id}:${i}`} class="stroke" d={pathD(P.map((q) => apply(M, q)), C.map((c) => c && apply(M, c)))} stroke={p.style.color} stroke-width={p.style.weight} />);
+      });
+      return <g key={l.id} id={`cell-layer-${l.id}`}>{fills.map(({ f, face }) => <path key={f.id} class="fill" d={facePathData(face!)} fill={f.color} />)}{strokes}</g>;
+    })}</defs>
   );
 }
 
@@ -87,7 +85,7 @@ function Highlights() {
     const p = getPath(d, sel.id);
     if (p) for (const ci of copies.value) if (ci.pathId === p.id) out.push(haloFor(p, ci.M, sameCopy(ci.copy, sel.copy) ? 0.3 : 0.15, `sel:${cellKey(ci.copy.cell)}:${ci.copy.bindingId}:${ci.copy.power}`));
   } else if (sel && sel.kind === 'element') {
-    for (const ci of copies.value) { const b = ci.copy.bindingId && d.bindings.find((x) => x.id === ci.copy.bindingId); const p = b && b.ops.includes(sel.id) ? getPath(d, ci.pathId) : null; if (p) out.push(haloFor(p, ci.M, 0.15, `el:${cellKey(ci.copy.cell)}:${ci.copy.bindingId}:${ci.copy.power}`)); }
+    for (const ci of copies.value) { const b = ci.copy.bindingId && d.bindings.find((x) => x.id === ci.copy.bindingId); const p = b && b.groups.some((g) => g.includes(sel.id)) ? getPath(d, ci.pathId) : null; if (p) out.push(haloFor(p, ci.M, 0.15, `el:${cellKey(ci.copy.cell)}:${ci.copy.bindingId}:${ci.copy.power}`)); }
   }
   if (h && h.kind === 'segment' && !(sel && sel.kind === 'path' && sel.id === h.pathId && sameCopy(sel.copy, h.copy))) {
     const p = getPath(d, h.pathId);
@@ -198,7 +196,7 @@ function CloneAnchors() {
 
 function Elements() {
   const d = doc.value, z = view.value.zoom, sel = selection.value, h = hover.value, E = 2.4 * latticeRadius();
-  const armed = new Set(d.newPathOps.flat());
+  const armed = new Set(d.newPathGroups.flat());
   const selId = sel && sel.kind === 'element' ? sel.id : null;
   const hovId = h && (h.kind === 'element' || h.kind === 'elrot' || h.kind === 'eltip') ? h.elementId : null;
   return <g class={layer.value === 'construction' ? undefined : 'inactive-layer'}>{d.elements.map((e) => {
@@ -258,7 +256,7 @@ export function Canvas() {
       <CellDefs />
       <g transform={`translate(${v.pan.x} ${v.pan.y}) scale(${v.zoom})`}>
         <Grid /><Frames /><ElementGhosts />
-        <g class={drawing ? undefined : 'inactive-layer'}><Uses id="cell-structure" /><Uses id="cell-fills" /><Uses id="cell-detail" /></g>
+        <g class={drawing ? undefined : 'inactive-layer'}>{doc.value.layers.map((l) => <Uses key={l.id} id={`cell-layer-${l.id}`} />)}</g>
         <Highlights /><Guides /><FreehandPreview /><Marquee /><Rubber /><BBox /><Diamonds /><Points /><CloneAnchors /><Elements /><LatticeHandles />
       </g>
     </svg>

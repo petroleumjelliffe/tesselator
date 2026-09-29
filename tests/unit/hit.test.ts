@@ -1,21 +1,21 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
 import { hitTest, anchorsWorld, snapWorld, pointsInRect, projectOnSegment, bboxHandles, scaleFor, scaleMatrix, seedOf, type HitContext } from '../../src/engine/hit';
-import { ownClones, apply, cellMatrix, compose } from '../../src/engine/transform';
+import { orbit, apply, cellMatrix, compose } from '../../src/engine/transform';
 import { windowOffsets } from '../../src/engine/lattice';
 import { computeFaces } from '../../src/engine/regions';
 import { CONFIG } from '../../src/config';
 import type { Doc, CopyInfo, Matrix, Selection } from '../../src/types';
 
-function makeDoc(): Doc { return { version: 1, lattice: { ...CONFIG.LATTICE_PRESETS.Square }, points: [], paths: [], elements: [], bindings: [], fills: [], newPathOps: [] }; }
-function copiesOf(d: Doc): { copies: CopyInfo[]; cm: Map<string, Matrix[]> } {
-  const cm = new Map<string, Matrix[]>();
-  for (const b of d.bindings) cm.set(b.id, ownClones(b.ops, d.elements, d.lattice).matrices);
+function makeDoc(): Doc { return { version: 2, lattice: { ...CONFIG.LATTICE_PRESETS.Square }, points: [], paths: [], elements: [], bindings: [], fills: [], layers: [{ id: 'L1', name: 'Layer 1' }], newPathGroups: [] }; }
+function copiesOf(d: Doc): { copies: CopyInfo[]; cm: Map<string, (Matrix | null)[]> } {
+  const cm = new Map<string, (Matrix | null)[]>();
+  for (const b of d.bindings) cm.set(b.id, orbit(b.groups, d.elements, d.lattice, CONFIG.ORBIT_CAP, CONFIG.CLONE_CAP).matrices);
   const copies: CopyInfo[] = [];
   for (const cell of windowOffsets()) for (const p of d.paths) {
     const Mo = cellMatrix(cell, d.lattice);
     copies.push({ pathId: p.id, copy: { cell, bindingId: null, power: 0 }, M: Mo });
-    for (const b of d.bindings) if (b.pathId === p.id) (cm.get(b.id) ?? []).forEach((M, k) => copies.push({ pathId: p.id, copy: { cell, bindingId: b.id, power: k + 1 }, M: compose(Mo, M) }));
+    for (const b of d.bindings) if (b.pathId === p.id) (cm.get(b.id) ?? []).forEach((M, k) => { if (M) copies.push({ pathId: p.id, copy: { cell, bindingId: b.id, power: k + 1 }, M: compose(Mo, M) }); });
   }
   return { copies, cm };
 }
@@ -26,10 +26,10 @@ function ctxFor(d: Doc, over: Partial<HitContext> = {}): HitContext {
 function scene() {
   const d = makeDoc();
   const n = P.addPoint(d, { u: 0.1, v: 0.1 });                       // (24, 24)
-  const path = P.startPath(d, n, { color: '#000', weight: 2 });
+  const path = P.startPath(d, n, { color: '#000', weight: 2 }, 'L1');
   P.appendNode(d, path.id, P.addPoint(d, { u: 0.4, v: 0.1 }));        // (96, 24)
   const el = P.addElement(d, { kind: 'rotate', u: 0.5, v: 0.5, n: 2 });
-  const b = P.addBinding(d, path.id, [el.id]);
+  const b = P.addBinding(d, path.id, [[el.id]]);
   return { d, path, n, el, b };
 }
 
@@ -113,10 +113,10 @@ test('marquee, projection, bbox maths, seedOf', () => {
 test('a fill on a region straddling the cell edge is hit from either side of the edge', () => {
   const d = makeDoc();
   const pts = [{ u: 0.75, v: 0.25 }, { u: 1.25, v: 0.25 }, { u: 1.25, v: 0.75 }, { u: 0.75, v: 0.75 }].map((p) => P.addPoint(d, p));
-  const path = P.startPath(d, pts[0], { color: '#000', weight: 2 });
+  const path = P.startPath(d, pts[0], { color: '#000', weight: 2 }, 'L1');
   for (const n of pts.slice(1)) P.appendNode(d, path.id, n);
   P.appendNode(d, path.id, pts[0]);
-  const fill = P.addFill(d, { u: 0.9, v: 0.5 }, '#f00');                       // seeded left of the edge, inside the base cell
+  const fill = P.addFill(d, { u: 0.9, v: 0.5 }, '#f00', 'L1');                       // seeded left of the edge, inside the base cell
   const ctx = ctxFor(d, { tool: 'fill', faces: computeFaces(d) });
   expect(hitTest(d, ctx, { x: 200, y: 120 })).toEqual({ kind: 'fill', fillId: fill.id });
   expect(hitTest(d, ctx, { x: 250, y: 120 })).toEqual({ kind: 'fill', fillId: fill.id });

@@ -11,8 +11,8 @@ import type { HitTarget, XY, Element } from '../../types';
 
 export function startMultiDrag(w: XY, t: HitTarget | null, e: PointerEvent): void {
   const d = doc.value, pn = UI.pen.value;
-  const own = pn ? d.bindings.filter((b) => b.pathId === pn.pathId).map((b) => b.ops[0]).filter(Boolean) : [];
-  const ids = own.length ? own : d.newPathOps.map((c) => c[0]).filter(Boolean);
+  const own = pn ? d.bindings.filter((b) => b.pathId === pn.pathId).map((b) => b.groups[0]?.[0]).filter((x): x is string => !!x) : [];
+  const ids = own.length ? own : d.newPathGroups.map((g) => g[0]).filter((x): x is string => !!x);
   startDrag(e, t, w, e.pointerType === 'touch' ? CONFIG.TOUCH_HIT_SCALE : 1, { kind: 'elmulti', ids: [...new Set(ids)], startEls: d.elements.map((x) => ({ ...x })) });
 }
 

@@ -5,10 +5,10 @@ import { CONFIG } from '../../src/config';
 import type { Doc, UV } from '../../src/types';
 
 const style = { color: '#000', weight: 2 };
-function makeDoc(): Doc { return { version: 1, lattice: { ...CONFIG.LATTICE_PRESETS.Square }, points: [], paths: [], elements: [], bindings: [], fills: [], newPathOps: [] }; }
+function makeDoc(): Doc { return { version: 2, lattice: { ...CONFIG.LATTICE_PRESETS.Square }, points: [], paths: [], elements: [], bindings: [], fills: [], layers: [{ id: 'L1', name: 'Layer 1' }], newPathGroups: [] }; }
 function polyline(doc: Doc, pts: UV[], close = false) {
   const nodes = pts.map((p) => P.addPoint(doc, p));
-  const path = P.startPath(doc, nodes[0], style);
+  const path = P.startPath(doc, nodes[0], style, 'L1');
   for (const n of nodes.slice(1)) P.appendNode(doc, path.id, n);
   if (close) P.appendNode(doc, path.id, nodes[0]);
   return path;
@@ -51,7 +51,7 @@ test('clone edges from a 180° rotation close regions with the source edges', ()
   const left = polyline(doc, [{ u: 0, v: 0 }, { u: 0, v: 1 }]);
   polyline(doc, [{ u: 0, v: 0 }, { u: 1, v: 1 }]);
   const r2 = P.addElement(doc, { kind: 'rotate', u: 0.5, v: 0.5, n: 2 });
-  P.addBinding(doc, top.id, [r2.id]); P.addBinding(doc, left.id, [r2.id]);
+  P.addBinding(doc, top.id, [[r2.id]]); P.addBinding(doc, left.id, [[r2.id]]);
   const faces = computeFaces(doc);
   expect(faces).toHaveLength(18);
   expect(faceAt(faces, { x: 60, y: 180 })!.area).toBeCloseTo(28800, 6);
@@ -71,7 +71,7 @@ test('coincident edges from a mirror on the path are deduplicated', () => {
   const doc = makeDoc();
   const sq = square(doc);
   const m = P.addElement(doc, { kind: 'mirror', u: 0.5, v: 0, du: 0, dv: 1 });
-  P.addBinding(doc, sq.id, [m.id]);
+  P.addBinding(doc, sq.id, [[m.id]]);
   const faces = computeFaces(doc);
   expect(faces).toHaveLength(9);
   expect(faceAt(faces, { x: 120, y: 120 })!.area).toBeCloseTo(14400, 6);
@@ -158,6 +158,16 @@ test('two curves crossing twice enclose a lens (curve x curve crossings)', () =>
   expect(lens).toBeTruthy();
   expect(lens.area).toBeGreaterThan(0);
   expect(faceAt(faces, { x: 120, y: 30 })).toBe(null);
+});
+
+test('faces do not depend on which layer a fill or path is on', () => {
+  const doc = makeDoc(); square(doc);
+  const top = P.addLayer(doc);
+  const before = computeFaces(doc).map((f) => [f.area, f.centroid.x, f.centroid.y]);
+  const moved = structuredClone(doc);
+  moved.paths[0].layerId = top.id;
+  P.addFill(moved, { u: 0.5, v: 0.5 }, '#f00', top.id);
+  expect(computeFaces(moved).map((f) => [f.area, f.centroid.x, f.centroid.y])).toEqual(before);
 });
 
 test('sameRegion identifies the window copies of one region and separates distinct regions', () => {

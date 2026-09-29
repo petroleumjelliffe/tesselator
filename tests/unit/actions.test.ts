@@ -24,7 +24,7 @@ test('pen: empty clicks build a path, clicking the last node ends it, short path
   expect(doc.value.points).toHaveLength(2);
 });
 
-test('pen: new paths receive newPathOps; clicking an open end resumes and reverses', () => {
+test('pen: new paths receive newPathGroups; clicking an open end resumes and reverses', () => {
   fresh();
   A.addElement('rotate'); expect(UI.layer.value).toBe('construction');
   A.setTool('pen'); expect(UI.layer.value).toBe('drawing');
@@ -42,9 +42,9 @@ test('addElement binds the selected path; deleteElement drops bindings and chain
   A.selectPathAt(doc.value.paths[0].id);
   A.addElement('mirror');
   const el = doc.value.elements[0];
-  expect(doc.value.bindings[0].ops).toEqual([el.id]);
+  expect(doc.value.bindings[0].groups).toEqual([[el.id]]);
   A.deleteElement(el.id);
-  expect(doc.value.bindings).toHaveLength(0); expect(doc.value.newPathOps).toHaveLength(0); expect(UI.selection.value).toBe(null);
+  expect(doc.value.bindings).toHaveLength(0); expect(doc.value.newPathGroups).toHaveLength(0); expect(UI.selection.value).toBe(null);
 });
 
 test('fillAt seeds at the centroid, recolours on a second click, and maps neighbour cells to the same region', () => {
@@ -183,4 +183,52 @@ test('a region straddling the cell edge is one fill from either side, seeded ins
   expect(UI.selection.value).toEqual({ kind: 'fill', id: doc.value.fills[0].id });
   A.deleteSelection();
   expect(doc.value.fills).toHaveLength(0);
+});
+
+test('a new path gets one binding holding every new-path group; O on a selected path stacks a group on its binding', () => {
+  fresh();
+  A.addElement('rotate'); A.addElement('mirror');
+  expect(doc.value.newPathGroups).toHaveLength(2);
+  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  expect(doc.value.bindings).toHaveLength(1);
+  expect(doc.value.bindings[0].groups).toEqual(doc.value.newPathGroups);
+  const path = doc.value.paths[0];
+  A.setTool('select'); A.selectPathAt(path.id);
+  A.addElement('translate');
+  expect(doc.value.bindings).toHaveLength(1);
+  expect(doc.value.bindings[0].groups).toHaveLength(3);
+  expect(doc.value.bindings[0].groups[2]).toEqual([doc.value.elements[2].id]);
+  expect(doc.value.newPathGroups).toHaveLength(3);
+});
+
+test('a stale activeLayerId falls back to the top layer; addLayer makes the new layer active; fills and paths land there', () => {
+  fresh();
+  UI.activeLayerId.value = 'gone';
+  expect(A.activeLayerId()).toBe(doc.value.layers[0].id);
+  A.addLayer();
+  const top = doc.value.layers[1].id;
+  expect(UI.activeLayerId.value).toBe(top);
+  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  expect(doc.value.paths[0].layerId).toBe(top);
+  A.setPathLayer(doc.value.paths[0].id, doc.value.layers[0].id);
+  expect(doc.value.paths[0].layerId).toBe(doc.value.layers[0].id);
+  expect(A.setPathLayer(doc.value.paths[0].id, 'nope')).toBe(false);
+});
+
+test('group editing actions move an element between groups and clear the pending group', () => {
+  fresh();
+  A.addElement('mirror'); A.addElement('rotate');
+  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  const b = doc.value.bindings[0], [m, r] = doc.value.elements.map((e) => e.id);
+  expect(b.groups).toEqual([[m], [r]]);
+  A.startGroup(b.id); expect(UI.pendingGroup.value).toEqual({ bindingId: b.id });
+  A.placeElementInGroup(b.id, r, 0);
+  expect(doc.value.bindings[0].groups).toEqual([[m, r]]);
+  expect(UI.pendingGroup.value).toBe(null);
+  A.removeElementFromBinding(b.id, m); A.removeElementFromBinding(b.id, r);
+  expect(doc.value.bindings).toHaveLength(0);
+  A.setTool('select'); A.selectPathAt(doc.value.paths[0].id); A.startChain(doc.value.paths[0].id);
+  A.addElementToNewChain(doc.value.paths[0].id, m);
+  expect(doc.value.bindings[0].groups).toEqual([[m]]);
+  expect(UI.pendingGroup.value).toBe(null);
 });

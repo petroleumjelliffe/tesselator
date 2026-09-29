@@ -3,14 +3,14 @@ import { CONFIG } from '../config';
 import { doc } from './doc';
 import { view, viewport, drag } from './ui';
 import { visibleOffsets } from '../engine/lattice';
-import { cellMatrix, compose, ownClones } from '../engine/transform';
+import { cellMatrix, compose, orbit, ownClones } from '../engine/transform';
 import { anchorsWorld } from '../engine/hit';
 import { computeFaces } from '../engine/regions';
 import type { Matrix, Cell, Copy, CopyInfo, Doc, Face } from '../types';
 
 export const cloneMatrices = computed(() => {
-  const d = doc.value, m = new Map<string, Matrix[]>();
-  for (const b of d.bindings) m.set(b.id, ownClones(b.ops, d.elements, d.lattice, CONFIG.ORBIT_CAP).matrices);
+  const d = doc.value, m = new Map<string, (Matrix | null)[]>();
+  for (const b of d.bindings) m.set(b.id, orbit(b.groups, d.elements, d.lattice, CONFIG.ORBIT_CAP, CONFIG.CLONE_CAP).matrices);
   return m;
 });
 
@@ -22,7 +22,7 @@ export const openElements = computed(() => {
 export const visibleCells = computed<Cell[]>(() =>
   visibleOffsets(view.value, doc.value.lattice, viewport.value.width, viewport.value.height, CONFIG.VISIBLE_CELL_RADIUS));
 
-export function copyMatrix(copy: Copy, d: Doc = doc.value, cm: Map<string, Matrix[]> = cloneMatrices.value): Matrix {
+export function copyMatrix(copy: Copy, d: Doc = doc.value, cm: Map<string, (Matrix | null)[]> = cloneMatrices.value): Matrix {
   const Mo = cellMatrix(copy.cell, d.lattice);
   if (!copy.bindingId) return Mo;
   const M = (cm.get(copy.bindingId) ?? [])[copy.power - 1];
@@ -38,7 +38,7 @@ export const copies = computed<CopyInfo[]>(() => {
       out.push({ pathId: p.id, copy: { cell, bindingId: null, power: 0 }, M: Mo });
       for (const b of d.bindings) {
         if (b.pathId !== p.id) continue;
-        (cm.get(b.id) ?? []).forEach((M, k) => out.push({ pathId: p.id, copy: { cell, bindingId: b.id, power: k + 1 }, M: compose(Mo, M) }));
+        (cm.get(b.id) ?? []).forEach((M, k) => { if (M) out.push({ pathId: p.id, copy: { cell, bindingId: b.id, power: k + 1 }, M: compose(Mo, M) }); });
       }
     }
   }

@@ -2,7 +2,7 @@
 import { signal } from '@preact/signals';
 import { CONFIG } from '../config';
 import { doc } from './doc';
-import { selection, pen, hover, drag } from './ui';
+import { selection, pen, hover, drag, pendingGroup } from './ui';
 import type { Doc } from '../types';
 
 const past: Doc[] = [];
@@ -12,7 +12,7 @@ let gestureBase: Doc | null = null;
 export const historyVersion = signal(0);
 
 function trim() { while (past.length > CONFIG.MAX_HISTORY) past.shift(); }
-function clearTransient() { selection.value = null; pen.value = null; hover.value = null; drag.value = null; }
+function clearTransient() { selection.value = null; pen.value = null; hover.value = null; drag.value = null; pendingGroup.value = null; }
 
 export function commit(next: Doc): void {
   if (inGesture) {

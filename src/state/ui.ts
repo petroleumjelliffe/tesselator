@@ -1,11 +1,12 @@
 import { signal } from '@preact/signals';
 import { CONFIG } from '../config';
-import type { Layer, Tool, PathLayer, Selection, HitTarget, Drag, XY, View, Prefs, PointerKind, Copy, Lattice } from '../types';
+import type { Layer, Tool, Selection, HitTarget, Drag, XY, View, Prefs, PointerKind, Copy, Lattice } from '../types';
 
 export const layer = signal<Layer>('drawing');
-export const sublayer = signal<PathLayer>('structure');
 export const tool = signal<Tool>('pen');
 export const pen = signal<{ pathId: string } | null>(null);
+export const activeLayerId = signal<string | null>(null);                                        // new paths and fills go here; null = top layer
+export const pendingGroup = signal<{ bindingId: string } | { pathId: string } | null>(null);   // an empty group (or binding) the next chip click fills
 export const selection = signal<Selection>(null);
 export const hover = signal<HitTarget | null>(null);
 export const drag = signal<Drag | null>(null);
@@ -24,10 +25,11 @@ export const freeScale = signal(false);        // touch stand-in for Shift while
 export const addToSelection = signal(false);   // touch stand-in for Shift while marquee-selecting
 
 export function resetUi(): void {
-  layer.value = 'drawing'; sublayer.value = 'structure'; tool.value = 'pen'; pen.value = null; selection.value = null;
+  layer.value = 'drawing'; tool.value = 'pen'; pen.value = null; selection.value = null;
   hover.value = null; drag.value = null; cursor.value = null; view.value = { pan: { x: 0, y: 0 }, zoom: 1 }; space.value = false;
   showHelp.value = false; exportOpen.value = false; fillPreview.value = null;
   freeScale.value = false; addToSelection.value = false;
+  activeLayerId.value = null; pendingGroup.value = null;
 }
 
 export function clearSelection(): void { selection.value = null; }

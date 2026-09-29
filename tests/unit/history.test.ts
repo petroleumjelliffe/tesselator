@@ -56,10 +56,10 @@ test('derived copies list the source and every clone per visible cell', () => {
   viewport.value = { width: 400, height: 400 };
   const d = draft();
   const n = P.addPoint(d, { u: 0.1, v: 0.1 });
-  const path = P.startPath(d, n, { color: '#000', weight: 1 });
+  const path = P.startPath(d, n, { color: '#000', weight: 1 }, d.layers[0].id);
   P.appendNode(d, path.id, P.addPoint(d, { u: 0.4, v: 0.1 }));
   const el = P.addElement(d, { kind: 'rotate', u: 0.5, v: 0.5, n: 4 });
-  P.addBinding(d, path.id, [el.id]);
+  P.addBinding(d, path.id, [[el.id]]);
   commit(d);
   expect(cloneMatrices.value.get(d.bindings[0].id)).toHaveLength(3);
   const perCell = copies.value.filter((c) => c.copy.cell.c === 0 && c.copy.cell.r === 0);
@@ -71,7 +71,7 @@ test('faces are not recomputed while a drag is set, and catch up when it ends', 
   fresh();
   const d = draft();
   const pts = [{ u: 0.25, v: 0.25 }, { u: 0.75, v: 0.25 }, { u: 0.75, v: 0.75 }, { u: 0.25, v: 0.75 }].map((p) => P.addPoint(d, p));
-  const path = P.startPath(d, pts[0], { color: '#000', weight: 1 });
+  const path = P.startPath(d, pts[0], { color: '#000', weight: 1 }, d.layers[0].id);
   for (const n of pts.slice(1)) P.appendNode(d, path.id, n);
   P.appendNode(d, path.id, pts[0]);
   drag.value = { kind: 'click', target: null, start: { x: 0, y: 0 }, moved: false, pointerId: 1, hitScale: 1 };

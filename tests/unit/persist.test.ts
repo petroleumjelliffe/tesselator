@@ -1,4 +1,5 @@
 import { test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { restore } from '../../src/state/persist';
 import { doc, emptyDoc } from '../../src/state/doc';
 import * as UI from '../../src/state/ui';
@@ -16,7 +17,7 @@ beforeEach(() => {
 });
 afterEach(() => { delete (globalThis as any).localStorage; vi.restoreAllMocks(); });
 
-const prefsWith = (view: unknown) => JSON.stringify({ prefs: UI.prefs.value, tool: 'select', sublayer: 'structure', view });
+const prefsWith = (view: unknown) => JSON.stringify({ prefs: UI.prefs.value, tool: 'select', activeLayerId: null, view });
 
 test('a stored view is restored only when zoom and both pan coordinates are finite', () => {
   store.set(CONFIG.STORAGE_PREFS_KEY, prefsWith({ zoom: 2 }));
@@ -41,4 +42,14 @@ test('a stored document with a dangling point reference is rejected and kept und
   store.set(CONFIG.STORAGE_DOC_KEY, serializeDoc(d));
   expect(restore()).toBe(true);
   expect(doc.value).toEqual(d);
+});
+
+test('a stored v1 document is migrated on restore and a stored active layer id is kept', () => {
+  const v1 = JSON.parse(readFileSync(new URL('../../docs/examples/fish.json', import.meta.url), 'utf8'));
+  store.set(CONFIG.STORAGE_DOC_KEY, JSON.stringify(v1));
+  store.set(CONFIG.STORAGE_PREFS_KEY, JSON.stringify({ prefs: UI.prefs.value, tool: 'select', activeLayerId: 'layer_x', view: { pan: { x: 0, y: 0 }, zoom: 1 } }));
+  expect(restore()).toBe(true);
+  expect(doc.value.version).toBe(2);
+  expect(doc.value.layers).toHaveLength(3);
+  expect(UI.activeLayerId.value).toBe('layer_x');
 });

@@ -1,8 +1,8 @@
 // Draft mutations. Every function takes a Doc draft and mutates it; nothing here touches UI state.
 import { makeId } from '../ids';
 import { toWorld, toUV, cellOf, nodeUV } from './lattice';
-import { IDENTITY, apply, ownClones } from './transform';
-import type { Doc, UV, XY, Cell, Node, Segment, Path, Element, Binding, Fill, Matrix, Style, PathLayer, Box } from '../types';
+import { IDENTITY, apply, orbit, type Orbit } from './transform';
+import type { Doc, UV, XY, Cell, Node, Segment, Path, Element, Binding, Fill, Matrix, Style, Box, DocLayer } from '../types';
 
 export const getPoint = (doc: Doc, id: string) => doc.points.find((p) => p.id === id) ?? null;
 export const getPath = (doc: Doc, id: string) => doc.paths.find((p) => p.id === id) ?? null;
@@ -52,8 +52,8 @@ export function addPoint(doc: Doc, uv: UV): Node {
   return { pointId: pt.id, cell };
 }
 
-export function startPath(doc: Doc, node: Node, style: Style, layer: PathLayer = 'structure'): Path {
-  const path: Path = { id: makeId('path'), start: cloneNode(node), segments: [], style: { ...style }, layer };
+export function startPath(doc: Doc, node: Node, style: Style, layerId: string): Path {
+  const path: Path = { id: makeId('path'), start: cloneNode(node), segments: [], style: { ...style }, layerId };
   doc.paths.push(path);
   return path;
 }
@@ -237,36 +237,66 @@ export function addElement(doc: Doc, spec: ElementSpec): Element {
   return e;
 }
 
+const pruneGroups = (groups: string[][], id: string): string[][] => groups.map((g) => g.filter((x) => x !== id)).filter((g) => g.length);
+
+// Deleting an element removes it from every group (in place, so a held Binding stays current); an emptied group
+// goes, and a binding with no groups goes.
 export function deleteElement(doc: Doc, id: string): void {
   doc.elements = doc.elements.filter((e) => e.id !== id);
-  doc.bindings = doc.bindings.filter((b) => !b.ops.includes(id));
-  doc.newPathOps = doc.newPathOps.map((c) => c.filter((x) => x !== id)).filter((c) => c.length);
+  for (const b of doc.bindings) b.groups = pruneGroups(b.groups, id);
+  doc.bindings = doc.bindings.filter((b) => b.groups.length);
+  doc.newPathGroups = pruneGroups(doc.newPathGroups, id);
 }
 
-export function addBinding(doc: Doc, pathId: string, ops: string[] = []): Binding {
-  const b: Binding = { id: makeId('bind'), pathId, ops: ops.slice() };
+export function addBinding(doc: Doc, pathId: string, groups: string[][] = []): Binding {
+  const b: Binding = { id: makeId('bind'), pathId, groups: groups.map((g) => g.slice()) };
   doc.bindings.push(b);
   return b;
 }
 
-export function toggleOp(doc: Doc, bindingId: string, elementId: string): void {
+// Put an element in group gi of a binding (gi === groups.length starts a new group). An element appears at most
+// once per binding, so it is first removed from wherever it was; a group emptied by that removal is dropped and gi
+// shifts down with it.
+export function placeInGroup(doc: Doc, bindingId: string, elementId: string, gi: number): void {
   const b = getBinding(doc, bindingId);
   if (!b) return;
-  const i = b.ops.indexOf(elementId);
-  if (i >= 0) b.ops.splice(i, 1); else b.ops.push(elementId);
+  const from = b.groups.findIndex((g) => g.includes(elementId));
+  if (from >= 0) {
+    b.groups[from] = b.groups[from].filter((x) => x !== elementId);
+    if (!b.groups[from].length) { b.groups.splice(from, 1); if (from < gi) gi--; }
+  }
+  gi = Math.max(0, Math.min(gi, b.groups.length));
+  if (gi === b.groups.length) b.groups.push([elementId]); else b.groups[gi].push(elementId);
+}
+
+export function removeFromBinding(doc: Doc, bindingId: string, elementId: string): void {
+  const b = getBinding(doc, bindingId);
+  if (!b) return;
+  b.groups = pruneGroups(b.groups, elementId);
+  if (!b.groups.length) removeBinding(doc, bindingId);
 }
 
 export function removeBinding(doc: Doc, id: string): void { doc.bindings = doc.bindings.filter((b) => b.id !== id); }
 
-export function cloneMatrices(doc: Doc, bindingId: string, cap = 12): { matrices: Matrix[]; open: boolean } {
+export function cloneMatrices(doc: Doc, bindingId: string, ownCap = 12, cloneCap = 48): Orbit {
   const b = getBinding(doc, bindingId);
-  return b ? ownClones(b.ops, doc.elements, doc.lattice, cap) : { matrices: [], open: false };
+  return b ? orbit(b.groups, doc.elements, doc.lattice, ownCap, cloneCap) : { matrices: [], open: false };
 }
 
-export function addFill(doc: Doc, uv: UV, color: string): Fill {
-  const f: Fill = { id: makeId('fill'), u: uv.u, v: uv.v, color };
+export function addFill(doc: Doc, uv: UV, color: string, layerId: string): Fill {
+  const f: Fill = { id: makeId('fill'), u: uv.u, v: uv.v, color, layerId };
   doc.fills.push(f);
   return f;
 }
 
 export function removeFill(doc: Doc, id: string): void { doc.fills = doc.fills.filter((f) => f.id !== id); }
+
+// --- layers (bottom to top)
+
+export function addLayer(doc: Doc, name = `Layer ${doc.layers.length + 1}`): DocLayer {
+  const l: DocLayer = { id: makeId('layer'), name };
+  doc.layers.push(l);
+  return l;
+}
+export const topLayerId = (doc: Doc): string => doc.layers[doc.layers.length - 1].id;
+export const layerIdOr = (doc: Doc, id: string | null | undefined): string => (id && doc.layers.some((l) => l.id === id) ? id : topLayerId(doc));

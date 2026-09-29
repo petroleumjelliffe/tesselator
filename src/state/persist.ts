@@ -4,9 +4,9 @@ import { CONFIG } from '../config';
 import { doc } from './doc';
 import * as UI from './ui';
 import { parseDoc, serializeDoc } from '../engine/serialize';
-import type { Prefs, Tool, PathLayer, View } from '../types';
+import type { Prefs, Tool, View } from '../types';
 
-type StoredPrefs = { prefs: Prefs; tool: Tool; sublayer: PathLayer; view: View };
+type StoredPrefs = { prefs: Prefs; tool: Tool; activeLayerId: string | null; view: View };
 
 function reject(key: string, raw: string) {
   try { localStorage.setItem(`${key}-rejected`, raw); localStorage.removeItem(key); } catch { /* storage unavailable */ }
@@ -31,7 +31,7 @@ export function restore(): boolean {
       if (s && s.prefs && typeof s.prefs.gridDivisions === 'number' && s.prefs.style) {
         UI.prefs.value = { ...UI.prefs.value, ...s.prefs };
         if (s.tool && ['select', 'pen', 'freehand', 'fill'].includes(s.tool)) UI.tool.value = s.tool;
-        if (s.sublayer === 'structure' || s.sublayer === 'detail') UI.sublayer.value = s.sublayer;
+        if (s.activeLayerId === null || typeof s.activeLayerId === 'string') UI.activeLayerId.value = s.activeLayerId ?? null;
         const v = s.view;
         if (v && Number.isFinite(v.zoom) && v.zoom > 0 && v.pan && Number.isFinite(v.pan.x) && Number.isFinite(v.pan.y)) UI.view.value = { zoom: v.zoom, pan: { x: v.pan.x, y: v.pan.y } };
       } else reject(CONFIG.STORAGE_PREFS_KEY, p);
@@ -50,7 +50,7 @@ export function startAutosave(): () => void {
     }, CONFIG.AUTOSAVE_MS);
   });
   const stopPrefs = effect(() => {
-    const s: StoredPrefs = { prefs: UI.prefs.value, tool: UI.tool.value, sublayer: UI.sublayer.value, view: UI.view.value };
+    const s: StoredPrefs = { prefs: UI.prefs.value, tool: UI.tool.value, activeLayerId: UI.activeLayerId.value, view: UI.view.value };
     try { localStorage.setItem(CONFIG.STORAGE_PREFS_KEY, JSON.stringify(s)); } catch { /* ignore */ }
   });
   return () => { stopDoc(); stopPrefs(); clearTimeout(timer); };

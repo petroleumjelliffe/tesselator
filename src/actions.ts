@@ -10,7 +10,7 @@ import { snapWorld, projectOnSegment, seedOf, type Anchor } from './engine/hit';
 import { faceAt, seedFor, fillOfFace } from './engine/regions';
 import { strokeToPath } from './engine/freehand';
 import { CONFIG } from './config';
-import type { Doc, XY, UV, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer, PathLayer } from './types';
+import type { Doc, XY, UV, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer } from './types';
 
 export function mutate(fn: (d: Doc) => boolean | void): boolean {
   const d = draft();
@@ -50,7 +50,6 @@ export function setLayer(l: Layer): boolean {
   if (s && (l === 'construction') !== (s.kind === 'element')) UI.selection.value = null;
   return true;
 }
-export function setSublayer(s: PathLayer): boolean { UI.sublayer.value = s; return true; }
 export function toggleSnap(): boolean { UI.prefs.value = { ...UI.prefs.value, snap: !UI.prefs.value.snap }; return true; }
 export function toggleFreeScale(): boolean { UI.freeScale.value = !UI.freeScale.value; return true; }
 export function toggleAddToSelection(): boolean { UI.addToSelection.value = !UI.addToSelection.value; return true; }
@@ -70,9 +69,26 @@ function rearmPen(): void {
   UI.pen.value = { pathId: p.id };
 }
 
+// --- layers
+
+export function activeLayerId(d: Doc = doc.value): string { return P.layerIdOr(d, UI.activeLayerId.value); }
+export function setActiveLayer(id: string): boolean { if (!doc.value.layers.some((l) => l.id === id)) return false; UI.activeLayerId.value = id; return true; }
+export function addLayer(): boolean {
+  let id: string | null = null;
+  const ok = mutate((d) => { id = P.addLayer(d).id; });
+  if (id) UI.activeLayerId.value = id;
+  return ok;
+}
+export function setPathLayer(pathId: string, layerId: string): boolean {
+  return mutate((d) => { const p = P.getPath(d, pathId); if (!p || p.layerId === layerId || !d.layers.some((l) => l.id === layerId)) return false; p.layerId = layerId; });
+}
+export function setFillLayer(fillId: string, layerId: string): boolean {
+  return mutate((d) => { const f = P.getFill(d, fillId); if (!f || f.layerId === layerId || !d.layers.some((l) => l.id === layerId)) return false; f.layerId = layerId; });
+}
+
 // --- pen
 
-function bindNewPath(d: Doc, pathId: string) { for (const ops of d.newPathOps) P.addBinding(d, pathId, ops); }
+function bindNewPath(d: Doc, pathId: string) { if (d.newPathGroups.length) P.addBinding(d, pathId, d.newPathGroups); }
 
 export function penClickEmpty(w: XY, on: boolean, hitScale = 1): boolean {
   if (UI.selection.value && !UI.pen.value) { UI.selection.value = null; return true; }
@@ -82,7 +98,7 @@ export function penClickEmpty(w: XY, on: boolean, hitScale = 1): boolean {
   const ok = mutate((d) => {
     const node: Node = s.anchor && !s.anchor.bindingId ? { pointId: s.anchor.pointId, cell: s.anchor.cell } : P.addPoint(d, toUV(s, d.lattice));
     if (penNow) { P.appendNode(d, penNow.pathId, node); return; }
-    const path = P.startPath(d, node, UI.prefs.value.style, UI.sublayer.value);
+    const path = P.startPath(d, node, UI.prefs.value.style, activeLayerId(d));
     bindNewPath(d, path.id);
     started = path.id;
   });
@@ -103,7 +119,7 @@ export function penClickNode(node: Node): boolean {
   const ok = mutate((d) => {
     const openId = P.openEndAt(d, node.pointId);
     if (openId) { P.orientToEnd(d, openId, node.pointId, node.cell); pathId = openId; return; }
-    const path = P.startPath(d, node, UI.prefs.value.style, UI.sublayer.value);
+    const path = P.startPath(d, node, UI.prefs.value.style, activeLayerId(d));
     bindNewPath(d, path.id);
     pathId = path.id;
   });
@@ -123,12 +139,12 @@ export function endPen(): boolean {
 
 // --- selection
 
-export function selectPathAt(pathId: string, copy: Copy = baseCopy): boolean { UI.selection.value = { kind: 'path', id: pathId, copy }; return true; }
-export function selectPoints(ids: string[]): boolean { const u = [...new Set(ids)]; UI.selection.value = u.length ? { kind: 'points', ids: u } : null; return true; }
+export function selectPathAt(pathId: string, copy: Copy = baseCopy): boolean { UI.selection.value = { kind: 'path', id: pathId, copy }; UI.pendingGroup.value = null; return true; }
+export function selectPoints(ids: string[]): boolean { const u = [...new Set(ids)]; UI.selection.value = u.length ? { kind: 'points', ids: u } : null; UI.pendingGroup.value = null; return true; }
 export function togglePointSelection(id: string): boolean { const cur = UI.selectedPointIds(); return selectPoints(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]); }
-export function selectElement(id: string): boolean { UI.selection.value = { kind: 'element', id }; return true; }
-export function selectFill(id: string): boolean { UI.selection.value = { kind: 'fill', id }; return true; }
-export function clearSel(): boolean { UI.selection.value = null; return true; }
+export function selectElement(id: string): boolean { UI.selection.value = { kind: 'element', id }; UI.pendingGroup.value = null; return true; }
+export function selectFill(id: string): boolean { UI.selection.value = { kind: 'fill', id }; UI.pendingGroup.value = null; return true; }
+export function clearSel(): boolean { UI.selection.value = null; UI.pendingGroup.value = null; return true; }
 
 // --- segments
 
@@ -170,7 +186,7 @@ export function deleteSelection(): boolean {
     else if (s.kind === 'element') P.deleteElement(d, s.id);
     else if (s.kind === 'fill') P.removeFill(d, s.id);
   });
-  UI.selection.value = null; UI.hover.value = null;
+  UI.selection.value = null; UI.hover.value = null; UI.pendingGroup.value = null;
   endPen();
   return ok;
 }
@@ -187,7 +203,7 @@ export function deleteHoveredOrSelection(): boolean {
   return deleteSelection();
 }
 
-// --- style, sublayer
+// --- style
 
 export function setStyle(patch: Partial<Style>): boolean {
   const pid = UI.selectedPathId();
@@ -201,14 +217,14 @@ export function setFillColor(color: string): boolean {
   if (s && s.kind === 'fill') mutate((d) => { const f = P.getFill(d, s.id); if (!f) return false; f.color = color; });
   return true;
 }
-export function togglePathLayer(pathId: string): boolean {
-  return mutate((d) => { const p = P.getPath(d, pathId); if (!p) return false; p.layer = p.layer === 'detail' ? 'structure' : 'detail'; });
-}
 
-// --- elements, bindings, chains
+// --- elements, bindings, groups
 
-const chainKey = (ops: string[]) => ops.join('>');
+const groupKey = (g: string[]) => g.join('>');
+const groupsKey = (gs: string[][]) => gs.map(groupKey).join('|');
 
+// O / M / T: the element joins newPathGroups as its own group and, if a path is selected, that path's first binding
+// as a new group (created if the path has none).
 export function addElement(kind: ElementKind): boolean {
   const pid = UI.selectedPathId();
   let id: string | null = null;
@@ -217,11 +233,11 @@ export function addElement(kind: ElementKind): boolean {
       : kind === 'mirror' ? { kind, u: 0.5, v: 0.5, du: 0, dv: 1 } as const
       : { kind: 'rotate' as const, u: 0.5, v: 0.5, n: 2 };
     const e = P.addElement(d, spec);
-    d.newPathOps.push([e.id]);
-    if (pid) P.addBinding(d, pid, [e.id]);
+    d.newPathGroups.push([e.id]);
+    if (pid) { const b = d.bindings.find((x) => x.pathId === pid); if (b) b.groups.push([e.id]); else P.addBinding(d, pid, [[e.id]]); }
     id = e.id;
   });
-  if (id) { endPen(); UI.layer.value = 'construction'; UI.selection.value = { kind: 'element', id }; }
+  if (id) { endPen(); UI.layer.value = 'construction'; UI.selection.value = { kind: 'element', id }; UI.pendingGroup.value = null; }
   return ok;
 }
 export function setRotationOrder(id: string, n: number): boolean {
@@ -234,15 +250,36 @@ export function rotateSelectedElement(deg: number): boolean { const id = UI.sele
 export function setTranslation(id: string, u: number, v: number): boolean {
   return mutate((d) => { const e = P.getElement(d, id); if (!e || e.kind !== 'translate') return false; e.u = u; e.v = v; });
 }
-export function isNewPathChain(ops: string[]): boolean { const k = chainKey(ops); return doc.value.newPathOps.some((c) => chainKey(c) === k); }
-export function toggleNewPathChain(ops: string[]): boolean {
-  const k = chainKey(ops);
-  return mutate((d) => { const i = d.newPathOps.findIndex((c) => chainKey(c) === k); if (i >= 0) d.newPathOps.splice(i, 1); else d.newPathOps.push(ops.slice()); });
+// A single group in newPathGroups ("Apply to new paths" on an element).
+export function isNewPathGroup(group: string[]): boolean { const k = groupKey(group); return doc.value.newPathGroups.some((g) => groupKey(g) === k); }
+export function toggleNewPathGroup(group: string[]): boolean {
+  const k = groupKey(group);
+  return mutate((d) => { const i = d.newPathGroups.findIndex((g) => groupKey(g) === k); if (i >= 0) d.newPathGroups.splice(i, 1); else d.newPathGroups.push(group.slice()); });
 }
-export function toggleOpOnBinding(bindingId: string, elementId: string): boolean {
-  return mutate((d) => { if (!P.getBinding(d, bindingId) || !P.getElement(d, elementId)) return false; P.toggleOp(d, bindingId, elementId); });
+// The whole list (the ★ on a binding row): make new paths get exactly this binding, or nothing if they already do.
+export function isNewPathGroups(groups: string[][]): boolean { return groupsKey(groups) === groupsKey(doc.value.newPathGroups); }
+export function setNewPathGroups(groups: string[][]): boolean {
+  return mutate((d) => { d.newPathGroups = groupsKey(groups) === groupsKey(d.newPathGroups) ? [] : groups.map((g) => g.slice()); });
 }
-export function addChain(pathId: string): boolean { return mutate((d) => { if (!P.getPath(d, pathId)) return false; P.addBinding(d, pathId, []); }); }
+export function placeElementInGroup(bindingId: string, elementId: string, gi: number): boolean {
+  const ok = mutate((d) => { if (!P.getBinding(d, bindingId) || !P.getElement(d, elementId)) return false; P.placeInGroup(d, bindingId, elementId, gi); });
+  if (ok) UI.pendingGroup.value = null;
+  return ok;
+}
+export function removeElementFromBinding(bindingId: string, elementId: string): boolean {
+  const ok = mutate((d) => { const b = P.getBinding(d, bindingId); if (!b || !b.groups.some((g) => g.includes(elementId))) return false; P.removeFromBinding(d, bindingId, elementId); });
+  const s = UI.selection.value;
+  if (ok && s && s.kind === 'path' && s.copy.bindingId === bindingId && !P.getBinding(doc.value, bindingId)) UI.selection.value = { kind: 'path', id: s.id, copy: baseCopy };
+  return ok;
+}
+export function startGroup(bindingId: string): boolean { UI.pendingGroup.value = { bindingId }; return true; }
+export function startChain(pathId: string): boolean { UI.pendingGroup.value = { pathId }; return true; }
+export function cancelPending(): boolean { if (!UI.pendingGroup.value) return false; UI.pendingGroup.value = null; return true; }
+export function addElementToNewChain(pathId: string, elementId: string): boolean {
+  const ok = mutate((d) => { if (!P.getPath(d, pathId) || !P.getElement(d, elementId)) return false; P.addBinding(d, pathId, [[elementId]]); });
+  if (ok) UI.pendingGroup.value = null;
+  return ok;
+}
 export function removeBinding(id: string): boolean {
   const ok = mutate((d) => { if (!P.getBinding(d, id)) return false; P.removeBinding(d, id); });
   const s = UI.selection.value;
@@ -268,7 +305,7 @@ export function fillAt(w: XY): boolean {
   const ok = mutate((d) => {
     if (existing) { const f = P.getFill(d, existing.id)!; f.color = color; id = f.id; return; }
     const seed = toUV(seedOf(seedFor(face, seedOf(w, lat)), lat), lat);   // the centroid of a straddling copy may lie outside the base cell
-    id = P.addFill(d, seed, color).id;
+    id = P.addFill(d, seed, color, activeLayerId(d)).id;
   });
   if (id) UI.selection.value = { kind: 'fill', id };
   return ok;
@@ -291,7 +328,7 @@ export function finishFreehand(dr: Extract<Drag, { kind: 'free' }>): boolean {
     const extendId = dr.startNode ? P.openEndAt(d, dr.startNode.pointId) : null;
     let path;
     if (extendId) { path = P.getPath(d, extendId)!; P.orientToEnd(d, extendId, dr.startNode!.pointId, dr.startNode!.cell); }
-    else path = P.startPath(d, nodes[0], UI.prefs.value.style, UI.sublayer.value);
+    else path = P.startPath(d, nodes[0], UI.prefs.value.style, activeLayerId(d));
     nodes.slice(1).forEach((n, j) => { if (P.appendNode(d, path.id, n) && fit.cps[j]) P.setControlPointWorld(d, path.id, path.segments.length - 1, fit.cps[j]); });
     if (!extendId) bindNewPath(d, path.id);
     if (path.segments.length === 0) { P.deletePath(d, path.id); return false; }
@@ -311,5 +348,5 @@ export function zoomAt(screen: XY, factor: number): boolean {
 }
 export function panBy(dx: number, dy: number): boolean { const v = UI.view.value; UI.view.value = { zoom: v.zoom, pan: { x: v.pan.x + dx, y: v.pan.y + dy } }; return true; }
 export function fitToTile(): boolean { UI.fitView(doc.value.lattice); return true; }
-export function newDocument(): boolean { commit(emptyDoc()); UI.selection.value = null; UI.pen.value = null; return true; }
-export function importDocument(d: Doc): boolean { commit(d); UI.selection.value = null; UI.pen.value = null; return true; }
+export function newDocument(): boolean { commit(emptyDoc()); UI.selection.value = null; UI.pen.value = null; UI.activeLayerId.value = null; UI.pendingGroup.value = null; return true; }
+export function importDocument(d: Doc): boolean { commit(d); UI.selection.value = null; UI.pen.value = null; UI.activeLayerId.value = null; UI.pendingGroup.value = null; return true; }

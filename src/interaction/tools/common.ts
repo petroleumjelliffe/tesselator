@@ -28,12 +28,13 @@ const twelfths = (uv: UV): UV => ({ u: Math.round(uv.u * 12) / 12, v: Math.round
 // Dragging a clone copy's body moves the first element of its chain so the copy follows the pointer.
 export function cloneBodyMove(d: Extract<Drag, { kind: 'body' }>, w: XY, ctx: ToolCtx): void {
   const b = P.getBinding(doc.value, d.copy.bindingId!);
-  if (!b || !b.ops.length) return;
-  const s0 = d.startEls.find((z) => z.id === b.ops[0]);
+  const g0 = b?.groups[0];
+  if (!b || !g0 || !g0.length) return;
+  const s0 = d.startEls.find((z) => z.id === g0[0]);
   if (!s0) return;
   const dx = w.x - d.start.x, dy = w.y - d.start.y;
   A.mutate((dd) => {
-    const first = P.getElement(dd, b.ops[0]);
+    const first = P.getElement(dd, g0[0]);
     if (!first) return false;
     const lat = dd.lattice, c0 = toWorld(s0, lat);
     if (first.kind === 'rotate' && s0.kind === 'rotate') {
@@ -48,7 +49,7 @@ export function cloneBodyMove(d: Extract<Drag, { kind: 'body' }>, w: XY, ctx: To
       const pe = dx * nrm.x + dy * nrm.y, al = dx * dir.x + dy * dir.y;
       const uv = snapElement({ x: c0.x + (pe / 2) * nrm.x, y: c0.y + (pe / 2) * nrm.y }, ctx.snapOn, ctx.hitScale);
       first.u = uv.u; first.v = uv.v;
-      const tId = b.ops.slice(1).find((id) => P.getElement(dd, id)?.kind === 'translate');
+      const tId = g0.slice(1).find((id) => P.getElement(dd, id)?.kind === 'translate');
       if (tId) {
         const t = P.getElement(dd, tId) as Extract<Element, { kind: 'translate' }>, t0 = d.startEls.find((z) => z.id === tId) as Extract<Element, { kind: 'translate' }>;
         const v0 = toWorld(t0, lat);

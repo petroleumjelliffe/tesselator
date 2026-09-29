@@ -6,9 +6,9 @@ export type Matrix = readonly [number, number, number, number, number, number];
 
 export type Node = { pointId: string; cell: Cell };
 export type Segment = { to: Node; cp: UV | null };          // cp relative to the previous node's cell origin
-export type PathLayer = 'structure' | 'detail';
 export type Style = { color: string; weight: number };
-export type Path = { id: string; start: Node; segments: Segment[]; style: Style; layer: PathLayer };
+export type DocLayer = { id: string; name: string };                     // a document layer (the UI mode type below is `Layer`)
+export type Path = { id: string; start: Node; segments: Segment[]; style: Style; layerId: string };
 export type Point = UV & { id: string };
 
 export type Element =
@@ -17,21 +17,22 @@ export type Element =
   | { id: string; kind: 'rotate'; u: number; v: number; n: number };
 export type ElementKind = Element['kind'];
 
-export type Binding = { id: string; pathId: string; ops: string[] };
-export type Fill = { id: string; u: number; v: number; color: string };
+export type Binding = { id: string; pathId: string; groups: string[][] };   // ordered groups of ordered element ids
+export type Fill = { id: string; u: number; v: number; color: string; layerId: string };
 
 export type Doc = {
-  version: 1;
+  version: 2;
   lattice: Lattice;
   points: Point[];
   paths: Path[];
   elements: Element[];
   bindings: Binding[];
   fills: Fill[];
-  newPathOps: string[][];
+  layers: DocLayer[];          // bottom to top
+  newPathGroups: string[][];   // the groups every new path's binding receives
 };
 
-// A rendered copy of a path: the source in a cell, or a clone (binding + power) in a cell.
+// A rendered copy of a path: the source in a cell, or a clone (binding + clone index, stored as `power`) in a cell.
 export type Copy = { cell: Cell; bindingId: string | null; power: number };
 export type CopyInfo = { pathId: string; copy: Copy; M: Matrix };
 

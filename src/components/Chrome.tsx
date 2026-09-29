@@ -5,7 +5,7 @@ import * as UI from '../state/ui';
 import * as A from '../actions';
 import { canUndo, canRedo, historyVersion } from '../state/history';
 import { cloneMatrices, openElements } from '../state/derived';
-import { ownClones, mirrorAngle } from '../engine/transform';
+import { orbit, cloneCount, mirrorAngle } from '../engine/transform';
 import { latticeAngle } from '../engine/lattice';
 import { getPath, getBinding, getElement, getFill } from '../engine/paths';
 import { exportSvg, serializeDoc, parseDoc } from '../engine/serialize';
@@ -15,8 +15,8 @@ import type { Element, Binding, Lattice } from '../types';
 
 const SYMBOL = { rotate: '↻', mirror: '⟋', translate: '⇢' } as const;
 export function elementLabel(el: Element): string { return `${SYMBOL[el.kind]}${doc.value.elements.indexOf(el) + 1}`; }
-export function chainLabel(ops: string[]): string { return ops.map((id) => { const e = getElement(doc.value, id); return e ? elementLabel(e) : '?'; }).join(' → ') || '(empty chain)'; }
-const orbitOf = (ops: string[]) => ownClones(ops, doc.value.elements, doc.value.lattice, CONFIG.ORBIT_CAP);
+export function chainLabel(groups: string[][]): string { const one = (g: string[]) => g.map((id) => { const e = getElement(doc.value, id); return e ? elementLabel(e) : '?'; }).join(' → '); return groups.map(one).join(' · then ') || '(empty)'; }
+const orbitOf = (groups: string[][]) => orbit(groups, doc.value.elements, doc.value.lattice, CONFIG.ORBIT_CAP, CONFIG.CLONE_CAP);
 
 type BtnProps = { on?: boolean; cls?: string; kbd?: string; title?: string; disabled?: boolean; onClick: () => void; children: ComponentChildren };
 function Btn({ on, cls = '', kbd, title, disabled, onClick, children }: BtnProps) {
@@ -41,6 +41,12 @@ function LayerBar() {
   </div>;
 }
 
+function LayerPicker() {
+  const d = doc.value, active = A.activeLayerId(d);
+  return <>{d.layers.map((l) => <Btn key={l.id} cls="small" on={l.id === active} title={`New paths and fills go to ${l.name}`} onClick={() => A.setActiveLayer(l.id)}>{l.name}</Btn>)}
+    <Btn cls="small outline" title="Add a layer on top and make it active" onClick={() => A.addLayer()}>+ layer</Btn></>;
+}
+
 function ToolBar() {
   const t = UI.tool.value, p = UI.prefs.value;
   return <div class="panel">
@@ -49,8 +55,7 @@ function ToolBar() {
     <Btn on={t === 'freehand'} kbd="F" title="Freehand (F)" onClick={() => A.setTool('freehand')}>〰 Freehand</Btn>
     <Btn on={t === 'fill'} kbd="B" title="Fill (B)" onClick={() => A.setTool('fill')}>◐ Fill</Btn>
     <Sep />
-    <Btn on={UI.sublayer.value === 'structure'} cls="small" title="New paths go below fills" onClick={() => A.setSublayer('structure')}>Structure</Btn>
-    <Btn on={UI.sublayer.value === 'detail'} cls="small" title="New paths go above fills" onClick={() => A.setSublayer('detail')}>Detail</Btn>
+    <LayerPicker />
     <Sep />
     <Btn on={p.snap} cls="small" kbd="G" title="Grid snapping (G); hold Shift to invert" onClick={() => A.toggleSnap()}>⌗ Snap</Btn>
     {UI.pen.value && <><Sep /><Btn cls="small outline" kbd="↵" title="End the current path (Enter / Esc)" onClick={() => A.endPen()}>End path</Btn></>}
@@ -65,7 +70,7 @@ function ElementsBar() {
     <Btn cls="violet" kbd="O" title="Add a rotation (1/n turn). New paths are cloned through it." onClick={() => A.addElement('rotate')}>+ ↻ Rotation</Btn>
     <Btn cls="violet" kbd="M" title="Add a mirror line." onClick={() => A.addElement('mirror')}>+ ⟋ Mirror</Btn>
     <Btn cls="violet" kbd="T" title="Add a translation by a fraction of the lattice." onClick={() => A.addElement('translate')}>+ ⇢ Translate</Btn>
-    {d.elements.map((e) => <Btn key={e.id} cls="small violet" on={A.isNewPathChain([e.id])} title={A.isNewPathChain([e.id]) ? 'Applies to new paths · click to select' : 'Click to select'} onClick={() => A.selectElement(e.id)}>{elementLabel(e)}{open.has(e.id) ? ' ⚠' : ''}</Btn>)}
+    {d.elements.map((e) => <Btn key={e.id} cls="small violet" on={A.isNewPathGroup([e.id])} title={A.isNewPathGroup([e.id]) ? 'Applies to new paths · click to select' : 'Click to select'} onClick={() => A.selectElement(e.id)}>{elementLabel(e)}{open.has(e.id) ? ' ⚠' : ''}</Btn>)}
     {d.elements.length > 0 && <Label>filled = applies to new paths</Label>}
     {open.size > 0 && <Label>⚠ an element does not close on this lattice</Label>}
   </div>;
@@ -87,12 +92,11 @@ function LatticeBar() {
 }
 
 function ChainRow({ b }: { b: Binding }) {
-  const d = doc.value, n = orbitOf(b.ops).matrices.length;
+  const o = orbitOf(b.groups), n = cloneCount(o);
   return <>
-    <Label>{chainLabel(b.ops)} · {n} clone{n === 1 ? '' : 's'}</Label>
-    {d.elements.map((e) => <Btn key={e.id} cls="small violet" on={b.ops.includes(e.id)} title="Toggle this element in the chain (click order = apply order)" onClick={() => A.toggleOpOnBinding(b.id, e.id)}>{elementLabel(e)}</Btn>)}
-    <Btn cls="small" on={A.isNewPathChain(b.ops)} title="Apply this chain to new paths" onClick={() => A.toggleNewPathChain(b.ops)}>★</Btn>
-    <Btn cls="small" title="Remove this chain" onClick={() => A.removeBinding(b.id)}>✕</Btn>
+    <Label>{chainLabel(b.groups)} · {n} clone{n === 1 ? '' : 's'}{o.open ? ' ⚠' : ''}</Label>
+    <Btn cls="small" on={A.isNewPathGroups(b.groups)} title="Give new paths this binding" onClick={() => A.setNewPathGroups(b.groups)}>★</Btn>
+    <Btn cls="small" title="Remove this binding" onClick={() => A.removeBinding(b.id)}>✕</Btn>
     <Sep />
   </>;
 }
@@ -105,31 +109,29 @@ function SelectionBar() {
     const path = getPath(d, s.id); if (!path) return null;
     const b = s.copy.bindingId ? getBinding(d, s.copy.bindingId) : null;
     inner = <>
-      <Label>{b ? `Clone of path ${d.paths.indexOf(path) + 1} via ${chainLabel(b.ops)} · power ${s.copy.power}` : `Path ${d.paths.indexOf(path) + 1}`}</Label>
-      {b && <Btn cls="small violet" title="Select the first element of this clone's chain (switches to Construction)" onClick={() => { if (b.ops[0]) { A.selectElement(b.ops[0]); A.setLayer('construction'); } }}>Select its element</Btn>}
+      <Label>{b ? `Clone of path ${d.paths.indexOf(path) + 1} via ${chainLabel(b.groups)} · clone ${s.copy.power}` : `Path ${d.paths.indexOf(path) + 1}`}</Label>
+      {b && <Btn cls="small violet" title="Select the first element of this clone's chain (switches to Construction)" onClick={() => { const first = b.groups[0]?.[0]; if (first) { A.selectElement(first); A.setLayer('construction'); } }}>Select its element</Btn>}
       {b && <Btn cls="small outline" title="Select the source path in the base cell" onClick={() => A.selectPathAt(path.id)}>Select source path</Btn>}
       {d.bindings.filter((x) => x.pathId === path.id).map((x) => <ChainRow key={x.id} b={x} />)}
-      <Btn cls="small outline" title="Start an empty chain; click element chips to fill it" onClick={() => A.addChain(path.id)}>+ chain</Btn>
       <Btn cls="small violet" title="New rotation cloning this path" onClick={() => A.addElement('rotate')}>+ ↻</Btn>
       <Btn cls="small violet" title="New mirror cloning this path" onClick={() => A.addElement('mirror')}>+ ⟋</Btn>
       <Btn cls="small violet" title="New translation cloning this path" onClick={() => A.addElement('translate')}>+ ⇢</Btn>
       <Sep />
-      <Btn cls="small outline" title="Structure paths sit below fills, detail paths above" onClick={() => A.togglePathLayer(path.id)}>{path.layer === 'detail' ? 'Above fills' : 'Below fills'}</Btn>
       {path.segments.some((x) => x.cp) && <Btn cls="small outline" title="Straighten every curved segment (double-click a diamond for one)" onClick={() => A.straightenPath(path.id)}>Straighten</Btn>}
       <Btn cls="small" on={UI.freeScale.value} title="Scale freely from the box corners (stands in for Shift)" onClick={() => A.toggleFreeScale()}>Free</Btn>
     </>;
   } else if (s.kind === 'element') {
     const el = getElement(d, s.id); if (!el) return null;
-    const bound = d.bindings.filter((x) => x.ops.includes(el.id)).length;
+    const bound = d.bindings.filter((x) => x.groups.some((g) => g.includes(el.id))).length;
     const name = { rotate: 'Rotation', mirror: 'Mirror', translate: 'Translation' }[el.kind];
     inner = <>
       <Label>{name} {elementLabel(el)}</Label>
-      <Btn cls="small violet" on={A.isNewPathChain([el.id])} title="Clone every new path through this element" onClick={() => A.toggleNewPathChain([el.id])}>Apply to new paths</Btn>
+      <Btn cls="small violet" on={A.isNewPathGroup([el.id])} title="Clone every new path through this element" onClick={() => A.toggleNewPathGroup([el.id])}>Apply to new paths</Btn>
       <Sep />
       {el.kind === 'rotate' && <>{[2, 3, 4, 6].map((n) => <Btn key={n} cls="small outline" on={el.n === n} title={`${n}-fold rotation`} onClick={() => A.setRotationOrder(el.id, n)}>1/{n}</Btn>)}{!latticeFits(el.n, d.lattice) && <Label>⚠ 1/{el.n} does not tile on this lattice</Label>}</>}
       {el.kind === 'mirror' && <><Btn cls="small outline" title="Rotate −15° ([)" onClick={() => A.rotateMirror(el.id, -15)}>↺</Btn><Btn cls="small outline" title="Rotate +15° (])" onClick={() => A.rotateMirror(el.id, 15)}>↻</Btn><Label>{Math.round(mirrorAngle(el, d.lattice))}°</Label></>}
       {el.kind === 'translate' && <><Label>({fmtFrac(el.u)}, {fmtFrac(el.v)})</Label>{([['½ a', 0.5, 0], ['⅓ a', 1 / 3, 0], ['½ b', 0, 0.5], ['½ a+b', 0.5, 0.5]] as const).map(([t, u, v]) => <Btn key={t} cls="small outline" on={Math.abs(el.u - u) < 1e-9 && Math.abs(el.v - v) < 1e-9} title="Set the translation vector" onClick={() => A.setTranslation(el.id, u, v)}>{t}</Btn>)}</>}
-      <Label>{bound ? `· in ${bound} chain${bound > 1 ? 's' : ''}` : '· no paths yet'}</Label>
+      <Label>{bound ? `· in ${bound} binding${bound > 1 ? 's' : ''}` : '· no paths yet'}</Label>
     </>;
   } else if (s.kind === 'fill') {
     inner = <Label>Fill · pick a colour in the palette</Label>;
@@ -187,7 +189,7 @@ function hintText(): string {
 
 function Hint() {
   const d = doc.value, cm = cloneMatrices.value;
-  const clones = [...cm.values()].reduce((n, ms) => n + ms.length, 0);
+  const clones = [...cm.values()].reduce((n, ms) => n + cloneCount({ matrices: ms }), 0);
   const pl = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
   const saved = UI.lastSavedAt.value && Date.now() - UI.lastSavedAt.value < 1500 ? ' · saved' : '';
   return <div class="hint"><span class="text">{hintText()}</span><span class="counts">{pl(d.points.length, 'point')} · {pl(d.paths.length, 'path')} · {pl(d.elements.length, 'element')} · {pl(clones, 'clone')} · {pl(d.fills.length, 'fill')}{saved}</span></div>;
@@ -200,11 +202,11 @@ function Help() {
     <span><K k="Tab" /> Drawing ↔ Construction · only the active layer responds to the pointer</span>
     <span><K k="V" /> select · <K k="P" /> pen · <K k="F" /> freehand · <K k="B" /> fill · <K k="G" /> snap (hold <K k="⇧" /> to invert)</span>
     <span><K k="O" /> rotation · <K k="M" /> mirror · <K k="T" /> translation — bound to the selected path, else applied to new paths</span>
-    <span class="violet">Elements: drag to move · mirror knob or <K k="[" /> <K k="]" /> rotates · translation diamond sets the vector · a chain applies left to right; a mirror then a half translation is a glide</span>
+    <span class="violet">Elements: drag to move · mirror knob or <K k="[" /> <K k="]" /> rotates · translation diamond sets the vector · a group applies left to right; a mirror then a half translation is a glide; a "then" group stacks on the clones so far</span>
     <span>Pen: click a point to start or resume · click empty space to add · click the last point, <K k="Esc" /> or <K k="↵" /> to end · <K k="Space" />+drag moves the elements</span>
     <span>Select: click any copy of a line to select its path there, again to insert a point · drag ◇ to bend, double-click to straighten · marquee points · <K k="⇧" /> adds · box handles scale / rotate</span>
     <span>Clone: drag its body to move its element · drag its anchors to edit the shared point</span>
-    <span>Fill: press to preview a closed region, release to colour · Structure paths sit below fills, Detail above</span>
+    <span>Fill: press to preview a closed region, release to colour · fills draw below the lines of their layer; put them on a higher layer to cover lines</span>
     <span>Wheel pans · <K k="⌘" />+wheel zooms · two fingers pan and pinch · <K k="⌘0" /> fits · hover a point + <K k="⌫" /> deletes · <K k="⌘Z" /> undo · <K k="⇧⌘Z" /> redo</span>
     <div class="settings">
       <label>Grid <input type="range" min="2" max="16" step="1" value={p.gridDivisions} onInput={(e) => A.setGridDivisions(+(e.currentTarget as HTMLInputElement).value)} /> {p.gridDivisions}</label>

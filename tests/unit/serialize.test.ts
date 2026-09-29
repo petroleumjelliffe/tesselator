@@ -6,7 +6,7 @@ import { CONFIG } from '../../src/config';
 test('JSON round trip preserves the document; foreign or malformed input is refused', () => {
   const d = exampleDoc();
   expect(parseDoc(serializeDoc(d))).toEqual(d);
-  expect(parseDoc(JSON.stringify({ ...d, version: 2 }))).toBe(null);
+  expect(parseDoc(JSON.stringify({ ...d, version: 3 }))).toBe(null);
   expect(parseDoc('{"version":1}')).toBe(null);
   expect(parseDoc('not json')).toBe(null);
 });
@@ -15,8 +15,8 @@ test('tile export is clipped to the cell polygon and draws the 3x3 window', () =
   const svg = exportSvg(exampleDoc(), { kind: 'tile' });
   expect(svg).toContain('viewBox="0 0 240 240"');
   expect(svg).toContain('<clipPath id="clip"><polygon points="0,0 240,0 240,240 0,240"');
-  expect(svg.match(/<use href="#cell-structure"/g)).toHaveLength(9);
-  expect(svg).toContain('id="cell-fills"');
+  expect(svg.match(/<use href="#cell-layer-/g)).toHaveLength(18);   // two layers × 9 cells
+  expect(svg).toContain('id="cell-layer-');
   expect(svg).toContain('fill-rule="evenodd"');
 });
 
@@ -43,11 +43,11 @@ test('the example document still round trips after entity validation', () => {
 test('grid export covers the requested cells with a rect clip', () => {
   const three = exportSvg(exampleDoc(), { kind: 'grid', rows: 3, cols: 3 });
   expect(three).toContain('viewBox="0 0 720 720"');
-  expect(three.match(/<use href="#cell-fills"/g)).toHaveLength(9);
+  expect(three.match(/<use href="#cell-layer-/g)).toHaveLength(18);
   const wall = exportSvg(exampleDoc(), { kind: 'grid', rows: 8, cols: 12 });
   expect(wall).toContain('viewBox="0 0 2880 1920"');
   const hex = { ...exampleDoc(), lattice: { ...CONFIG.LATTICE_PRESETS['Hex / triangle'] } };
-  expect((exportSvg(hex, { kind: 'grid', rows: 3, cols: 3 }).match(/<use href="#cell-detail"/g) ?? []).length).toBeGreaterThan(9);
+  expect((exportSvg(hex, { kind: 'grid', rows: 3, cols: 3 }).match(/<use href="#cell-layer-/g) ?? []).length).toBeGreaterThan(18);
   expect(() => exportSvg(exampleDoc(), { kind: 'grid', rows: 65, cols: 1 })).toThrow();
   expect(() => exportSvg(exampleDoc(), { kind: 'grid', rows: 0, cols: 3 })).toThrow();
 });
@@ -67,13 +67,13 @@ test('a binding whose pathId is not in paths is refused', () => {
   expect(parseDoc(JSON.stringify(bad))).toBe(null);
 });
 
-test('unknown element ids are dropped from binding ops and newPathOps; the document is accepted', () => {
+test('export writes one group per layer in document order, fills before strokes inside a layer', () => {
   const d = exampleDoc();
-  const odd = { ...d, bindings: d.bindings.map((b, i) => (i === 0 ? { ...b, ops: [...b.ops, 'el_missing'] } : b)), newPathOps: [...d.newPathOps, ['el_missing'], [d.elements[0].id, 'el_missing'], []] };
-  const parsed = parseDoc(JSON.stringify(odd))!;
-  expect(parsed).not.toBe(null);
-  expect(parsed.bindings[0].ops).toEqual(d.bindings[0].ops);
-  expect(parsed.newPathOps).toEqual([...d.newPathOps, [d.elements[0].id], []]);   // a chain emptied by the filter goes; a stored empty chain stays
+  const svg = exportSvg(d, { kind: 'tile' });
+  const ids = [...svg.matchAll(/<g id="cell-layer-([^"]+)">/g)].map((m) => m[1]);
+  expect(ids).toEqual(d.layers.map((l) => l.id));
+  const outline = svg.slice(svg.indexOf(`<g id="cell-layer-${d.layers[0].id}">`), svg.indexOf(`<g id="cell-layer-${d.layers[1].id}">`));
+  expect(outline.indexOf('fill-rule="evenodd"')).toBeLessThan(outline.indexOf('stroke-linecap'));
 });
 
 test('exported colours are escaped so a hostile colour string cannot break the SVG', () => {

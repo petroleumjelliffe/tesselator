@@ -1,16 +1,16 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
-import { rotation } from '../../src/engine/transform';
+import { rotation, cloneCount } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import type { Doc, UV } from '../../src/types';
 
 function makeDoc(): Doc {
-  return { version: 1, lattice: { ...CONFIG.LATTICE_PRESETS.Square }, points: [], paths: [], elements: [], bindings: [], fills: [], newPathOps: [] };
+  return { version: 2, lattice: { ...CONFIG.LATTICE_PRESETS.Square }, points: [], paths: [], elements: [], bindings: [], fills: [], layers: [{ id: 'L1', name: 'Layer 1' }], newPathGroups: [] };
 }
 const style = { color: '#000', weight: 2 };
 function polyline(doc: Doc, pts: UV[], close = false) {
   const nodes = pts.map((p) => P.addPoint(doc, p));
-  const path = P.startPath(doc, nodes[0], style);
+  const path = P.startPath(doc, nodes[0], style, 'L1');
   for (const n of nodes.slice(1)) P.appendNode(doc, path.id, n);
   if (close) P.appendNode(doc, path.id, nodes[0]);
   return path;
@@ -49,7 +49,7 @@ test('inserting into a curved segment splits at t = 0.5 with halved control poin
 test('control points are stored relative to the previous node cell, so a wrapped segment keeps cp local', () => {
   const doc = makeDoc();
   const a = P.addPoint(doc, { u: 0.9, v: 0.5 });
-  const path = P.startPath(doc, { pointId: a.pointId, cell: { c: 1, r: 0 } }, style);
+  const path = P.startPath(doc, { pointId: a.pointId, cell: { c: 1, r: 0 } }, style, 'L1');
   P.appendNode(doc, path.id, P.addPoint(doc, { u: 2.2, v: 0.5 }));
   P.setControlPointWorld(doc, path.id, 0, { x: 2.0 * 240, y: 0.7 * 240 });
   expect(path.segments[0].cp!.u).toBeCloseTo(1.0, 9);   // 2.0 − cell 1
@@ -74,7 +74,7 @@ test('deletePoints removes every occurrence, bridges straight, prunes orphans an
   const path = polyline(doc, [{ u: 0.1, v: 0.1 }, { u: 0.5, v: 0.1 }, { u: 0.5, v: 0.5 }, { u: 0.1, v: 0.5 }], true);
   P.setControlPointAbs(doc, path.id, 1, { u: 0.6, v: 0.3 });
   const el = P.addElement(doc, { kind: 'rotate', u: 0.5, v: 0.5, n: 2 });
-  P.addBinding(doc, path.id, [el.id]);
+  P.addBinding(doc, path.id, [[el.id]]);
   P.deletePoints(doc, [path.start.pointId]);
   expect(P.pathNodes(path)).toHaveLength(3);
   expect(path.segments).toHaveLength(2);
@@ -90,7 +90,7 @@ test('deletePoints removes every occurrence, bridges straight, prunes orphans an
 test('deletePath removes bindings and orphaned points but keeps shared points', () => {
   const doc = makeDoc();
   const a = polyline(doc, [{ u: 0, v: 0 }, { u: 0.2, v: 0 }]);
-  const b = P.startPath(doc, a.segments[0].to, style);
+  const b = P.startPath(doc, a.segments[0].to, style, 'L1');
   P.appendNode(doc, b.id, P.addPoint(doc, { u: 0.2, v: 0.2 }));
   P.addBinding(doc, a.id, []);
   P.deletePath(doc, a.id);
@@ -152,25 +152,55 @@ test('changing the lattice leaves every lattice coordinate untouched', () => {
   expect(P.cpWorld(doc, path, 0)!.x).toBeCloseTo(0.35 * 240 + 0.3 * -120, 6);
 });
 
-test('bindings toggle ops in order; cloneMatrices uses the orbit; deleting an element removes its bindings', () => {
+test('bindings hold groups; cloneMatrices is the group product; deleting an element prunes groups, then bindings', () => {
   const doc = makeDoc();
   const path = polyline(doc, [{ u: 0, v: 0 }, { u: 0.5, v: 0 }]);
   const m = P.addElement(doc, { kind: 'mirror', u: 0, v: 0.5, du: 1, dv: 0 });
   const t = P.addElement(doc, { kind: 'translate', u: 0.5, v: 0 });
-  const b = P.addBinding(doc, path.id, []);
-  expect(P.cloneMatrices(doc, b.id).matrices).toHaveLength(0);
-  P.toggleOp(doc, b.id, m.id); P.toggleOp(doc, b.id, t.id);
-  expect(b.ops).toEqual([m.id, t.id]);
-  expect(P.cloneMatrices(doc, b.id).matrices).toHaveLength(1);
-  P.toggleOp(doc, b.id, m.id);
-  expect(b.ops).toEqual([t.id]);
-  P.deleteElement(doc, t.id);
+  const mb = P.addElement(doc, { kind: 'mirror', u: 0.5, v: 0, du: 0, dv: 1 });
+  const b = P.addBinding(doc, path.id, [[m.id, t.id], [mb.id]]);
+  expect(cloneCount(P.cloneMatrices(doc, b.id))).toBe(3);
+  doc.newPathGroups = [[m.id, t.id], [mb.id]];
+  P.deleteElement(doc, mb.id);
+  expect(b.groups).toEqual([[m.id, t.id]]);
+  expect(doc.newPathGroups).toEqual([[m.id, t.id]]);
+  P.deleteElement(doc, m.id); P.deleteElement(doc, t.id);
   expect(doc.bindings).toHaveLength(0);
+  expect(doc.newPathGroups).toEqual([]);
+});
+
+test('placeInGroup / removeFromBinding move an element between groups and never leave an empty group', () => {
+  const doc = makeDoc();
+  const path = polyline(doc, [{ u: 0, v: 0 }, { u: 0.5, v: 0 }]);
+  const a = P.addElement(doc, { kind: 'mirror', u: 0.5, v: 0.5, du: 1, dv: 0 });
+  const c = P.addElement(doc, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+  const b = P.addBinding(doc, path.id, [[a.id]]);
+  P.placeInGroup(doc, b.id, c.id, 1);                 // gi === groups.length → new group
+  expect(b.groups).toEqual([[a.id], [c.id]]);
+  P.placeInGroup(doc, b.id, c.id, 0);                 // moves into group 0; its old group is dropped
+  expect(b.groups).toEqual([[a.id, c.id]]);
+  P.placeInGroup(doc, b.id, a.id, 1);                 // out of group 0 into a new group after it
+  expect(b.groups).toEqual([[c.id], [a.id]]);
+  P.removeFromBinding(doc, b.id, c.id);
+  expect(b.groups).toEqual([[a.id]]);
+  P.removeFromBinding(doc, b.id, a.id);
+  expect(doc.bindings).toHaveLength(0);               // a binding with no groups is removed
+});
+
+test('addLayer names layers in order and pushes on top; layerIdOr falls back to the top layer', () => {
+  const doc = makeDoc();
+  const l2 = P.addLayer(doc);
+  expect(l2.name).toBe('Layer 2');
+  expect(doc.layers.map((l) => l.id)).toEqual(['L1', l2.id]);
+  expect(P.topLayerId(doc)).toBe(l2.id);
+  expect(P.layerIdOr(doc, 'L1')).toBe('L1');
+  expect(P.layerIdOr(doc, 'gone')).toBe(l2.id);
+  expect(P.layerIdOr(doc, null)).toBe(l2.id);
 });
 
 test('fills are added and removed by id', () => {
   const doc = makeDoc();
-  const f = P.addFill(doc, { u: 0.5, v: 0.5 }, '#f00');
+  const f = P.addFill(doc, { u: 0.5, v: 0.5 }, '#f00', 'L1');
   expect(doc.fills).toHaveLength(1);
   P.removeFill(doc, f.id);
   expect(doc.fills).toHaveLength(0);
@@ -179,6 +209,6 @@ test('fills are added and removed by id', () => {
 test('openEndAt ignores a path with no segments', () => {
   const doc = makeDoc();
   const n = P.addPoint(doc, { u: 0.1, v: 0.1 });
-  P.startPath(doc, n, style);
+  P.startPath(doc, n, style, 'L1');
   expect(P.openEndAt(doc, n.pointId)).toBe(null);
 });
