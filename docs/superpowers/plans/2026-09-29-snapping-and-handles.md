@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Path drags snap their ends to cell corners, other paths' nodes and curves, and their own rotated or mirrored clones, and join on release; bounding-box scaling snaps to 1, ½, ⅓ of the lattice spans; control points snap to axis angles and tangency; anchor drags carry control points rigidly; a filled region selects and drags the path around it.
+**Goal:** Path drags snap their ends to cell corners, other paths' nodes and curves, and their own rotated or mirrored clones, and join on release; bounding-box scaling snaps to 1, ½, ⅓ of the lattice spans; control points snap to axis angles and tangency; anchor drags carry control points rigidly; a filled region selects and drags the path around it; dragging a node of the selected path pulls it off a point it shares with another path.
 
 **Architecture:** A new pure module `src/engine/snap.ts` computes every snap from a `Doc` plus explicit inputs. The Select tool builds the inputs at the start of a drag, applies the result on each move, publishes `UI.snapHint` for the canvas, and on release calls `A.joinDroppedNode`, which reuses the Pen-joins split and merge (`insertNodeAt`, `mergePoints`) plus a new `mergeIntoNode` for via targets. Body-drag snapping runs in the source frame, because the only copies it applies to (source and cell copies) are pure translations of the source.
 
@@ -41,15 +41,15 @@
 | --- | --- |
 | `src/types.ts` | `Line`, `SnapHit`, `BodySnap`, `BodyTargets`, `FillMove`; body, cp and bbox drag fields; fill hit target `owner` |
 | `src/config.ts` | `SCALE_FRACTIONS` |
-| `src/engine/paths.ts` | rigid `shiftControlPoints`; `mergePoints` split into `rewriteNodes` + `mergePoints` + `mergeIntoNode`; `moveFillSeeds` |
+| `src/engine/paths.ts` | rigid `shiftControlPoints`; `mergePoints` split into `rewriteNodes` + `mergePoints` + `mergeIntoNode`; `moveFillSeeds`; `detachFromPath` |
 | `src/engine/snap.ts` (new) | `solveCopyMeet`, `windowCopies`, `bodyTargets`, `snapBodyDelta`, `snapScale`, `cpLines`, `snapToLines`, `faceOwner`, `enclosedFills` |
 | `src/engine/hit.ts` | fill target carries `owner` |
 | `src/state/ui.ts` | `snapHint` signal |
-| `src/actions.ts` | `joinDroppedNode` |
+| `src/actions.ts` | `joinDroppedNode`; `unlinkNode` |
 | `src/interaction/pointer.ts` | tool `onUp` runs before `endGesture`; clear `snapHint` |
 | `src/interaction/tools/select.ts` | body snapping, join, fill-follow, fill-area select and drag, cp snapping, scale snapping |
 | `src/components/Canvas.tsx`, `src/styles.css` | `SnapMark` |
-| `tests/unit/paths.test.ts`, `tests/unit/snap.test.ts` (new), `tests/unit/hit.test.ts`, `tests/unit/select.test.ts` (new) | tests |
+| `tests/unit/paths.test.ts`, `tests/unit/snap.test.ts` (new), `tests/unit/hit.test.ts`, `tests/unit/select.test.ts` (new), `tests/unit/unlink.test.ts` (new) | tests |
 | `CLAUDE.md`, `src/components/Chrome.tsx` | docs and the Select hint |
 
 ---
@@ -1130,10 +1130,270 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+### Task 7: Dragging a node of the selected path unlinks it
+
+Independent of Tasks 2 to 6; it can run right after Task 1, or first.
+
+**Files:**
+- Modify: `src/engine/paths.ts`, `src/actions.ts`, `src/types.ts` (the `pt` and `canchor` drags), `src/interaction/tools/select.ts`, `src/components/Chrome.tsx`
+- Test: `tests/unit/paths.test.ts`, `tests/unit/unlink.test.ts` (new)
+
+**Interfaces:**
+- Produces: `detachFromPath(doc: Doc, pathId: string, node: Node): Node | null` in `paths.ts`. It gives the path its own point for `node` and returns the node that now stands in for it, or `null` when `node` is plain and no other path references its point (nothing changes).
+- Produces: `A.unlinkNode(pathId: string, pointId: string, via?: Copy): Node | null`, one `mutate` that finds the path's node and calls `detachFromPath`.
+- Produces: the `pt` and `canchor` drags gain `unlinked?: boolean`.
+
+- [ ] **Step 1: Failing engine tests**
+
+Append to `tests/unit/paths.test.ts`:
+
+```ts
+test('detachFromPath gives the path its own copy of a shared point; the other path keeps the old one', () => {
+  const doc = makeDoc();
+  const a = polyline(doc, [{ u: 0.2, v: 0.2 }, { u: 0.5, v: 0.5 }]);
+  const shared = a.segments[0].to;
+  const b = P.startPath(doc, { ...shared, cell: { ...shared.cell } }, { color: '#000', weight: 2 }, 'L1');
+  P.appendNode(doc, b.id, P.addPoint(doc, { u: 0.8, v: 0.2 }));
+  const n = P.detachFromPath(doc, a.id, shared)!;
+  expect(n.pointId).not.toBe(shared.pointId);
+  expect(a.segments[0].to).toEqual(n);
+  expect(b.start.pointId).toBe(shared.pointId);
+  closeXY(P.nodeWorld(doc, n), 120, 120);
+  expect(P.detachFromPath(doc, a.id, n)).toBe(null);                     // now only a uses it
+});
+
+test('detachFromPath keeps a closed path closed and leaves its control points alone', () => {
+  const doc = makeDoc();
+  const sq = polyline(doc, [{ u: 0.2, v: 0.2 }, { u: 0.6, v: 0.2 }, { u: 0.6, v: 0.6 }]);
+  P.appendNode(doc, sq.id, { ...sq.start, cell: { ...sq.start.cell } });
+  P.setControlPointAbs(doc, sq.id, 2, { u: 0.3, v: 0.5 });
+  const other = P.startPath(doc, { ...sq.start, cell: { c: 1, r: 0 } }, { color: '#000', weight: 2 }, 'L1');
+  P.appendNode(doc, other.id, P.addPoint(doc, { u: 0.9, v: 0.9 }));
+  const n = P.detachFromPath(doc, sq.id, sq.start)!;
+  expect(P.isClosed(sq)).toBe(true);
+  expect(sq.segments[2].to.pointId).toBe(n.pointId);
+  expect(P.cpAbs(sq, 2)).toEqual({ u: 0.3, v: 0.5 });
+  expect(other.start.pointId).not.toBe(n.pointId);
+});
+
+test('detachFromPath turns a via end into a plain node where it was', () => {
+  const doc = makeDoc();
+  const body = polyline(doc, [{ u: 0.1, v: 0.1 }, { u: 0.3, v: 0.1 }]);
+  const el = P.addElement(doc, { kind: 'rotate', u: 0.5, v: 0.5, n: 2 });
+  const b = P.addBinding(doc, body.id, [[el.id]]);
+  const tail = P.startPath(doc, P.addPoint(doc, { u: 0.5, v: 0.6 }), { color: '#000', weight: 2 }, 'L1');
+  const via = { pointId: body.start.pointId, cell: { c: 0, r: 0 }, via: { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 } };
+  P.appendNode(doc, tail.id, via);
+  P.setControlPointAbs(doc, tail.id, 0, { u: 0.7, v: 0.7 });
+  const at = P.nodeWorld(doc, via), cp = P.cpAbs(tail, 0)!;
+  const n = P.detachFromPath(doc, tail.id, via)!;
+  expect(n.via).toBeUndefined();
+  expect(tail.segments[0].to).toEqual(n);
+  closeXY(P.nodeWorld(doc, n), at.x, at.y);
+  expect(P.cpAbs(tail, 0)!.u).toBeCloseTo(cp.u, 9); expect(P.cpAbs(tail, 0)!.v).toBeCloseTo(cp.v, 9);
+  expect(P.getPoint(doc, body.start.pointId)).not.toBe(null);
+});
+```
+
+- [ ] **Step 2: Run to see them fail**
+
+Run: `npx vitest run --root ~/Developer/personal/tesselator tests/unit/paths.test.ts -t "detachFromPath"`
+Expected: FAIL, `P.detachFromPath is not a function`.
+
+- [ ] **Step 3: Implement `detachFromPath`**
+
+In `src/engine/paths.ts`, after `mergePoints`:
+
+```ts
+// Give path `pathId` its own point for `node`, so a drag of it leaves every other path (and every via node elsewhere
+// that saw the old point) where it is. A plain node: every plain node of the path on that point switches to a new
+// point at the same (u, v), each keeping its cell; null when no other path references the point. A via node: it, and
+// every node of the path equal to it, becomes a plain node at a new point at its world position. Control points are
+// re-based so they do not move.
+export function detachFromPath(doc: Doc, pathId: string, node: Node): Node | null {
+  const path = getPath(doc, pathId), pt = getPoint(doc, node.pointId);
+  if (!path || !pt) return null;
+  const abs = path.segments.map((_, j) => cpAbs(path, j));
+  let map: (n: Node) => Node, fresh: Node;
+  if (node.via) {
+    const f = addPoint(doc, toUV(nodeWorld(doc, node), doc.lattice));
+    fresh = f;
+    map = (n) => (sameNode(n, node) ? { pointId: f.pointId, cell: { ...f.cell } } : n);
+  } else {
+    if (!doc.paths.some((p) => p.id !== pathId && pathNodes(p).some((n) => n.pointId === node.pointId))) return null;
+    const np = { id: makeId('pt'), u: pt.u, v: pt.v };
+    doc.points.push(np);
+    fresh = { pointId: np.id, cell: { ...node.cell } };
+    map = (n) => (n.pointId === node.pointId && !n.via ? { pointId: np.id, cell: { ...n.cell } } : n);
+  }
+  path.start = map(path.start);
+  for (const s of path.segments) s.to = map(s.to);
+  path.segments.forEach((s, j) => { const c = abs[j]; s.cp = c && rel(c, prevNode(path, j).cell); });
+  return fresh;
+}
+```
+
+- [ ] **Step 4: Run the engine tests**
+
+Run: `npx vitest run --root ~/Developer/personal/tesselator tests/unit/paths.test.ts`
+Expected: PASS.
+
+- [ ] **Step 5: Failing interaction tests**
+
+Create `tests/unit/unlink.test.ts`:
+
+```ts
+import { test, expect } from 'vitest';
+import { doc, emptyDoc } from '../../src/state/doc';
+import * as UI from '../../src/state/ui';
+import * as A from '../../src/actions';
+import * as P from '../../src/engine/paths';
+import * as S from '../../src/interaction/tools/select';
+import { reset, beginGesture, endGesture } from '../../src/state/history';
+import type { Doc, HitTarget, XY, UV, Copy } from '../../src/types';
+
+const base: Copy = { cell: { c: 0, r: 0 }, bindingId: null, power: 0 };
+const ev = () => ({ pointerId: 1, shiftKey: false, pointerType: 'mouse' }) as unknown as PointerEvent;
+const ctx = { snapOn: false, hitScale: 1, threshold: 12 };
+function line(d: Doc, pts: UV[]) {
+  const p = P.startPath(d, P.addPoint(d, pts[0]), { color: '#000', weight: 2 }, d.layers[0].id);
+  for (const uv of pts.slice(1)) P.appendNode(d, p.id, P.addPoint(d, uv));
+  return p;
+}
+// a runs (48,48)→(120,120); b starts on a's end and runs to (192,48).
+function scene() {
+  reset(); UI.resetUi(); UI.tool.value = 'select';
+  const d = emptyDoc();
+  const a = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.5, v: 0.5 }]), shared = a.segments[0].to;
+  const b = P.startPath(d, { ...shared, cell: { ...shared.cell } }, { color: '#000', weight: 2 }, d.layers[0].id);
+  P.appendNode(d, b.id, P.addPoint(d, { u: 0.8, v: 0.2 }));
+  doc.value = d;
+  return { aId: a.id, bId: b.id, shared: shared.pointId };
+}
+// Mirrors pointer.ts: the gesture opens on the first move and closes after the tool's onUp.
+function drag(t: HitTarget, from: XY, to: XY) {
+  S.onDown(t, from, ev(), ctx);
+  const d = UI.drag.value!;
+  d.moved = true; beginGesture();
+  S.onMove(d, to, ev(), ctx);
+  UI.drag.value = null;
+  S.onUp(d, to, ev(), ctx);
+  endGesture();
+}
+const pt = (pointId: string): HitTarget => ({ kind: 'point', pointId, cell: { c: 0, r: 0 } });
+const endOf = (id: string) => P.getPath(doc.value, id)!.segments[0].to;
+const startOf = (id: string) => P.getPath(doc.value, id)!.start;
+
+test('with its path selected, dragging a shared node moves only that path; one undo relinks', () => {
+  const { aId, bId, shared } = scene();
+  UI.selection.value = { kind: 'path', id: aId, copy: base };
+  drag(pt(shared), { x: 120, y: 120 }, { x: 150, y: 120 });
+  expect(endOf(aId).pointId).not.toBe(shared);
+  expect(P.nodeWorld(doc.value, endOf(aId)).x).toBeCloseTo(150, 6);
+  expect(startOf(bId).pointId).toBe(shared);
+  expect(P.nodeWorld(doc.value, startOf(bId)).x).toBeCloseTo(120, 6);
+  A.undo();
+  expect(endOf(aId).pointId).toBe(shared);
+});
+
+test('dropping the unlinked node back on the old point merges them again', () => {
+  const { aId, shared } = scene();
+  UI.selection.value = { kind: 'path', id: aId, copy: base };
+  drag(pt(shared), { x: 120, y: 120 }, { x: 150, y: 120 });
+  drag(pt(endOf(aId).pointId), { x: 150, y: 120 }, { x: 125, y: 121 });
+  expect(endOf(aId).pointId).toBe(shared);
+});
+
+test('without the path selected, dragging the shared point moves both paths', () => {
+  const { aId, bId, shared } = scene();
+  UI.selection.value = { kind: 'points', ids: [shared] };
+  drag(pt(shared), { x: 120, y: 120 }, { x: 150, y: 120 });
+  expect(endOf(aId).pointId).toBe(shared);
+  expect(P.nodeWorld(doc.value, startOf(bId)).x).toBeCloseTo(150, 6);
+});
+```
+
+The second test relies on the tool's `onUp` running inside the gesture and on merge on drop, which the pen-joins work provides; the harness closes the gesture after `onUp` as `pointer.ts` does once Task 6 Step 5 lands. If Task 7 runs before Task 6, the merge is still performed, only as its own history entry; that does not affect these assertions.
+
+- [ ] **Step 6: Run to see them fail**
+
+Run: `npx vitest run --root ~/Developer/personal/tesselator tests/unit/unlink.test.ts`
+Expected: the first two tests FAIL (b's start moves to x = 150); the third passes.
+
+- [ ] **Step 7: Wire it**
+
+`src/types.ts`: add `unlinked?: boolean` to the `pt` drag and to the `canchor` drag.
+
+`src/actions.ts` (add `Copy` to the type import if it is missing):
+
+```ts
+// Give the path its own point for one of its nodes (a plain node on `pointId`, or its via node through `via`), so a
+// drag moves only this path. Null when nothing was shared.
+export function unlinkNode(pathId: string, pointId: string, via?: Copy): Node | null {
+  let out: Node | null = null;
+  mutate((d) => {
+    const path = P.getPath(d, pathId);
+    const node = path && P.pathNodes(path).find((n) => n.pointId === pointId && (via
+      ? !!n.via && n.via.bindingId === via.bindingId && n.via.power === via.power && n.via.cell.c === via.cell.c && n.via.cell.r === via.cell.r
+      : !n.via));
+    out = node ? P.detachFromPath(d, pathId, node) : null;
+    return out ? undefined : false;
+  });
+  return out;
+}
+```
+
+`src/interaction/tools/select.ts` (import `Node` from `../../types`):
+
+```ts
+// Select tool with a path selected: the first move of a drag on one of its nodes unlinks it from other paths first.
+function unlinkForDrag(pointId: string, via?: Copy): Node | null {
+  const s = UI.selection.value;
+  if (UI.tool.value !== 'select' || !s || s.kind !== 'path') return null;
+  return A.unlinkNode(s.id, pointId, via);
+}
+```
+
+In `onMove`, at the top of the `pt` case after `if (!d.moved) return;`:
+
+```ts
+      if (!d.unlinked) {
+        d.unlinked = true;
+        const n = unlinkForDrag(d.pointId, d.via);
+        if (n) { if (d.via) d.cell = n.cell; d.pointId = n.pointId; d.via = undefined; }
+      }
+```
+
+A plain node keeps `d.cell` (the hit cell): the new point has the same `(u, v)` as the old one, so the pointer still maps to it through that cell. A via node's replacement has its own cell.
+
+At the top of the `canchor` case after `if (!d.moved) return;`:
+
+```ts
+      if (!d.unlinked) { d.unlinked = true; const n = unlinkForDrag(d.pointId); if (n) d.pointId = n.pointId; }
+```
+
+`src/components/Chrome.tsx`: in the hint switch's `case 'select':` text, append ` · drag a node of the selected path to pull it off a shared point`.
+
+- [ ] **Step 8: Run everything**
+
+Run: `npx vitest run --root ~/Developer/personal/tesselator && npx tsc --noEmit -p ~/Developer/personal/tesselator`
+Expected: PASS.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git -C ~/Developer/personal/tesselator add src/engine/paths.ts src/actions.ts src/types.ts src/interaction/tools/select.ts src/components/Chrome.tsx tests/unit/paths.test.ts tests/unit/unlink.test.ts
+git -C ~/Developer/personal/tesselator commit -m "Select: dragging a node of the selected path pulls it off a shared point
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
 ## Self-review
 
-**Spec coverage.** §0 decisions: 1 (ends vs all nodes) → `bodyTargets`; 2 (toggle) → Task 6 `ctx.snapOn`, scale on `prefs.snap`; 3 (join) → Task 2 and `joinDroppedNode`; 4 (lattice copies) → `solveCopyMeet` returns null, CLAUDE.md limitation; 5 (fractions) → `snapScale`; 6 (cp lines) → `cpLines`; 7 (fill clicks) → Task 6 `onUp`. §2 targets, choice, feedback, join table → Tasks 3 and 6. §3 → Task 4 and the bbox branch. §4 axis, tangent, mirror-normal, crossing → Task 4 and the cp branch. §5 → Task 1. §6 owner, hit target, click cycle, drag, fills → Tasks 5 and 6. §7 engine additions → Tasks 2 to 5. §8 → CLAUDE.md limitations. §9 tests → each named test exists (paths: Tasks 1, 2, 5; snap: Tasks 3 to 5; actions-level behaviour in `select.test.ts`).
+**Spec coverage.** §0 decisions: 1 (ends vs all nodes) → `bodyTargets`; 2 (toggle) → Task 6 `ctx.snapOn`, scale on `prefs.snap`; 3 (join) → Task 2 and `joinDroppedNode`; 4 (lattice copies) → `solveCopyMeet` returns null, CLAUDE.md limitation; 5 (fractions) → `snapScale`; 6 (cp lines) → `cpLines`; 7 (fill clicks) → Task 6 `onUp`. §2 targets, choice, feedback, join table → Tasks 3 and 6. §3 → Task 4 and the bbox branch. §4 axis, tangent, mirror-normal, crossing → Task 4 and the cp branch. §5 → Task 1. §5a → Task 7. §6 owner, hit target, click cycle, drag, fills → Tasks 5 and 6. §7 engine additions → Tasks 2 to 5. §8 → CLAUDE.md limitations. §9 tests → each named test exists (paths: Tasks 1, 2, 5; snap: Tasks 3 to 5; actions-level behaviour in `select.test.ts`).
 
-**Type consistency.** `BodyTargets`, `BodySnap`, `SnapHit`, `Line`, `FillMove` are defined once in `src/types.ts` (Tasks 3 and 5) and used by `snap.ts`, the drag union, `joinDroppedNode` and the tests with the same fields. `snapBodyDelta(T, raw, threshold)`, `snapScale(nodes, lat, h, raw, free, threshold, fractions)`, `cpLines(doc, pathId, j, copy)`, `snapToLines(w, lines, threshold)`, `faceOwner(doc, face)`, `enclosedFills(doc, faces, pathId)`, `moveFillSeeds(doc, moves, delta)`, `mergeIntoNode(doc, fromId, fromCell, target)` match between definition and every call.
+**Type consistency.** `BodyTargets`, `BodySnap`, `SnapHit`, `Line`, `FillMove` are defined once in `src/types.ts` (Tasks 3 and 5) and used by `snap.ts`, the drag union, `joinDroppedNode` and the tests with the same fields. `snapBodyDelta(T, raw, threshold)`, `snapScale(nodes, lat, h, raw, free, threshold, fractions)`, `cpLines(doc, pathId, j, copy)`, `snapToLines(w, lines, threshold)`, `faceOwner(doc, face)`, `enclosedFills(doc, faces, pathId)`, `moveFillSeeds(doc, moves, delta)`, `mergeIntoNode(doc, fromId, fromCell, target)`, `detachFromPath(doc, pathId, node)` and `A.unlinkNode(pathId, pointId, via?)` match between definition and every call.
 
 **Review Focus.** 1 → Task 3 "segments touching the dragged points"; 2 → Task 6 "drag through cell (2, 0)"; 3 → Task 6 "with snapping off"; 4 → Task 6 undo assertions in the first test; 5 → Task 4 tangent test (the neighbour B→C is straight).

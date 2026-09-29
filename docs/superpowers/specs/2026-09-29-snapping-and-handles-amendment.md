@@ -18,7 +18,8 @@ Amends `2026-09-27-engine-rebuild-design.md` (§4 Snapping, §6 Select, §10 tes
 2. **Scaling snaps to lattice fractions,** so a motif scaled to ½ or ⅓ of a lattice span repeats exactly.
 3. **Control points snap** to axis angles at either anchor and to tangency with neighbouring segments.
 4. **Anchor drags carry control points rigidly.** Moving a node moves the control point of each segment that touches it by the same amount, not by half.
-5. **Filled regions are handles** for selecting and dragging the path around them.
+5. **A node of the selected path can be pulled off a shared point.** Dragging it moves only the selected path; dragging the point any other way moves every path on it.
+6. **Filled regions are handles** for selecting and dragging the path around them.
 
 Not changed: region detection, the fill model, groups, layers, the single point drag's snapping.
 
@@ -92,6 +93,19 @@ Applies to a diamond drag (filled or hollow) at the selected copy. All geometry 
 - A segment whose ends both move (body drag, multi-point drag) moves its control point once, as before.
 - Consequence to accept: a quadratic segment has one control point shared by its two ends, so the far end's tangent turns when the near end moves. Straight segments stay straight.
 
+## 5a. Dragging a node of the selected path unlinks it
+
+Added 2026-09-29. A point shared by two paths (a Pen join or a merge on drop) moves both paths when dragged. The user needs a way to pull them apart:
+
+- **Select tool, a path selected, drag one of its nodes:** before the first move, the selected path gets its own point at the same place, and only that path follows the pointer. Every other path, and every via node elsewhere that saw the old point, stays on the old point.
+- **Anywhere else the shared point is dragged** (Pen tool, a point or multi-point selection from a click or marquee): both paths move, as today.
+- **Which nodes switch.** Every plain node of the selected path that references the point switches to the new point, each keeping its own cell, so a closed path stays closed and a path that uses the point in two cells keeps both. Control points are unchanged.
+- **A via node of the selected path** (an end joined onto another path's clone) becomes a plain node at a new point at its current world position, then drags. Every node of the selected path equal to it switches too.
+- **Nothing to unlink.** If no other path references the point, the drag is the ordinary point drag and no point is created.
+- **Relinking.** The old point stays put, so dropping the dragged node back on it (within the snap threshold) merges them again through the existing merge on drop. A drag shorter than the snap threshold therefore changes nothing.
+- **Undo.** The unlink and the move are one history entry. A click without a drag unlinks nothing.
+- The same applies to a clone-anchor drag on a selected clone copy (the node is edited through the copy's inverse as today).
+
 ## 6. Filled regions select and drag their path
 
 - **Owner.** For a face, group its outer-loop pieces by `(pathId, copy)` and sum their lengths; the owner is the group with the largest total (ties: the path later in `doc.paths`). The face was found at the click mapped into the base cell, so the owner's `copy.cell` is shifted by the clicked cell to name the copy under the pointer.
@@ -113,9 +127,12 @@ Applies to a diamond drag (filled or hollow) at the selected copy. All geometry 
 - Snapping a clone copy's body drag (it moves elements).
 - Tangent continuity across a path's own lattice wrap (a segment meeting its own translated copy); smoothness there needs the adjacent segment's control point, which §4 already offers when it exists.
 - Selecting an unfilled region.
+- A mark on nodes that are shared with another path (so a user can see what will unlink).
+- Unlinking during a body drag of the selected path: a path drag still pulls the paths it shares points with.
 
 ## 9. Testing
 
 - `paths`: a single `movePoint` shifts both neighbouring control points by the full delta; `movePointsBy` over both ends shifts once; `mergeIntoNode` with a via target rewrites references with shifted `via.cell` and keeps world positions.
 - `snap`: `solveCopyMeet` returns a point for a quarter-turn, a line for a mirror (end onto the mirror line), `null` for a lattice copy; `snapBodyDelta` prefers a corner over a curve at equal distance, snaps an end onto a curve of a neighbouring cell copy, falls back to the grid; `snapScale` lands a width on `|a|/2` and `|a|/3` and ignores a zero-height path; `snapControlPoint` lands on a horizontal through an anchor, on a sibling's tangent line, on a mirror normal, and on the crossing of two lines; `faceOwner` picks the dominant path and shifts the cell; `enclosedFills` excludes a fill bounded by two paths.
+- `unlink`: with a path selected, dragging its node shared with another path moves only the selected path, and one undo relinks; with a point selection both move; a closed path's shared start stays closed; a via end becomes a plain node where it was; dropping the unlinked node back on the old point merges them again.
 - `actions`: a body drag released on another path's curve splits it and shares the point, and one undo reverts both the move and the join; released on a clone's curve produces a via node; a fill inside a dragged closed path moves with it; clicking a filled region selects the path, clicking again selects the fill.
