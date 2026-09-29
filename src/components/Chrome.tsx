@@ -44,7 +44,7 @@ function LayerBar() {
 
 function LayerPicker() {
   const d = doc.value, active = A.activeLayerId(d);
-  return <>{d.layers.map((l) => <Btn key={l.id} cls="small" on={l.id === active} title={`New paths and fills go to ${l.name}`} onClick={() => A.setActiveLayer(l.id)}>{l.name}</Btn>)}
+  return <>{d.layers.map((l, i) => <Btn key={l.id} cls="small" on={l.id === active} title={`${l.name} · layer ${i + 1} of ${d.layers.length} from the bottom · new paths and fills go here`} onClick={() => A.setActiveLayer(l.id)}>{l.name}</Btn>)}
     <Btn cls="small outline" title="Add a layer on top and make it active" onClick={() => A.addLayer()}>+ layer</Btn></>;
 }
 
@@ -146,6 +146,7 @@ function SelectionBar() {
       <Sep />
       {path.segments.some((x) => x.cp) && <Btn cls="small outline" title="Straighten every curved segment (double-click a diamond for one)" onClick={() => A.straightenPath(path.id)}>Straighten</Btn>}
       <Btn cls="small" on={UI.freeScale.value} title="Scale freely from the box corners (stands in for Shift)" onClick={() => A.toggleFreeScale()}>Free</Btn>
+      <Sep /><Label>Layer:</Label>{d.layers.map((l) => <Btn key={l.id} cls="small" on={l.id === path.layerId} title={`Move this path to ${l.name}`} onClick={() => A.setPathLayer(path.id, l.id)}>{l.name}</Btn>)}
     </>;
   } else if (s.kind === 'element') {
     const el = getElement(d, s.id); if (!el) return null;
@@ -161,7 +162,8 @@ function SelectionBar() {
       <Label>{bound ? `· in ${bound} binding${bound > 1 ? 's' : ''}` : '· no paths yet'}</Label>
     </>;
   } else if (s.kind === 'fill') {
-    inner = <Label>Fill · pick a colour in the palette</Label>;
+    const fill = getFill(d, s.id); if (!fill) return null;
+    inner = <><Label>Fill · pick a colour in the palette</Label><Sep /><Label>Layer:</Label>{d.layers.map((l) => <Btn key={l.id} cls="small" on={l.id === fill.layerId} title={`Move this fill to ${l.name}`} onClick={() => A.setFillLayer(fill.id, l.id)}>{l.name}</Btn>)}</>;
   }
   return <div class="panel bar">{inner}<Sep /><Btn cls="small outline" kbd="⌫" title={s.kind === 'path' && s.copy.bindingId ? 'Remove this clone chain (⌫)' : 'Delete the selection (⌫)'} onClick={() => A.deleteSelection()}>{s.kind === 'path' && s.copy.bindingId ? 'Unlink' : 'Delete'}</Btn></div>;
 }
@@ -193,7 +195,7 @@ function hintText(): string {
   if (UI.layer.value === 'construction') {
     if (s && s.kind === 'element') {
       const el = getElement(d, s.id);
-      if (el?.kind === 'rotate') return 'Rotation: drag to move · pick 1/2, 1/3, 1/4 or 1/6 · clones turn about it';
+      if (el?.kind === 'rotate') return 'Rotation: drag to move · pick 1/2, 1/3, 1/4 or 1/6 · clones turn about it · O on a selected path stacks it as a new group';
       if (el?.kind === 'mirror') return 'Mirror: drag to move · knob or [ ] rotates · put a translation after it in a chain for a glide';
       return 'Translation: drag the diamond to set the vector · snaps to twelfths of the lattice';
     }
@@ -202,8 +204,8 @@ function hintText(): string {
   switch (UI.tool.value) {
     case 'select':
       if (s && s.kind === 'points') return `${s.ids.length} point${s.ids.length > 1 ? 's' : ''} selected · drag to move together · ⇧-click adds · ⌫ deletes`;
-      if (s && s.kind === 'path' && s.copy.bindingId) return 'Clone: drag its body to move its element · drag its anchors to edit the shared shape';
-      if (s && s.kind === 'path') return 'Path: click a line to insert a point · drag ◇ to bend · double-click ◇ to straighten · box handles scale and rotate · any copy is editable';
+      if (s && s.kind === 'path' && s.copy.bindingId) return 'Clone: drag its body to move the first element of its first group · drag its anchors to edit the shared shape';
+      if (s && s.kind === 'path') return 'Path: click a line to insert a point · drag ◇ to bend · double-click ◇ to straighten · box handles scale and rotate · any copy is editable · Layer chips move it';
       return 'Select: click a point, line, copy or fill · drag a line to move the path · drag empty space to marquee points';
     case 'freehand': return 'Freehand: press and drag · release to fit curves · start on a point to continue its path';
     case 'fill': return 'Fill: press to preview a closed region · release to colour it · press again to recolour';
@@ -219,7 +221,7 @@ function Hint() {
   const clones = [...cm.values()].reduce((n, ms) => n + cloneCount({ matrices: ms }), 0);
   const pl = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
   const saved = UI.lastSavedAt.value && Date.now() - UI.lastSavedAt.value < 1500 ? ' · saved' : '';
-  return <div class="hint"><span class="text">{hintText()}</span><span class="counts">{pl(d.points.length, 'point')} · {pl(d.paths.length, 'path')} · {pl(d.elements.length, 'element')} · {pl(clones, 'clone')} · {pl(d.fills.length, 'fill')}{saved}</span></div>;
+  return <div class="hint"><span class="text">{hintText()}</span><span class="counts">{pl(d.points.length, 'point')} · {pl(d.paths.length, 'path')} · {pl(d.elements.length, 'element')} · {pl(clones, 'clone')} · {pl(d.fills.length, 'fill')} · {pl(d.layers.length, 'layer')}{saved}</span></div>;
 }
 
 const K = ({ k }: { k: string }) => <span class="kbd">{k}</span>;
@@ -228,8 +230,8 @@ function Help() {
   return <div class="help">
     <span><K k="Tab" /> Drawing ↔ Construction · only the active layer responds to the pointer</span>
     <span><K k="V" /> select · <K k="P" /> pen · <K k="F" /> freehand · <K k="B" /> fill · <K k="G" /> snap (hold <K k="⇧" /> to invert)</span>
-    <span><K k="O" /> rotation · <K k="M" /> mirror · <K k="T" /> translation — bound to the selected path, else applied to new paths</span>
-    <span class="violet">Elements: drag to move · mirror knob or <K k="[" /> <K k="]" /> rotates · translation diamond sets the vector · a group applies left to right; a mirror then a half translation is a glide; a "then" group stacks on the clones so far</span>
+    <span><K k="O" /> rotation · <K k="M" /> mirror · <K k="T" /> translation — stacked as a new group on the selected path's binding, and given to new paths</span>
+    <span class="violet">Elements: drag to move · mirror knob or <K k="[" /> <K k="]" /> rotates · translation diamond sets the vector · a group applies left to right (a mirror then a half translation is a glide) · a "then" group applies to the source and every clone so far</span>
     <span>Pen: click a point to start or resume · click empty space to add · click the last point, <K k="Esc" /> or <K k="↵" /> to end · <K k="Space" />+drag moves the elements</span>
     <span>Select: click any copy of a line to select its path there, again to insert a point · drag ◇ to bend, double-click to straighten · marquee points · <K k="⇧" /> adds · box handles scale / rotate</span>
     <span>Clone: drag its body to move its element · drag its anchors to edit the shared point</span>
