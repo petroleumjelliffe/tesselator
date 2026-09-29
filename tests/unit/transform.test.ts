@@ -97,6 +97,7 @@ const grp: Element[] = [
   { id: 'r2b', kind: 'rotate', u: 0.5, v: 0.5, n: 2 },
   { id: 'r6', kind: 'rotate', u: 0, v: 0, n: 6 },
   { id: 'mh', kind: 'mirror', u: 0, v: 0, du: 1, dv: 0 },
+  { id: 'r2x', kind: 'rotate', u: 1, v: 0.5, n: 2 },              // half-turn about (1, 1/2) = T(a) ∘ r2 on the square lattice
 ];
 
 test('group products match the amendment table', () => {
@@ -129,6 +130,18 @@ test('the product is truncated at the clone cap in index order and reported open
   expect(o.open).toBe(true);
   const small = orbit([['a'], ['b'], ['c']], many, hex, 12, 5);
   expect(small.matrices).toHaveLength(5); expect(small.open).toBe(true);
+});
+
+test('two clones that differ by a nonzero lattice translation are one clone; an exact-fit cap is not open', () => {
+  const o = orbit([['r2'], ['r2x']], grp, lat);
+  expect(o.matrices).toHaveLength(3);
+  expect(o.matrices[0]).not.toBe(null);
+  expect(o.matrices[1]).toBe(null);                     // r2x = T(a) ∘ r2: same clone modulo the lattice
+  expect(o.matrices[2]).toBe(null);                     // r2x ∘ r2 is the lattice translation by a
+  expect(cloneCount(o)).toBe(1);
+  expect(apply(o.matrices[0]!, { x: 0, y: 0 })).toEqual(apply(matrixOf(grp[6], lat), { x: 0, y: 0 }));
+  const exact = orbit([['ma'], ['tb']], grp, lat, 12, 3);   // product has exactly 3 slots
+  expect(exact.matrices).toHaveLength(3); expect(exact.open).toBe(false);
 });
 
 test('composite applies ops left to right', () => {
