@@ -257,18 +257,15 @@ export function rotateSelectedElement(deg: number): boolean { const id = UI.sele
 export function setTranslation(id: string, u: number, v: number): boolean {
   return mutate((d) => { const e = P.getElement(d, id); if (!e || e.kind !== 'translate') return false; e.u = u; e.v = v; });
 }
-// A single group in newPathGroups ("Apply to new paths" on an element).
-export function isNewPathGroup(group: string[]): boolean { const k = groupKey(group); return doc.value.newPathGroups.some((g) => groupKey(g) === k); }
-// Adding a group first takes its ids out of every other group, so newPathGroups names an element at most once (as a
-// binding must: a new path copies this list into its binding, which the validator would otherwise refuse on reload).
-export function toggleNewPathGroup(group: string[]): boolean {
-  const k = groupKey(group);
+// "Apply to new paths" on an element: lit when the element appears anywhere in newPathGroups (the same test the
+// canvas uses to mark it armed). Off takes it out of wherever it is, dropping an emptied group; on appends it as its
+// own group. So newPathGroups names an element at most once (as a binding must: a new path copies this list into its
+// binding, which the validator would otherwise refuse on reload).
+export function isNewPathElement(id: string): boolean { return doc.value.newPathGroups.some((g) => g.includes(id)); }
+export function toggleNewPathElement(id: string): boolean {
   return mutate((d) => {
-    const i = d.newPathGroups.findIndex((g) => groupKey(g) === k);
-    if (i >= 0) { d.newPathGroups.splice(i, 1); return; }
-    const ids = new Set(group);
-    d.newPathGroups = d.newPathGroups.map((g) => g.filter((x) => !ids.has(x))).filter((g) => g.length);
-    d.newPathGroups.push(group.slice());
+    if (d.newPathGroups.some((g) => g.includes(id))) { d.newPathGroups = d.newPathGroups.map((g) => g.filter((x) => x !== id)).filter((g) => g.length); return; }
+    d.newPathGroups.push([id]);
   });
 }
 // The whole list (the ★ on a binding row): make new paths get exactly this binding, or nothing if they already do.
@@ -296,8 +293,9 @@ export function addElementToNewChain(pathId: string, elementId: string): boolean
 }
 export function removeBinding(id: string): boolean {
   const ok = mutate((d) => { if (!P.getBinding(d, id)) return false; P.removeBinding(d, id); });
-  const s = UI.selection.value;
+  const s = UI.selection.value, pg = UI.pendingGroup.value;
   if (ok && s && s.kind === 'path' && s.copy.bindingId === id) UI.selection.value = { kind: 'path', id: s.id, copy: baseCopy };
+  if (ok && pg && 'bindingId' in pg && pg.bindingId === id) UI.pendingGroup.value = null;
   return ok;
 }
 export function deleteElement(id: string): boolean {

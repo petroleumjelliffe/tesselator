@@ -243,20 +243,29 @@ test('group editing actions move an element between groups and clear the pending
   UI.selection.value = { kind: 'path', id: doc.value.paths[0].id, copy: { cell: { c: 0, r: 0 }, bindingId: nb.id, power: 2 } };
   A.removeElementFromBinding(nb.id, r);
   expect((UI.selection.value as { kind: 'path'; copy: { bindingId: string | null } }).copy.bindingId).toBe(null);
+  // Removing the binding a pending group names clears that pending group.
+  A.startGroup(nb.id); expect(UI.pendingGroup.value).toEqual({ bindingId: nb.id });
+  expect(A.removeBinding(nb.id)).toBe(true);
+  expect(doc.value.bindings).toHaveLength(0);
+  expect(UI.pendingGroup.value).toBe(null);
 });
 
-test('"Apply to new paths" keeps newPathGroups free of repeats, so a new path\'s binding always reloads', () => {
+test('"Apply to new paths" is lit and toggled per element, keeping newPathGroups free of repeats so a new path\'s binding always reloads', () => {
   fresh();
   A.addElement('mirror'); A.addElement('translate');
   const [m, t] = doc.value.elements.map((e) => e.id);
   A.setNewPathGroups([[m, t]]);                          // ★ on a binding whose one group chains both
   expect(doc.value.newPathGroups).toEqual([[m, t]]);
-  A.toggleNewPathGroup([m]);                             // "Apply to new paths" on m: m leaves the chain
+  expect(A.isNewPathElement(m)).toBe(true); expect(A.isNewPathElement(t)).toBe(true);   // lit wherever it appears (as the canvas marks it)
+  A.toggleNewPathElement(m);                             // "Apply to new paths" on a lit m: m leaves the chain
+  expect(doc.value.newPathGroups).toEqual([[t]]);
+  expect(A.isNewPathElement(m)).toBe(false);
+  A.toggleNewPathElement(m);                             // and on an unlit m: m joins as its own group
   expect(doc.value.newPathGroups).toEqual([[t], [m]]);
   A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
   const ids = doc.value.bindings[0].groups.flat();
   expect(new Set(ids).size).toBe(ids.length);
   expect(parseDoc(serializeDoc(doc.value))).toEqual(doc.value);
-  A.toggleNewPathGroup([m]);                             // and the exact group toggles off again
+  A.toggleNewPathElement(m);
   expect(doc.value.newPathGroups).toEqual([[t]]);
 });

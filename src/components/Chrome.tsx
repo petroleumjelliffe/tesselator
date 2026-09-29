@@ -71,7 +71,7 @@ function ElementsBar() {
     <Btn cls="violet" kbd="O" title="Add a rotation (1/n turn). New paths are cloned through it." onClick={() => A.addElement('rotate')}>+ ↻ Rotation</Btn>
     <Btn cls="violet" kbd="M" title="Add a mirror line." onClick={() => A.addElement('mirror')}>+ ⟋ Mirror</Btn>
     <Btn cls="violet" kbd="T" title="Add a translation by a fraction of the lattice." onClick={() => A.addElement('translate')}>+ ⇢ Translate</Btn>
-    {d.elements.map((e) => <Btn key={e.id} cls="small violet" on={A.isNewPathGroup([e.id])} title={A.isNewPathGroup([e.id]) ? 'Applies to new paths · click to select' : 'Click to select'} onClick={() => A.selectElement(e.id)}>{elementLabel(e)}{open.has(e.id) ? ' ⚠' : ''}</Btn>)}
+    {d.elements.map((e) => <Btn key={e.id} cls="small violet" on={A.isNewPathElement(e.id)} title={A.isNewPathElement(e.id) ? 'Applies to new paths · click to select' : 'Click to select'} onClick={() => A.selectElement(e.id)}>{elementLabel(e)}{open.has(e.id) ? ' ⚠' : ''}</Btn>)}
     {d.elements.length > 0 && <Label>filled = applies to new paths</Label>}
     {open.size > 0 && <Label>⚠ an element does not close on this lattice</Label>}
   </div>;
@@ -154,7 +154,7 @@ function SelectionBar() {
     const name = { rotate: 'Rotation', mirror: 'Mirror', translate: 'Translation' }[el.kind];
     inner = <>
       <Label>{name} {elementLabel(el)}</Label>
-      <Btn cls="small violet" on={A.isNewPathGroup([el.id])} title="Clone every new path through this element" onClick={() => A.toggleNewPathGroup([el.id])}>Apply to new paths</Btn>
+      <Btn cls="small violet" on={A.isNewPathElement(el.id)} title="Clone every new path through this element" onClick={() => A.toggleNewPathElement(el.id)}>Apply to new paths</Btn>
       <Sep />
       {el.kind === 'rotate' && <>{[2, 3, 4, 6].map((n) => <Btn key={n} cls="small outline" on={el.n === n} title={`${n}-fold rotation`} onClick={() => A.setRotationOrder(el.id, n)}>1/{n}</Btn>)}{!latticeFits(el.n, d.lattice) && <Label>⚠ 1/{el.n} does not tile on this lattice</Label>}</>}
       {el.kind === 'mirror' && <><Btn cls="small outline" title="Rotate −15° ([)" onClick={() => A.rotateMirror(el.id, -15)}>↺</Btn><Btn cls="small outline" title="Rotate +15° (])" onClick={() => A.rotateMirror(el.id, 15)}>↻</Btn><Label>{Math.round(mirrorAngle(el, d.lattice))}°</Label></>}
