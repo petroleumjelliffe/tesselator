@@ -51,7 +51,7 @@ Copies with `K_L = S_L` (cell copies and translate-only clones) are skipped: the
 | Snapped onto | On release |
 | --- | --- |
 | a cell corner, or the dragged path's own copy | nothing more (the positions coincide exactly) |
-| a node of another path, raw copy | the dragged node's point is merged into that point (`mergePoints`, as for a point drop; the target cell is the anchor's cell minus the selected copy's cell) |
+| a node of another path, raw copy | the dragged node's point is merged into that point (`mergePoints`, as for a point drop). Snapping runs in the source frame, since a cell copy is a pure translation of the source, so the target cell is the target copy's cell plus its node's cell |
 | a node of another path, clone copy | every node referencing the dragged point becomes a via node onto that point through that clone (`mergeIntoNode`, §7) |
 | a curve of another path, raw copy | that segment is split at `t` (`insertNodeAt`), then merged as for a raw node |
 | a curve of another path, clone copy | the source segment is split at `t`, then the dragged node becomes a via node onto the new point through that clone |
@@ -67,7 +67,8 @@ Applies to the bounding-box scale handles (not the rotate knob, which keeps its 
 - **Edge handle.** The candidate factor is `±target / Wₙ` (the sign of the raw factor is kept, so a flip still works). It is taken when the handle would move by at most the threshold: `|s_raw − s_t| · |h − anchor| ≤ threshold`, measured along the handle's axis.
 - **Corner handle, uniform.** Candidates come from both axes' targets; the nearest one within the threshold (measured along the diagonal) sets the one factor.
 - **Corner handle, free** (`⇧` or the Free toggle). Each axis snaps independently as an edge handle would.
-- **Feedback.** `UI.snapHint` carries the snapped box edge; the canvas marks it.
+- **Toggle.** `⇧` already means "free" on a corner handle, so here it does not invert snapping; only the snap setting (`G`) turns scale snapping off.
+- **Feedback.** `UI.snapHint` carries the snapped handle position; the canvas marks it.
 
 ## 4. Control-point snapping
 
@@ -97,7 +98,7 @@ Applies to a diamond drag (filled or hollow) at the selected copy. All geometry 
 - **Hit target.** The Select tool's fill target becomes `{ kind: 'fill'; fillId; owner: { pathId; copy } | null }`. Priority is unchanged (segments beat fills).
 - **Click** (no drag): if the owner is already selected at that copy, select the fill; otherwise select the owner at that copy. A face with no owner selects the fill as today.
 - **Press and drag:** a body drag of the owner at that copy, identical to dragging one of its segments (so §2 applies to a source or cell copy, and a clone copy moves its element).
-- **Fills travel with the path.** When a body drag starts, every fill whose face's outer loop comes entirely from one copy `K` of the dragged path is recorded with its starting seed. During the drag its seed is `seedOf(seed₀ + K_L · δ)`, mapped back into the base cell. Faces are not recomputed during a drag, so the lookup uses the faces at drag start. Fills bounded by several paths stay where they are.
+- **Fills travel with the path.** When a body drag of a source or cell copy starts, every fill whose face's outer loop comes entirely from one copy `K` of the dragged path is recorded with its starting seed. During the drag its seed is `seedOf(seed₀ + K_L · δ)`, mapped back into the base cell. Faces are not recomputed during a drag, so the lookup uses the faces at drag start. Fills bounded by several paths stay where they are.
 
 ## 7. Engine additions
 
@@ -117,4 +118,4 @@ Applies to a diamond drag (filled or hollow) at the selected copy. All geometry 
 
 - `paths`: a single `movePoint` shifts both neighbouring control points by the full delta; `movePointsBy` over both ends shifts once; `mergeIntoNode` with a via target rewrites references with shifted `via.cell` and keeps world positions.
 - `snap`: `solveCopyMeet` returns a point for a quarter-turn, a line for a mirror (end onto the mirror line), `null` for a lattice copy; `snapBodyDelta` prefers a corner over a curve at equal distance, snaps an end onto a curve of a neighbouring cell copy, falls back to the grid; `snapScale` lands a width on `|a|/2` and `|a|/3` and ignores a zero-height path; `snapControlPoint` lands on a horizontal through an anchor, on a sibling's tangent line, on a mirror normal, and on the crossing of two lines; `faceOwner` picks the dominant path and shifts the cell; `enclosedFills` excludes a fill bounded by two paths.
-- `actions`: a body drag released on another path's curve splits it and shares the point, and a fill region then closes; released on a clone's curve produces a via node; a fill inside a dragged closed path moves with it; clicking a filled region selects the path, clicking again selects the fill.
+- `actions`: a body drag released on another path's curve splits it and shares the point, and one undo reverts both the move and the join; released on a clone's curve produces a via node; a fill inside a dragged closed path moves with it; clicking a filled region selects the path, clicking again selects the fill.
