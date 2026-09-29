@@ -105,6 +105,27 @@ test('finishFreehand creates a bound path and rejects a jitter', () => {
   expect(doc.value.paths[0].segments.length).toBeGreaterThan(0);
 });
 
+test('finishFreehand starting on a via node keeps the via on the new path\'s start instead of resuming the via-ended path', () => {
+  fresh(); A.addElement('rotate'); A.setTool('pen');
+  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.4, 0.5), false); A.endPen();
+  const body = doc.value.paths[0], b = doc.value.bindings[0];
+  const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 };
+  A.setTool('pen');
+  A.penClickSegment(body.id, 0, clone, W(0.8, 0.52), false);                          // splits the source, tail starts on a via node
+  A.penClickEmpty(W(0.8, 0.9), false); A.endPen();
+  const tailStart = doc.value.paths[1].start;
+  expect(tailStart.via).toEqual(clone);
+  A.setTool('freehand');
+  const startNode = { pointId: tailStart.pointId, cell: tailStart.cell, via: tailStart.via };
+  const start = P.nodeWorld(doc.value, startNode);
+  const raw = Array.from({ length: 30 }, (_, i) => ({ x: start.x + i * 5, y: start.y + 30 * Math.sin(i / 5) }));
+  const dr: Extract<Drag, { kind: 'free' }> = { kind: 'free', raw, startNode, cloneMatrices: [], target: null, start, moved: true, pointerId: 1, hitScale: 1 };
+  const pathsBefore = doc.value.paths.length;
+  expect(A.finishFreehand(dr)).toBe(true);
+  expect(doc.value.paths).toHaveLength(pathsBefore + 1);                              // a new path, not an extension of the via-ended tail
+  expect(doc.value.paths[doc.value.paths.length - 1].start).toEqual(startNode);
+});
+
 test('zoomAt keeps the point under the cursor fixed and never enters history', () => {
   fresh();
   UI.view.value = { pan: { x: 100, y: 50 }, zoom: 1 };

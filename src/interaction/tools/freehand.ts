@@ -17,7 +17,7 @@ function previewMatrices(startNode: Node | null): Matrix[] {
 
 export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
   let startNode: Node | null = null, start = w;
-  if (t && t.kind === 'point') { startNode = { pointId: t.pointId, cell: t.cell }; start = P.nodeWorld(doc.value, startNode); }
+  if (t && t.kind === 'point') { startNode = { pointId: t.pointId, cell: t.cell, ...(t.via ? { via: t.via } : {}) }; start = P.nodeWorld(doc.value, startNode); }
   startDrag(e, t, start, ctx.hitScale, { kind: 'free', raw: [{ x: start.x, y: start.y }], startNode, cloneMatrices: previewMatrices(startNode) });
 };
 

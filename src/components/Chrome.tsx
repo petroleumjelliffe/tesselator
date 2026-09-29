@@ -210,9 +210,9 @@ function hintText(): string {
     case 'freehand': return 'Freehand: press and drag · release to fit curves · start on a point to continue its path';
     case 'fill': return 'Fill: press to preview a closed region · release to colour it · press again to recolour';
     default:
-      if (UI.pen.value) return 'Pen: click to add · click a point or clone anchor to connect · click the last point, Esc or ↵ to finish · Space+drag moves the elements';
+      if (UI.pen.value) return 'Pen: click to add · click a line to join it there · click a point or clone anchor to connect · click the last point, Esc or ↵ to finish · Space+drag moves the elements';
       if (!d.points.length && !d.elements.length) return 'Add an element (O rotation, M mirror, T translation), then draw — every stroke is cloned through it in every cell';
-      return 'Pen: click a point to start or resume a path · click empty space to add a point';
+      return 'Pen: click a point to start or resume a path · click a line to start from a new point on it · click empty space to add a point';
   }
 }
 
@@ -232,8 +232,8 @@ function Help() {
     <span><K k="V" /> select · <K k="P" /> pen · <K k="F" /> freehand · <K k="B" /> fill · <K k="G" /> snap (hold <K k="⇧" /> to invert)</span>
     <span><K k="O" /> rotation · <K k="M" /> mirror · <K k="T" /> translation — stacked as a new group on the selected path's binding, and given to new paths</span>
     <span class="violet">Elements: drag to move · mirror knob or <K k="[" /> <K k="]" /> rotates · translation diamond sets the vector · a group applies left to right (a mirror then a half translation is a glide) · a "then" group applies to the source and every clone so far</span>
-    <span>Pen: click a point to start or resume · click empty space to add · click the last point, <K k="Esc" /> or <K k="↵" /> to end · <K k="Space" />+drag moves the elements</span>
-    <span>Select: click any copy of a line to select its path there, again to insert a point · drag ◇ to bend, double-click to straighten · marquee points · <K k="⇧" /> adds · box handles scale / rotate</span>
+    <span>Pen: click a point to start or resume · click a line to join it there (the line gets a shared node) · click empty space to add · click the last point, <K k="Esc" /> or <K k="↵" /> to end · <K k="Space" />+drag moves the elements</span>
+    <span>Select: click any copy of a line to select its path there, again to insert a point · drag ◇ to bend, double-click to straighten · marquee points · <K k="⇧" /> adds · box handles scale / rotate · drop a point on a point to merge them</span>
     <span>Clone: drag its body to move the first element of its first group · drag its anchors to edit the shared point</span>
     <span>Fill: press to preview a closed region, release to colour · fills draw below the lines of their layer; put them on a higher layer to cover lines</span>
     <span>Wheel pans · <K k="⌘" />+wheel zooms · two fingers pan and pinch · <K k="⌘0" /> fits · hover a point + <K k="⌫" /> deletes · <K k="⌘Z" /> undo · <K k="⇧⌘Z" /> redo</span>
