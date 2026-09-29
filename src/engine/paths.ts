@@ -252,13 +252,18 @@ export function mergePoints(doc: Doc, fromId: string, fromCell: Cell, toId: stri
   if (fromId === toId) return;
   const dc = toCell.c - fromCell.c, dr = toCell.r - fromCell.r;
   for (const p of doc.paths) {
-    const abs = p.segments.map((_, j) => cpAbs(p, j));
+    const prevs = p.segments.map((_, j) => prevNode(p, j)), abs = p.segments.map((_, j) => cpAbs(p, j));
     const map = (n: Node): Node => (n.pointId === fromId ? cloneNode({ ...n, cell: { c: n.cell.c + dc, r: n.cell.r + dr }, pointId: toId }) : n);
     p.start = map(p.start);
-    p.segments = p.segments.map((s, j) => ({ to: map(s.to), cp: abs[j] }));           // cp temporarily absolute
-    const nodes = pathNodes(p), keep: Segment[] = [];
-    let prev = nodes[0];
-    p.segments.forEach((s) => { if (sameNode(prev, s.to)) return; keep.push({ to: s.to, cp: s.cp && rel(s.cp, prev.cell) }); prev = s.to; });
+    const keep: Segment[] = [];
+    let prev = p.start;
+    p.segments.forEach((s, j) => {
+      const to = map(s.to);
+      if (sameNode(prev, to)) return;                                                  // zero-length: dropped
+      const c = abs[j];
+      keep.push({ to, cp: c && prev !== prevs[j] ? rel(c, prev.cell) : s.cp });       // re-base only after a replaced node
+      prev = to;
+    });
     p.segments = keep;
   }
   withViaRepair(doc, () => {
@@ -335,7 +340,7 @@ export function withViaRepair(doc: Doc, fn: () => void): void {
   if (!before.size) return;
   let repaired = false;
   for (const p of doc.paths) {
-    const abs = p.segments.map((_, j) => cpAbs(p, j));
+    const prevs = p.segments.map((_, j) => prevNode(p, j)), abs = p.segments.map((_, j) => cpAbs(p, j));
     const fix = (n: Node): Node => {
       if (!n.via || viaLive(doc, n.via)) return n;
       const w = before.get(n) ?? nodeWorld(doc, n);
@@ -344,7 +349,7 @@ export function withViaRepair(doc: Doc, fn: () => void): void {
     };
     p.start = fix(p.start);
     for (const s of p.segments) s.to = fix(s.to);
-    p.segments.forEach((s, j) => { const c = abs[j]; s.cp = c && rel(c, prevNode(p, j).cell); });
+    p.segments.forEach((s, j) => { const c = abs[j], q = prevNode(p, j); if (c && q !== prevs[j]) s.cp = rel(c, q.cell); });   // re-base only after a replaced node
   }
   if (repaired) pruneOrphans(doc);   // the point a materialised node used to see may now be unreferenced
 }
