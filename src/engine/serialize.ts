@@ -15,22 +15,31 @@ type PathV1 = Omit<Path, 'layerId'> & { layer: 'structure' | 'detail' };
 type BindingV1 = { id: string; pathId: string; ops: string[] };
 export type DocV1 = { version: 1; lattice: Lattice; points: Point[]; paths: PathV1[]; elements: Element[]; bindings: BindingV1[]; fills: Omit<Fill, 'layerId'>[]; newPathOps: string[][] };
 
-// Three layers preserve the old appearance exactly: structure strokes, then every fill, then detail strokes.
+// An id kept once per list (first occurrence wins); a group emptied by that goes. Bindings and newPathGroups name an
+// element at most once, and this is how a chain that repeated one, or a list of groups that did, is brought in line.
+const dedupeGroups = (groups: string[][]): string[][] => {
+  const seen = new Set<string>();
+  return groups.map((g) => g.filter((id) => !seen.has(id) && !!seen.add(id))).filter((g) => g.length);
+};
+
+// Three layers preserve the old appearance exactly: structure strokes, then every fill, then detail strokes. A chain
+// that repeated an element keeps its first occurrence; the output always passes v2 validation.
 export function migrateV1(d: DocV1): Doc {
   const structure: DocLayer = { id: makeId('layer'), name: 'Structure' }, fills: DocLayer = { id: makeId('layer'), name: 'Fills' }, detail: DocLayer = { id: makeId('layer'), name: 'Detail' };
   return {
     version: 2, lattice: { ...d.lattice }, points: d.points, elements: d.elements,
     paths: d.paths.map(({ layer, ...p }) => ({ ...p, layerId: layer === 'detail' ? detail.id : structure.id })),
-    bindings: d.bindings.filter((b) => b.ops.length).map((b) => ({ id: b.id, pathId: b.pathId, groups: [b.ops.slice()] })),
+    bindings: d.bindings.map((b) => ({ id: b.id, pathId: b.pathId, groups: dedupeGroups([b.ops]) })).filter((b) => b.groups.length),
     fills: d.fills.map((f) => ({ ...f, layerId: fills.id })),
     layers: [structure, fills, detail],
-    newPathGroups: d.newPathOps.filter((c) => c.length).map((c) => c.slice()),
+    newPathGroups: dedupeGroups(d.newPathOps),
   };
 }
 
 // --- validation: per-entity shapes against types.ts, then references. A dangling pointId, pathId or layerId is
 // refused (it would throw in render on every reload); unknown element ids in groups are dropped, and a group or
-// binding emptied by that goes away. A binding that then still names an element twice is refused.
+// binding emptied by that goes away. A binding that then still names an element twice is refused; newPathGroups is
+// deduped instead, since the app only ever writes it unique.
 const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 const isStr = (x: unknown): x is string => typeof x === 'string';
 const isCell = (x: any): boolean => !!x && isNum(x.c) && isNum(x.r);
@@ -95,7 +104,7 @@ export function parseDoc(json: string): Doc | null {
     if (o.newPathGroups !== undefined && !isGroups(o.newPathGroups)) return null;
     const bindings = (o.bindings as { id: string; pathId: string; groups: string[][] }[]).map((b) => ({ id: b.id, pathId: b.pathId, groups: knownGroups(b.groups) })).filter((b) => b.groups.length);
     if (bindings.some((b) => hasRepeat(b.groups))) return null;
-    return { version: 2, lattice, points: o.points, paths: o.paths, elements: o.elements, bindings, fills: o.fills, layers: o.layers, newPathGroups: knownGroups(Array.isArray(o.newPathGroups) ? o.newPathGroups : []) };
+    return { version: 2, lattice, points: o.points, paths: o.paths, elements: o.elements, bindings, fills: o.fills, layers: o.layers, newPathGroups: dedupeGroups(knownGroups(Array.isArray(o.newPathGroups) ? o.newPathGroups : [])) };
   } catch { return null; }
 }
 

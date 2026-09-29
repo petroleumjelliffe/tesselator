@@ -252,9 +252,17 @@ export function setTranslation(id: string, u: number, v: number): boolean {
 }
 // A single group in newPathGroups ("Apply to new paths" on an element).
 export function isNewPathGroup(group: string[]): boolean { const k = groupKey(group); return doc.value.newPathGroups.some((g) => groupKey(g) === k); }
+// Adding a group first takes its ids out of every other group, so newPathGroups names an element at most once (as a
+// binding must: a new path copies this list into its binding, which the validator would otherwise refuse on reload).
 export function toggleNewPathGroup(group: string[]): boolean {
   const k = groupKey(group);
-  return mutate((d) => { const i = d.newPathGroups.findIndex((g) => groupKey(g) === k); if (i >= 0) d.newPathGroups.splice(i, 1); else d.newPathGroups.push(group.slice()); });
+  return mutate((d) => {
+    const i = d.newPathGroups.findIndex((g) => groupKey(g) === k);
+    if (i >= 0) { d.newPathGroups.splice(i, 1); return; }
+    const ids = new Set(group);
+    d.newPathGroups = d.newPathGroups.map((g) => g.filter((x) => !ids.has(x))).filter((g) => g.length);
+    d.newPathGroups.push(group.slice());
+  });
 }
 // The whole list (the ★ on a binding row): make new paths get exactly this binding, or nothing if they already do.
 export function isNewPathGroups(groups: string[][]): boolean { return groupsKey(groups) === groupsKey(doc.value.newPathGroups); }
@@ -262,7 +270,7 @@ export function setNewPathGroups(groups: string[][]): boolean {
   return mutate((d) => { d.newPathGroups = groupsKey(groups) === groupsKey(d.newPathGroups) ? [] : groups.map((g) => g.slice()); });
 }
 export function placeElementInGroup(bindingId: string, elementId: string, gi: number): boolean {
-  const ok = mutate((d) => { if (!P.getBinding(d, bindingId) || !P.getElement(d, elementId)) return false; P.placeInGroup(d, bindingId, elementId, gi); });
+  const ok = mutate((d) => { if (!P.getBinding(d, bindingId) || !P.getElement(d, elementId)) return false; return P.placeInGroup(d, bindingId, elementId, gi); });
   if (ok) UI.pendingGroup.value = null;
   return ok;
 }

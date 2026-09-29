@@ -61,3 +61,15 @@ test('unknown element ids are dropped from groups; an emptied group or binding g
   const gone = { ...d, bindings: d.bindings.map((b, i) => (i === 0 ? { ...b, groups: [['el_missing']] } : b)) };
   expect(parseDoc(JSON.stringify(gone))!.bindings).toHaveLength(d.bindings.length - 1);
 });
+
+test('repeated ids are deduped on parse: a v1 chain [m, m] becomes [[m]]; v2 newPathGroups [[m, t], [m]] becomes [[m, t]]', () => {
+  const [m, t] = fishV1.elements.map((e) => e.id);
+  const v1: DocV1 = { ...fishV1, bindings: fishV1.bindings.map((b, i) => (i === 0 ? { ...b, ops: [m, m] } : b)), newPathOps: [[m, t], [m]] };
+  const d = parseDoc(JSON.stringify(v1))!;
+  expect(d.bindings[0].groups).toEqual([[m]]);
+  expect(d.newPathGroups).toEqual([[m, t]]);
+  expect(migrateV1(v1).bindings[0].groups).toEqual([[m]]);
+  expect(parseDoc(serializeDoc(d))).toEqual(d);
+  const v2 = parseDoc(fishJson)!;
+  expect(parseDoc(JSON.stringify({ ...v2, newPathGroups: [[m, t], [m]] }))!.newPathGroups).toEqual([[m, t]]);
+});

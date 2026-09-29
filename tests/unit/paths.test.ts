@@ -175,7 +175,9 @@ test('placeInGroup / removeFromBinding move an element between groups and never 
   const a = P.addElement(doc, { kind: 'mirror', u: 0.5, v: 0.5, du: 1, dv: 0 });
   const c = P.addElement(doc, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
   const b = P.addBinding(doc, path.id, [[a.id]]);
-  P.placeInGroup(doc, b.id, c.id, 1);                 // gi === groups.length → new group
+  expect(P.placeInGroup(doc, b.id, c.id, 1)).toBe(true);   // gi === groups.length → new group
+  expect(b.groups).toEqual([[a.id], [c.id]]);
+  expect(P.placeInGroup(doc, b.id, a.id, 0)).toBe(false);  // already in group 0: nothing changes
   expect(b.groups).toEqual([[a.id], [c.id]]);
   P.placeInGroup(doc, b.id, c.id, 0);                 // moves into group 0; its old group is dropped
   expect(b.groups).toEqual([[a.id, c.id]]);

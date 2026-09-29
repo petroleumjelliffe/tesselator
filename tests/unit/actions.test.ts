@@ -3,7 +3,8 @@ import { doc, draft, emptyDoc } from '../../src/state/doc';
 import * as UI from '../../src/state/ui';
 import * as A from '../../src/actions';
 import * as P from '../../src/engine/paths';
-import { reset, canUndo, commit, beginGesture, endGesture } from '../../src/state/history';
+import { reset, canUndo, commit, beginGesture, endGesture, historyVersion } from '../../src/state/history';
+import { parseDoc, serializeDoc } from '../../src/engine/serialize';
 import { faces, copyMatrix } from '../../src/state/derived';
 import { apply, invert } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
@@ -222,6 +223,10 @@ test('group editing actions move an element between groups and clear the pending
   const b = doc.value.bindings[0], [m, r] = doc.value.elements.map((e) => e.id);
   expect(b.groups).toEqual([[m], [r]]);
   A.startGroup(b.id); expect(UI.pendingGroup.value).toEqual({ bindingId: b.id });
+  const hv = historyVersion.value;
+  expect(A.placeElementInGroup(b.id, m, 0)).toBe(false);   // already there: no commit, pending group kept
+  expect(historyVersion.value).toBe(hv);
+  expect(UI.pendingGroup.value).toEqual({ bindingId: b.id });
   A.placeElementInGroup(b.id, r, 0);
   expect(doc.value.bindings[0].groups).toEqual([[m, r]]);
   expect(UI.pendingGroup.value).toBe(null);
@@ -231,4 +236,20 @@ test('group editing actions move an element between groups and clear the pending
   A.addElementToNewChain(doc.value.paths[0].id, m);
   expect(doc.value.bindings[0].groups).toEqual([[m]]);
   expect(UI.pendingGroup.value).toBe(null);
+});
+
+test('"Apply to new paths" keeps newPathGroups free of repeats, so a new path\'s binding always reloads', () => {
+  fresh();
+  A.addElement('mirror'); A.addElement('translate');
+  const [m, t] = doc.value.elements.map((e) => e.id);
+  A.setNewPathGroups([[m, t]]);                          // ★ on a binding whose one group chains both
+  expect(doc.value.newPathGroups).toEqual([[m, t]]);
+  A.toggleNewPathGroup([m]);                             // "Apply to new paths" on m: m leaves the chain
+  expect(doc.value.newPathGroups).toEqual([[t], [m]]);
+  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  const ids = doc.value.bindings[0].groups.flat();
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(parseDoc(serializeDoc(doc.value))).toEqual(doc.value);
+  A.toggleNewPathGroup([m]);                             // and the exact group toggles off again
+  expect(doc.value.newPathGroups).toEqual([[t]]);
 });

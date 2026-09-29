@@ -256,17 +256,19 @@ export function addBinding(doc: Doc, pathId: string, groups: string[][] = []): B
 
 // Put an element in group gi of a binding (gi === groups.length starts a new group). An element appears at most
 // once per binding, so it is first removed from wherever it was; a group emptied by that removal is dropped and gi
-// shifts down with it.
-export function placeInGroup(doc: Doc, bindingId: string, elementId: string, gi: number): void {
+// shifts down with it. Placing it in the group it is already in changes nothing and returns false.
+export function placeInGroup(doc: Doc, bindingId: string, elementId: string, gi: number): boolean {
   const b = getBinding(doc, bindingId);
-  if (!b) return;
+  if (!b) return false;
   const from = b.groups.findIndex((g) => g.includes(elementId));
+  if (from >= 0 && from === gi) return false;
   if (from >= 0) {
     b.groups[from] = b.groups[from].filter((x) => x !== elementId);
     if (!b.groups[from].length) { b.groups.splice(from, 1); if (from < gi) gi--; }
   }
   gi = Math.max(0, Math.min(gi, b.groups.length));
   if (gi === b.groups.length) b.groups.push([elementId]); else b.groups[gi].push(elementId);
+  return true;
 }
 
 export function removeFromBinding(doc: Doc, bindingId: string, elementId: string): void {

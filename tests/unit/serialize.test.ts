@@ -73,7 +73,9 @@ test('export writes one group per layer in document order, fills before strokes 
   const ids = [...svg.matchAll(/<g id="cell-layer-([^"]+)">/g)].map((m) => m[1]);
   expect(ids).toEqual(d.layers.map((l) => l.id));
   const outline = svg.slice(svg.indexOf(`<g id="cell-layer-${d.layers[0].id}">`), svg.indexOf(`<g id="cell-layer-${d.layers[1].id}">`));
-  expect(outline.indexOf('fill-rule="evenodd"')).toBeLessThan(outline.indexOf('stroke-linecap'));
+  const fillAt = outline.indexOf('fill-rule="evenodd"');
+  expect(fillAt).toBeGreaterThanOrEqual(0);
+  expect(fillAt).toBeLessThan(outline.indexOf('stroke-linecap'));
 });
 
 test('exported colours are escaped so a hostile colour string cannot break the SVG', () => {
