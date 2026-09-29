@@ -174,8 +174,10 @@ export function deletePath(doc: Doc, pathId: string): void {
   });
 }
 
+// The open path whose start or end is `pointId` seen plainly: an end that is a via node sits elsewhere (on a clone), so a click on the point itself does not resume it.
 export function openEndAt(doc: Doc, pointId: string): string | null {
-  const p = doc.paths.find((q) => q.segments.length > 0 && !isClosed(q) && (q.start.pointId === pointId || q.segments[q.segments.length - 1].to.pointId === pointId));
+  const plainEnd = (n: Node) => n.pointId === pointId && !n.via;
+  const p = doc.paths.find((q) => q.segments.length > 0 && !isClosed(q) && (plainEnd(q.start) || plainEnd(q.segments[q.segments.length - 1].to)));
   return p ? p.id : null;
 }
 

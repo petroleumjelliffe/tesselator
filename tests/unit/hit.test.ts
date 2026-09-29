@@ -142,3 +142,19 @@ test('a via node of the selected path is hit as a point carrying its via', () =>
   const t = hitTest(d, ctxFor(d, { selection: { kind: 'path', id: tail.id, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } } }), { x: w.x + 2, y: w.y + 1 });
   expect(t).toMatchObject({ kind: 'point', pointId: path.start.pointId, via });
 });
+
+test('the clone image of a via node is neither an anchor nor a canchor hit; the plain nodes of the same clone still are', () => {
+  const { d, path, b } = scene();
+  const tail = P.startPath(d, { pointId: path.start.pointId, cell: path.start.cell, via: { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 } }, { color: '#000', weight: 2 }, 'L1');   // starts at (216,216)
+  const end = P.addPoint(d, { u: 0.9, v: 0.5 });                                                         // (216,120)
+  P.appendNode(d, tail.id, end);
+  const m = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });                          // x = 120
+  const tb = P.addBinding(d, tail.id, [[m.id]]);                                                         // tail clone: (24,216) → (24,120)
+  const tailAnchors = anchorsWorld(d).filter((a) => a.bindingId === tb.id);
+  expect(tailAnchors.some((a) => a.pointId === path.start.pointId)).toBe(false);
+  const endImage = tailAnchors.find((a) => a.pointId === end.pointId && a.via!.cell.c === 0 && a.via!.cell.r === 0)!;
+  expect(endImage.x).toBeCloseTo(24, 9); expect(endImage.y).toBeCloseTo(120, 9);
+  const pen = ctxFor(d, { tool: 'pen' });
+  expect(hitTest(d, pen, { x: 24, y: 216 })?.kind).not.toBe('canchor');
+  expect(hitTest(d, pen, { x: 24, y: 120 })).toMatchObject({ kind: 'canchor', pathId: tail.id, pointId: end.pointId, copy: { bindingId: tb.id, power: 1 } });
+});

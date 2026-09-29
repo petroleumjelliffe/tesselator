@@ -10,6 +10,8 @@ import { apply, invert } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import * as select from '../../src/interaction/tools/select';
 import type { Drag } from '../../src/types';
+import { computeFaces } from '../../src/engine/regions';
+import { anchorsWorld } from '../../src/engine/hit';
 
 function fresh() { reset(); UI.resetUi(); doc.value = emptyDoc(); UI.viewport.value = { width: 800, height: 600 }; UI.prefs.value = { ...UI.prefs.value, snap: false }; }
 const W = (u: number, v: number) => ({ x: u * 240, y: v * 240 });
@@ -385,4 +387,76 @@ test('a merge on release is part of the drag gesture: one undo restores the docu
   expect(doc.value).toBe(start);                                                                 // not just the merge: the moves went with it
   A.redo();
   expect(doc.value.paths[1].start).toEqual(to);
+});
+
+// --- fix round 1
+
+// Body (0.1,0.5)→(0.4,0.5) under a half-turn about the centre; its clone runs (216,120)→(144,120).
+function bodyWithHalfTurn() {
+  fresh(); A.addElement('rotate'); A.setTool('pen');
+  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.4, 0.5), false); A.endPen();
+  const body = doc.value.paths[0], b = doc.value.bindings[0];
+  return { body, b, clone: { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 } };
+}
+
+test('pen: a plain click on a point does not resume an open path whose end is a via node on that point', () => {
+  const { body, clone } = bodyWithHalfTurn();
+  A.setTool('pen');
+  A.penClickEmpty(W(0.2, 0.8), false);
+  A.penClickSegment(body.id, 0, clone, W(0.8, 0.52), false);                          // tail ends on the clone at (192,120); the split point itself is at (48,120)
+  A.endPen();
+  const tail = doc.value.paths[1], split = doc.value.paths[0].segments[0].to;
+  expect(tail.segments[0].to).toEqual({ pointId: split.pointId, cell: split.cell, via: clone });
+  expect(P.openEndAt(doc.value, split.pointId)).toBe(null);
+  A.penClickNode({ pointId: split.pointId, cell: split.cell });
+  expect(doc.value.paths).toHaveLength(3);
+  expect(UI.pen.value?.pathId).toBe(doc.value.paths[2].id);
+  expect(doc.value.paths[2].start).toEqual({ pointId: split.pointId, cell: split.cell });
+  expect(doc.value.paths[1].segments[0].to.via).toEqual(clone);                       // the tail is untouched
+});
+
+test('pen: with a path in progress, clicking a clone anchor appends a via node at the anchor', () => {
+  const { body, clone } = bodyWithHalfTurn();
+  A.setTool('pen');
+  A.penClickEmpty(W(0.8, 0.8), false);
+  expect(A.penClickNode({ pointId: body.start.pointId, cell: body.start.cell, via: clone })).toBe(true);
+  const p = doc.value.paths[1], last = p.segments[p.segments.length - 1].to;
+  expect(last).toEqual({ pointId: body.start.pointId, cell: body.start.cell, via: clone });
+  const anchor = anchorsWorld(doc.value).find((a) => a.bindingId === clone.bindingId && a.power === 1 && a.pointId === body.start.pointId && a.cell.c === 0 && a.cell.r === 0 && a.via!.cell.c === 0 && a.via!.cell.r === 0)!;
+  const w = P.nodeWorld(doc.value, last);
+  expect(w.x).toBeCloseTo(anchor.x, 9); expect(w.y).toBeCloseTo(anchor.y, 9);
+  expect(w.x).toBeCloseTo(216, 9); expect(w.y).toBeCloseTo(120, 9);
+});
+
+test('pen: an empty click within the snap threshold of a clone anchor starts a path on a via node at that anchor', () => {
+  const { body, clone } = bodyWithHalfTurn();
+  A.setTool('pen');
+  expect(A.penClickEmpty({ x: 216 + 5, y: 120 - 3 }, true)).toBe(true);                // no raw point near (221,117); the clone anchor is at (216,120)
+  const p = doc.value.paths[1];
+  expect(p.start).toEqual({ pointId: body.start.pointId, cell: body.start.cell, via: clone });
+  expect(P.nodeWorld(doc.value, p.start)).toEqual({ x: 216, y: 120 });
+  expect(doc.value.points).toHaveLength(2);                                            // no point was added
+  A.endPen();
+});
+
+test('regions: a straight and a curved T-junction drawn with the Pen through penClickSegment each split a square exactly (18 faces)', () => {
+  const drawSquare = () => {
+    fresh(); A.setTool('pen');
+    for (const q of [W(0.25, 0.25), W(0.75, 0.25), W(0.75, 0.75), W(0.25, 0.75)]) A.penClickEmpty(q, false);
+    A.penClickNode(doc.value.paths[0].start); A.endPen();                             // closes; segments: 0 top, 1 right, 2 bottom, 3 left
+    return doc.value.paths[0];
+  };
+  const chord = (sq: { id: string }, rightClick: { x: number; y: number }) => {
+    A.setTool('pen');
+    expect(A.penClickSegment(sq.id, 3, base, W(0.26, 0.5), false)).toBe(true);        // left edge → (60,120)
+    expect(A.penClickSegment(sq.id, 1, base, rightClick, false)).toBe(true);          // right edge (still segment 1)
+    A.endPen();
+  };
+  const sq = drawSquare(); chord(sq, W(0.74, 0.5));
+  expect(doc.value.paths[0].segments).toHaveLength(6); expect(doc.value.paths[1].segments).toHaveLength(1);
+  expect(computeFaces(doc.value)).toHaveLength(18);
+  const sq2 = drawSquare();
+  A.mutate((d) => { P.setControlPointAbs(d, sq2.id, 1, { u: 220 / 240, v: 0.5 }); });   // right edge bulges to x = 200
+  chord(sq2, { x: 195, y: 100 });
+  expect(computeFaces(doc.value)).toHaveLength(18);
 });

@@ -121,7 +121,7 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
   if (ctx.tool === 'select' || ctx.tool === 'pen') {
     const anchorsOf = (p: Path, copy: Copy, M: Matrix): HitTarget | null => {
       const Pw = pathWorld(doc, p).map((q) => apply(M, q)), nodes = pathNodes(p);
-      for (let i = 0; i < nodes.length; i++) if (dist(w, Pw[i]) <= rPoint) return { kind: 'canchor', pathId: p.id, pointId: nodes[i].pointId, cell: nodes[i].cell, copy };
+      for (let i = 0; i < nodes.length; i++) if (!nodes[i].via && dist(w, Pw[i]) <= rPoint) return { kind: 'canchor', pathId: p.id, pointId: nodes[i].pointId, cell: nodes[i].cell, copy };   // a via node's image is a copy of a copy: not an anchor
       return null;
     };
     if (ctx.tool === 'pen') {
@@ -171,7 +171,7 @@ export function anchorsWorld(doc: Doc, skip?: (a: Anchor) => boolean, cap = CONF
       ms.forEach((M, k) => {
         if (!M) return;
         const MM = compose(Mo, M);
-        nodes.forEach((n, i) => { const w = apply(MM, Pw[i]), a: Anchor = { x: w.x, y: w.y, pointId: n.pointId, cell: n.cell, bindingId: b.id, power: k + 1, via: { cell, bindingId: b.id, power: k + 1 } }; if (!skip || !skip(a)) out.push(a); });
+        nodes.forEach((n, i) => { if (n.via) return; const w = apply(MM, Pw[i]), a: Anchor = { x: w.x, y: w.y, pointId: n.pointId, cell: n.cell, bindingId: b.id, power: k + 1, via: { cell, bindingId: b.id, power: k + 1 } }; if (!skip || !skip(a)) out.push(a); });
       });
     }
   }

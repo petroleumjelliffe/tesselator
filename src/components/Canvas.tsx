@@ -169,7 +169,7 @@ function Points() {
   for (const o of windowOffsets()) for (const pt of d.points) {
     if (!showAll && !show.has(pt.id)) continue;
     const w = toWorld(nodeUV(pt, o), d.lattice);
-    const isLast = !!penLast && penLast.pointId === pt.id && penLast.cell.c === o.c && penLast.cell.r === o.r;
+    const isLast = !!penLast && sameNode(penLast, { pointId: pt.id, cell: o });   // a via pen end does not light the source copy
     const isHover = !!h && h.kind === 'point' && h.pointId === pt.id && h.cell.c === o.c && h.cell.r === o.r;
     const cls = ['pt', (isLast || selPts.has(pt.id)) && 'sel', isHover && 'hover', !isBase(o) && 'dim'].filter(Boolean).join(' ');
     out.push(<circle key={`${pt.id}:${cellKey(o)}`} class={cls} cx={w.x} cy={w.y} r={(isBase(o) ? CONFIG.HANDLE_PX : CONFIG.HANDLE_PX - 1) / z} />);
@@ -195,6 +195,7 @@ function CloneAnchors() {
     const p = getPath(d, ci.pathId); if (!p) continue;
     const P = pathWorld(d, p).map((q) => apply(ci.M, q));
     pathNodes(p).forEach((n, i) => {
+      if (n.via) return;   // not an anchor (see hit.ts)
       const isHover = !!h && h.kind === 'canchor' && h.pointId === n.pointId && sameCopy(h.copy, ci.copy);
       out.push(<rect key={`${ci.pathId}:${cellKey(ci.copy.cell)}:${ci.copy.bindingId}:${ci.copy.power}:${i}`} class={['canchor', selected && 'sel', isHover && 'hover'].filter(Boolean).join(' ')} x={P[i].x - s / 2} y={P[i].y - s / 2} width={s} height={s} rx={2 / z} />);
     });

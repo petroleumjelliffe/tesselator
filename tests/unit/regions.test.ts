@@ -217,7 +217,6 @@ test('a fish: body with a glide binding, tail from the body to the body\'s clone
   const n2 = P.insertNodeAt(doc, body.id, 0, P.nearestT(A1, C1, B1, src));
   P.appendNode(doc, tail.id, { pointId: n2.pointId, cell: n2.cell, via });
   const faces = computeFaces(doc);
-  console.log('fish faces:', before.length, '->', faces.length, faces.map((f) => Math.round(f.area)).join(','));
   expect(faces.length).toBeGreaterThan(before.length);                                      // the tail closes regions between the body and its clone
   expect(faces.some((f) => f.area > 1000 && !before.some((g) => Math.abs(g.area - f.area) < 1))).toBe(true);   // a fish-sized one that was not there before
 });
