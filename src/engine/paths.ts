@@ -1,7 +1,7 @@
 // Draft mutations. Every function takes a Doc draft and mutates it; nothing here touches UI state.
 import { makeId } from '../ids';
 import { toWorld, toUV, cellOf, nodeUV } from './lattice';
-import { IDENTITY, apply, orbit, clonePowers, cellMatrix, compose, type Orbit } from './transform';
+import { IDENTITY, apply, orbit, clonePowers, cellMatrix, compose, invert, type Orbit } from './transform';
 import { CONFIG } from '../config';
 import type { Doc, UV, XY, Cell, Node, Segment, Path, Element, Binding, Fill, Matrix, Style, Box, DocLayer, Lattice, Copy } from '../types';
 
@@ -129,6 +129,8 @@ export function nearestT(a: XY, cp: XY | null, b: XY, p: XY): number {
     if (Math.abs(next - t) < 1e-12) { t = next; break; }
     t = next;
   }
+  const r = q(t);
+  if ((r.x - p.x) ** 2 + (r.y - p.y) ** 2 > bd) t = best;   // Newton wandered off: keep the sampled seed
   return clamp(t);
 }
 
@@ -189,7 +191,9 @@ export function reversePath(p: Path): void {
   p.segments = segs;
 }
 
-// Make `pointId` the last node, placed in `cell`, reversing and shifting cells as needed. Relative cps need no change on a shift.
+// Make `pointId` the last node, placed in `cell`, reversing and shifting cells as needed. A shift moves a plain node's
+// `cell` and a via node's `via.cell`; a cp is relative to the previous node's `cell`, so it needs no change after a plain
+// node and must move with the path after a via node (whose `cell` stays put).
 export function orientToEnd(doc: Doc, pathId: string, pointId: string, cell: Cell): void {
   const p = getPath(doc, pathId);
   if (!p || !p.segments.length) return;
@@ -200,8 +204,9 @@ export function orientToEnd(doc: Doc, pathId: string, pointId: string, cell: Cel
   const shift = (n: Node): Node => n.via
     ? { pointId: n.pointId, cell: { ...n.cell }, via: { ...n.via, cell: { c: n.via.cell.c + dc, r: n.via.cell.r + dr } } }
     : { pointId: n.pointId, cell: { c: n.cell.c + dc, r: n.cell.r + dr } };
+  const viaBefore = p.segments.map((_, j) => !!prevNode(p, j).via);
   p.start = shift(p.start);
-  p.segments = p.segments.map((s) => ({ to: shift(s.to), cp: s.cp }));
+  p.segments = p.segments.map((s, j) => ({ to: shift(s.to), cp: s.cp && viaBefore[j] ? { u: s.cp.u + dc, v: s.cp.v + dr } : s.cp }));
 }
 
 export function shiftControlPoints(doc: Doc, ids: string[], du: number, dv: number): void {
@@ -256,8 +261,12 @@ export function mergePoints(doc: Doc, fromId: string, fromCell: Cell, toId: stri
     p.segments.forEach((s) => { if (sameNode(prev, s.to)) return; keep.push({ to: s.to, cp: s.cp && rel(s.cp, prev.cell) }); prev = s.to; });
     p.segments = keep;
   }
-  doc.paths = doc.paths.filter((p) => p.segments.length > 0);
-  pruneOrphans(doc);
+  withViaRepair(doc, () => {
+    doc.paths = doc.paths.filter((p) => p.segments.length > 0);
+    const kept = new Set(doc.paths.map((p) => p.id));
+    doc.bindings = doc.bindings.filter((b) => kept.has(b.pathId));
+    pruneOrphans(doc);
+  });
 }
 
 export function setControlPointAbs(doc: Doc, pathId: string, j: number, abs: UV | null): void {
@@ -270,7 +279,8 @@ export function setControlPointWorld(doc: Doc, pathId: string, j: number, xy: XY
   setControlPointAbs(doc, pathId, j, xy ? toUV(xy, doc.lattice) : null);
 }
 
-// Apply a world matrix: each distinct point once (in its first cell), and every control point.
+// Apply a world matrix: each distinct point once (in its first cell), and every control point. A via node moves by M
+// like any other node, so its underlying point moves by V⁻¹ M V (V being the copy's matrix).
 export function transformPath(doc: Doc, pathId: string, M: Matrix): void {
   const p = getPath(doc, pathId);
   if (!p) return;
@@ -280,7 +290,9 @@ export function transformPath(doc: Doc, pathId: string, M: Matrix): void {
     if (seen.has(n.pointId)) continue;
     seen.add(n.pointId);
     const pt = getPoint(doc, n.pointId)!;
-    const w = apply(M, toWorld(nodeUV(pt, n.cell), doc.lattice));
+    let Mn = M;
+    if (n.via) { const V = viaMatrix(doc, n.via); Mn = compose(invert(V), compose(M, V)); }
+    const w = apply(Mn, toWorld(nodeUV(pt, n.cell), doc.lattice));
     const uv = toUV(w, doc.lattice);
     pt.u = uv.u - n.cell.c; pt.v = uv.v - n.cell.r;
   }
@@ -309,15 +321,21 @@ export function addElement(doc: Doc, spec: ElementSpec): Element {
 const pruneGroups = (groups: string[][], id: string): string[][] => groups.map((g) => g.filter((x) => x !== id)).filter((g) => g.length);
 
 // Snapshot every via node's world position, apply a change that may remove bindings or clone slots, then turn every
-// via node whose copy is no longer live into a plain node at a new free point where it was. Nesting is harmless: the
-// inner call repairs first and the outer one finds nothing left to repair.
+// via node whose copy is no longer live into a plain node at a new free point where it was. Only the outermost call
+// snapshots and repairs (an inner one would snapshot a half-applied change); nested calls just run their body.
+// Control points stay where they were: a materialised node's cell generally differs from the via node's, so the cp of
+// the segment leaving it is re-based.
+let viaRepairDepth = 0;
 export function withViaRepair(doc: Doc, fn: () => void): void {
+  if (viaRepairDepth > 0) { fn(); return; }
   const before = new Map<Node, XY>();
   for (const p of doc.paths) for (const n of pathNodes(p)) if (n.via) before.set(n, nodeWorld(doc, n));
-  fn();
+  viaRepairDepth++;
+  try { fn(); } finally { viaRepairDepth--; }
   if (!before.size) return;
   let repaired = false;
   for (const p of doc.paths) {
+    const abs = p.segments.map((_, j) => cpAbs(p, j));
     const fix = (n: Node): Node => {
       if (!n.via || viaLive(doc, n.via)) return n;
       const w = before.get(n) ?? nodeWorld(doc, n);
@@ -326,6 +344,7 @@ export function withViaRepair(doc: Doc, fn: () => void): void {
     };
     p.start = fix(p.start);
     for (const s of p.segments) s.to = fix(s.to);
+    p.segments.forEach((s, j) => { const c = abs[j]; s.cp = c && rel(c, prevNode(p, j).cell); });
   }
   if (repaired) pruneOrphans(doc);   // the point a materialised node used to see may now be unreferenced
 }

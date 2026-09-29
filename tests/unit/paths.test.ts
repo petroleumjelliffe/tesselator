@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
-import { rotation, cloneCount } from '../../src/engine/transform';
+import { rotation, translation, cloneCount } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import type { Doc, UV, XY } from '../../src/types';
 
@@ -336,4 +336,100 @@ test('withViaRepair materialises a via node at its last world position when its 
   { const s = make(); P.placeInGroup(s.doc, s.b.id, s.r.id, 0); expect(s.tail.start.via).toBeUndefined(); near(P.nodeWorld(s.doc, s.tail.start), s.before); }   // [[m, r]] has one slot; slot 3 is gone
   { const s = make(); P.deletePath(s.doc, s.body.id); expect(s.tail.start.via).toBeUndefined(); near(P.nodeWorld(s.doc, s.tail.start), s.before); }
   { const s = make(); P.deleteElement(s.doc, s.m.id); expect(s.tail.start.via).toBeUndefined(); near(P.nodeWorld(s.doc, s.tail.start), s.before); }   // [[r]] has one slot; slot 3 is gone
+});
+
+// --- fix round 1
+
+const closeXY = (p: XY, x: number, y: number) => { expect(p.x).toBeCloseTo(x, 6); expect(p.y).toBeCloseTo(y, 6); };
+// A body with one mirror (x = 120) and a tail whose start is the body's start seen through that mirror's clone.
+function mirroredTail(doc: Doc, viaCell = { c: 0, r: 0 }) {
+  const body = polyline(doc, [{ u: 0.1, v: 0.1 }, { u: 0.5, v: 0.1 }]);
+  const m = P.addElement(doc, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+  const b = P.addBinding(doc, body.id, [[m.id]]);
+  const tail = P.startPath(doc, { pointId: body.start.pointId, cell: body.start.cell, via: { cell: viaCell, bindingId: b.id, power: 1 } }, style, 'L1');
+  const end = P.addPoint(doc, { u: 0.9, v: 0.9 });
+  P.appendNode(doc, tail.id, end);
+  return { body, m, b, tail, end };
+}
+
+test('removeFromBinding (a nested repair) materialises the via node where it was, not at its cell-only position', () => {
+  const doc = makeDoc();
+  const { m, b, tail } = mirroredTail(doc);
+  closeXY(P.nodeWorld(doc, tail.start), 216, 24);
+  P.removeFromBinding(doc, b.id, m.id);
+  expect(doc.bindings).toHaveLength(0);
+  expect(tail.start.via).toBeUndefined();
+  closeXY(P.nodeWorld(doc, tail.start), 216, 24);
+});
+
+test('materialising a via node re-bases the control point of the segment leaving it', () => {
+  const doc = makeDoc();
+  const { b, tail } = mirroredTail(doc, { c: 0, r: 1 });
+  P.setControlPointAbs(doc, tail.id, 0, { u: 0.5, v: 1.5 });
+  expect(P.cpWorld(doc, tail, 0)).toEqual({ x: 120, y: 360 });
+  P.removeBinding(doc, b.id);
+  expect(tail.start.via).toBeUndefined();
+  expect(tail.start.cell).toEqual({ c: 0, r: 1 });          // materialised at (0.9, 1.1): a different cell from the via node's (0,0)
+  closeXY(P.cpWorld(doc, tail, 0)!, 120, 360);
+});
+
+test('orientToEnd shift moves the control point of a segment leaving a via node along with the path', () => {
+  const doc = makeDoc();
+  const { b, tail, end } = mirroredTail(doc);
+  P.setControlPointAbs(doc, tail.id, 0, { u: 0.9, v: 0.5 });
+  closeXY(P.cpWorld(doc, tail, 0)!, 216, 120);
+  P.orientToEnd(doc, tail.id, end.pointId, { c: 1, r: 0 });   // already last: a pure shift by (1, 0)
+  expect(tail.start.via).toEqual({ cell: { c: 1, r: 0 }, bindingId: b.id, power: 1 });
+  expect(tail.start.cell).toEqual({ c: 0, r: 0 });
+  closeXY(P.nodeWorld(doc, tail.start), 456, 24);
+  closeXY(P.nodeWorld(doc, tail.segments[0].to), 456, 216);
+  closeXY(P.cpWorld(doc, tail, 0)!, 456, 120);
+});
+
+test('transformPath moves a via node by M (its underlying point by V⁻¹ M V)', () => {
+  const doc = makeDoc();
+  const { body, tail } = mirroredTail(doc);
+  const w0 = P.pathWorld(doc, tail);
+  P.transformPath(doc, tail.id, translation(10, 0));
+  const w1 = P.pathWorld(doc, tail);
+  closeXY(w1[0], w0[0].x + 10, w0[0].y);
+  closeXY(w1[1], w0[1].x + 10, w0[1].y);
+  closeXY(P.nodeWorld(doc, body.start), 14, 24);             // the shared point moved −10 under the mirror
+});
+
+test('mergePoints drops the bindings of a path that collapses to nothing and repairs via nodes on them', () => {
+  const doc = makeDoc();
+  const { body, b, tail } = mirroredTail(doc);
+  const before = P.nodeWorld(doc, tail.start);
+  const from = body.segments[0].to;
+  P.mergePoints(doc, from.pointId, from.cell, body.start.pointId, body.start.cell);
+  expect(doc.paths.map((p) => p.id)).toEqual([tail.id]);
+  expect(doc.bindings).toHaveLength(0);
+  expect(doc.bindings.some((x) => x.id === b.id)).toBe(false);
+  expect(tail.start.via).toBeUndefined();
+  closeXY(P.nodeWorld(doc, tail.start), before.x, before.y);
+  expect(doc.points).toHaveLength(2);
+});
+
+test('mergePoints rewrites a via node that references the merged point and keeps its world position', () => {
+  const doc = makeDoc();
+  const { body, b, tail } = mirroredTail(doc);
+  const other = polyline(doc, [{ u: 0.3, v: 0.1 }, { u: 0.7, v: 0.7 }]);
+  const fromId = body.start.pointId;
+  P.movePoint(doc, fromId, 1.3, 0.1);                        // dragged one cell over, onto other.start seen in cell (1, 0)
+  const before = P.nodeWorld(doc, tail.start);
+  P.mergePoints(doc, fromId, body.start.cell, other.start.pointId, { c: 1, r: 0 });
+  expect(tail.start).toEqual({ pointId: other.start.pointId, cell: { c: 1, r: 0 }, via: { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 } });
+  closeXY(P.nodeWorld(doc, tail.start), before.x, before.y);
+  expect(doc.points.some((q) => q.id === fromId)).toBe(false);
+});
+
+test('deletePath materialises via nodes on the deleted path and prunes the point they used to see', () => {
+  const doc = makeDoc();
+  const { body, tail } = mirroredTail(doc);
+  const before = P.nodeWorld(doc, tail.start);
+  P.deletePath(doc, body.id);
+  expect(tail.start.via).toBeUndefined();
+  closeXY(P.nodeWorld(doc, tail.start), before.x, before.y);
+  expect(doc.points).toHaveLength(2);
 });
