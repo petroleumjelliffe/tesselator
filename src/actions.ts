@@ -380,7 +380,7 @@ export function finishFreehand(dr: Extract<Drag, { kind: 'free' }>): boolean {
       if (j === fit.points.length - 1 && endSnap.anchor) return { pointId: endSnap.anchor.pointId, cell: endSnap.anchor.cell };
       return P.addPoint(d, toUV(v, d.lattice));
     });
-    const extendId = dr.startNode ? P.openEndAt(d, dr.startNode.pointId) : null;
+    const extendId = dr.startNode && !dr.startNode.via ? P.openEndAt(d, dr.startNode.pointId) : null;   // a stroke from a via node sits on a clone: it never extends the path its point ends
     let path;
     if (extendId) { path = P.getPath(d, extendId)!; P.orientToEnd(d, extendId, dr.startNode!.pointId, dr.startNode!.cell); }
     else path = P.startPath(d, nodes[0], UI.prefs.value.style, activeLayerId(d));

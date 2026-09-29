@@ -195,11 +195,13 @@ export function reversePath(p: Path): void {
 
 // Make `pointId` the last node, placed in `cell`, reversing and shifting cells as needed. A shift moves a plain node's
 // `cell` and a via node's `via.cell`; a cp is relative to the previous node's `cell`, so it needs no change after a plain
-// node and must move with the path after a via node (whose `cell` stays put).
+// node and must move with the path after a via node (whose `cell` stays put). The end wanted is the plain one: a path
+// X → via(X) ends on X's clone image, so it is reversed to continue from the plain X at its start.
 export function orientToEnd(doc: Doc, pathId: string, pointId: string, cell: Cell): void {
   const p = getPath(doc, pathId);
   if (!p || !p.segments.length) return;
-  if (p.segments[p.segments.length - 1].to.pointId !== pointId) reversePath(p);
+  const end = p.segments[p.segments.length - 1].to;
+  if (end.via || end.pointId !== pointId) reversePath(p);
   const last = p.segments[p.segments.length - 1].to;
   const dc = cell.c - last.cell.c, dr = cell.r - last.cell.r;
   if (!dc && !dr) return;

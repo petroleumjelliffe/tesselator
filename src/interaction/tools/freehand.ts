@@ -10,7 +10,7 @@ import type { Node, Matrix } from '../../types';
 // Ghost the stroke through the extended path's bindings, else through the binding a new path would get.
 function previewMatrices(startNode: Node | null): Matrix[] {
   const d = doc.value;
-  const extendId = startNode ? P.openEndAt(d, startNode.pointId) : null;
+  const extendId = startNode && !startNode.via ? P.openEndAt(d, startNode.pointId) : null;   // as finishFreehand: a via start never extends a path
   const groupsList = extendId ? d.bindings.filter((b) => b.pathId === extendId).map((b) => b.groups) : [d.newPathGroups];
   return groupsList.flatMap((g) => orbit(g, d.elements, d.lattice, CONFIG.ORBIT_CAP, CONFIG.CLONE_CAP).matrices.filter((M): M is Matrix => M !== null));
 }

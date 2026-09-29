@@ -1,17 +1,18 @@
 import { test, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { doc, draft, emptyDoc } from '../../src/state/doc';
 import * as UI from '../../src/state/ui';
 import * as A from '../../src/actions';
 import * as P from '../../src/engine/paths';
 import { reset, canUndo, commit, beginGesture, endGesture, historyVersion } from '../../src/state/history';
 import { parseDoc, serializeDoc } from '../../src/engine/serialize';
-import { faces, copyMatrix, cloneMatrices } from '../../src/state/derived';
+import { faces, copyMatrix, cloneMatrices, copies } from '../../src/state/derived';
 import { apply, invert } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import * as select from '../../src/interaction/tools/select';
 import type { Drag } from '../../src/types';
 import { computeFaces } from '../../src/engine/regions';
-import { anchorsWorld } from '../../src/engine/hit';
+import { anchorsWorld, hitTest, type HitContext } from '../../src/engine/hit';
 
 function fresh() { reset(); UI.resetUi(); doc.value = emptyDoc(); UI.viewport.value = { width: 800, height: 600 }; UI.prefs.value = { ...UI.prefs.value, snap: false }; }
 const W = (u: number, v: number) => ({ x: u * 240, y: v * 240 });
@@ -539,4 +540,82 @@ test('a gesture whose element edits remove a clone slot materialises the via nod
   expect(doc.value).toBe(pre);                                                         // one entry: the repair went with the gesture
   expect(A.undo()).toBe(true);                                                         // the next entry is the tail's last click, not a stray repair
   expect(doc.value.paths[1].segments).toHaveLength(0);
+});
+
+// --- final fix wave: the Pen and freehand never continue from a via end
+
+test('pen: a plain click on X resumes a path X → via(X) from its plain end (the via end is not mistaken for X by pointId alone)', () => {
+  fresh(); A.addElement('mirror'); A.setTool('pen');                                    // mirror x = 120: the clone of (60,72) is (180,72)
+  A.penClickEmpty(W(0.1, 0.3), false); A.penClickEmpty(W(0.4, 0.3), false); A.endPen();
+  const body = doc.value.paths[0], b = doc.value.bindings[0];
+  const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 };
+  A.setTool('pen');
+  A.penClickSegment(body.id, 0, base, W(0.25, 0.31), false);                            // split node X; the tail starts on plain X
+  const X = doc.value.paths[0].segments[0].to;
+  expect(X.via).toBeUndefined();
+  A.penClickNode({ pointId: X.pointId, cell: X.cell, via: clone });                    // tail: X → via(X)
+  A.endPen();
+  const tail = doc.value.paths[1];
+  expect(tail.start).toEqual({ pointId: X.pointId, cell: X.cell });
+  expect(tail.segments[0].to).toEqual({ pointId: X.pointId, cell: X.cell, via: clone });
+  expect(A.penClickNode({ pointId: X.pointId, cell: X.cell })).toBe(true);
+  expect(UI.pen.value?.pathId).toBe(tail.id);
+  const resumed = doc.value.paths[1], last = resumed.segments[resumed.segments.length - 1].to;
+  expect(last).toEqual({ pointId: X.pointId, cell: X.cell });                           // the pen continues from plain X
+  expect(resumed.start).toEqual({ pointId: X.pointId, cell: X.cell, via: clone });       // reversed: the via end is now the start
+  expect(doc.value.paths).toHaveLength(2);
+});
+
+test('freehand: a stroke started on a via node whose point is a plain open end starts a new path instead of extending the host', () => {
+  const { body, clone } = bodyWithHalfTurn();
+  A.setTool('pen');
+  A.penClickEmpty(W(0.8, 0.8), false);
+  A.penClickNode({ pointId: body.start.pointId, cell: body.start.cell, via: clone });  // tail ends on the clone anchor of the body's start
+  A.endPen();
+  const bodyBefore = doc.value.paths[0];
+  expect(P.openEndAt(doc.value, body.start.pointId)).toBe(bodyBefore.id);              // the body's start is a plain open end
+  A.setTool('freehand');
+  const startNode = { pointId: body.start.pointId, cell: body.start.cell, via: clone };
+  const start = P.nodeWorld(doc.value, startNode);
+  const raw = Array.from({ length: 30 }, (_, i) => ({ x: start.x + i * 5, y: start.y + 30 * Math.sin(i / 5) }));
+  const dr: Extract<Drag, { kind: 'free' }> = { kind: 'free', raw, startNode, cloneMatrices: [], target: null, start, moved: true, pointerId: 1, hitScale: 1 };
+  expect(A.finishFreehand(dr)).toBe(true);
+  expect(doc.value.paths).toHaveLength(3);                                              // a new path
+  expect(doc.value.paths[0]).toEqual(bodyBefore);                                       // the body is unchanged
+  expect(doc.value.paths[2].start).toEqual(startNode);                                  // and the new path's start keeps the via
+});
+
+// --- final fix wave: the user's fish, joined with the Pen through hit-testing as pointer.ts does it
+
+test('fish fixture: the tail drawn by Pen clicks on the body and on its clone in cell (-1,-1) joins both ends and closes 8 faces', () => {
+  fresh();
+  const json = readFileSync(new URL('../../docs/examples/fish-v2-tail.json', import.meta.url), 'utf8');
+  const fish = parseDoc(json)!;
+  expect(fish).not.toBe(null);
+  const body = fish.paths.find((p) => p.id === 'path_mum4t9qs_b')!, bodyBinding = fish.bindings.find((b) => b.pathId === body.id)!;
+  doc.value = { ...fish, paths: fish.paths.filter((p) => p.id !== 'path_mum4wgrz_k'), bindings: fish.bindings.filter((b) => b.pathId !== 'path_mum4wgrz_k') };
+  A.mutate((d) => { P.pruneOrphans(d); });
+  A.setTool('pen');
+  // The hit context as pointer.ts builds it. Zoom 2 (the user was zoomed in: the tail's ends missed the body by 0.15 and
+  // 0.31 units): at zoom 1 the second click sits 5.9 px from a clone anchor, which by design outranks the line under it.
+  const ctx = (): HitContext => ({ layer: UI.layer.value, tool: UI.tool.value, selection: UI.selection.value, pen: UI.pen.value, zoom: 2, hitScale: 1, copies: copies.value, cloneMatrices: cloneMatrices.value, faces: faces.value });
+  const click1 = { x: 31.5, y: 42.7 };
+  const t1 = hitTest(doc.value, ctx(), click1);
+  expect(t1).toMatchObject({ kind: 'segment', pathId: body.id, copy: { cell: { c: 0, r: 0 }, bindingId: null } });
+  if (t1?.kind !== 'segment') throw new Error('unreachable');
+  expect(A.penClickSegment(t1.pathId, t1.j, t1.copy, click1, false)).toBe(true);
+  const click2 = { x: -29.5, y: 17.8 };
+  const t2 = hitTest(doc.value, ctx(), click2);
+  expect(t2).toMatchObject({ kind: 'segment', pathId: body.id, copy: { cell: { c: -1, r: -1 }, bindingId: bodyBinding.id } });
+  if (t2?.kind !== 'segment') throw new Error('unreachable');
+  expect(A.penClickSegment(t2.pathId, t2.j, t2.copy, click2, false)).toBe(true);
+  A.endPen();
+  expect(doc.value.paths).toHaveLength(2);
+  const tail = doc.value.paths[1], body2 = doc.value.paths[0];
+  expect(P.pathNodes(body2).some((n) => P.sameNode(n, tail.start))).toBe(true);
+  const last = tail.segments[tail.segments.length - 1].to;
+  expect(last.via?.bindingId).toBe(bodyBinding.id);
+  expect(P.pathNodes(body2).some((n) => n.pointId === last.pointId)).toBe(true);
+  expect(parseDoc(serializeDoc(doc.value))).toEqual(doc.value);
+  expect(computeFaces(doc.value)).toHaveLength(8);
 });

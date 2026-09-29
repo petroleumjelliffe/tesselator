@@ -170,7 +170,7 @@ function Points() {
     if (!showAll && !show.has(pt.id)) continue;
     const w = toWorld(nodeUV(pt, o), d.lattice);
     const isLast = !!penLast && sameNode(penLast, { pointId: pt.id, cell: o });   // a via pen end does not light the source copy
-    const isHover = !!h && h.kind === 'point' && h.pointId === pt.id && h.cell.c === o.c && h.cell.r === o.r;
+    const isHover = !!h && h.kind === 'point' && !h.via && h.pointId === pt.id && h.cell.c === o.c && h.cell.r === o.r;   // a hovered via node lights its own circle below, not the raw point
     const cls = ['pt', (isLast || selPts.has(pt.id)) && 'sel', isHover && 'hover', !isBase(o) && 'dim'].filter(Boolean).join(' ');
     out.push(<circle key={`${pt.id}:${cellKey(o)}`} class={cls} cx={w.x} cy={w.y} r={(isBase(o) ? CONFIG.HANDLE_PX : CONFIG.HANDLE_PX - 1) / z} />);
   }
