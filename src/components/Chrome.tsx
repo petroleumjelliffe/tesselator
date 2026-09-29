@@ -234,7 +234,7 @@ function Help() {
     <span class="violet">Elements: drag to move · mirror knob or <K k="[" /> <K k="]" /> rotates · translation diamond sets the vector · a group applies left to right (a mirror then a half translation is a glide) · a "then" group applies to the source and every clone so far</span>
     <span>Pen: click a point to start or resume · click empty space to add · click the last point, <K k="Esc" /> or <K k="↵" /> to end · <K k="Space" />+drag moves the elements</span>
     <span>Select: click any copy of a line to select its path there, again to insert a point · drag ◇ to bend, double-click to straighten · marquee points · <K k="⇧" /> adds · box handles scale / rotate</span>
-    <span>Clone: drag its body to move its element · drag its anchors to edit the shared point</span>
+    <span>Clone: drag its body to move the first element of its first group · drag its anchors to edit the shared point</span>
     <span>Fill: press to preview a closed region, release to colour · fills draw below the lines of their layer; put them on a higher layer to cover lines</span>
     <span>Wheel pans · <K k="⌘" />+wheel zooms · two fingers pan and pinch · <K k="⌘0" /> fits · hover a point + <K k="⌫" /> deletes · <K k="⌘Z" /> undo · <K k="⇧⌘Z" /> redo</span>
     <div class="settings">

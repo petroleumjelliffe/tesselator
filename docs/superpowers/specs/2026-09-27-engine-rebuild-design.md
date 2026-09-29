@@ -1,5 +1,7 @@
 # Engine rebuild (Project 1 of 2) — design
 
+> **Amended 2026-09-28** by `2026-09-28-groups-and-layers-amendment.md`: bindings are ordered lists of element groups (clones = product across groups), layers are generic and ordered (`layers`, `layerId` on paths and fills; the structure / fills / detail sandwich and the `sublayer` pref are gone), and the document is version 2 with v1 migration. Where the two disagree, the amendment wins.
+
 Date: 2026-09-27, revised 2026-09-28 (Preact + Vite + TypeScript; lattice coordinates throughout; geometric hit-testing; editable copies; holes; persistence; export; touch and pen)
 Branch: `feature/rebuild`
 Behavioural reference: Claude Design project "Tessellation Designer v2 Symmetry" (the working prototype). Layout for this project is the prototype's own floating-panel chrome. The Layers / Properties chrome from "Editing UI Wireframes" turn 2 is Project 2.
