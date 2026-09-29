@@ -25,10 +25,11 @@ export function snapElement(w: XY, on: boolean, hitScale: number): UV {
 }
 const twelfths = (uv: UV): UV => ({ u: Math.round(uv.u * 12) / 12, v: Math.round(uv.v * 12) / 12 });
 
-// Dragging a clone copy's body moves the first element of its chain so the copy follows the pointer.
+// Dragging a clone copy's body moves the first element of the first group that produced the copy (the first group
+// with a nonzero power in its clone index) so the copy follows the pointer; a one-group binding drives its one group.
 export function cloneBodyMove(d: Extract<Drag, { kind: 'body' }>, w: XY, ctx: ToolCtx): void {
   const b = P.getBinding(doc.value, d.copy.bindingId!);
-  const g0 = b?.groups[0];
+  const g0 = b && P.dragGroupFor(b, d.copy.power, doc.value.elements, doc.value.lattice);
   if (!b || !g0 || !g0.length) return;
   const s0 = d.startEls.find((z) => z.id === g0[0]);
   if (!s0) return;

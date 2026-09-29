@@ -113,6 +113,16 @@ export function orbit(groups: string[][], elements: Element[], lat: Lattice, own
   return { matrices, open };
 }
 
+// Decode a clone index into its per-group powers (mixed radix, group 1 least significant), each radix being that
+// group's own clone count + 1. The source (index 0) and an index past the product decode to all zeros.
+export function clonePowers(groups: string[][], elements: Element[], lat: Lattice, index: number, ownCap = 12): number[] {
+  const radix = groups.map((g) => ownClones(g, elements, lat, ownCap).matrices.length + 1);
+  const total = radix.reduce((a, b) => a * b, 1);
+  if (!Number.isInteger(index) || index <= 0 || index >= total) return radix.map(() => 0);
+  let rest = index;
+  return radix.map((r) => { const p = rest % r; rest = Math.floor(rest / r); return p; });
+}
+
 export const cloneCount = (o: { matrices: (Matrix | null)[] }): number => o.matrices.filter((m) => m !== null).length;
 
 export type Classified =

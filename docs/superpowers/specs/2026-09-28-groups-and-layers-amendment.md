@@ -42,7 +42,7 @@ Orbit sizes the tests pin down, in addition to the original table (which now des
 
 **Defaults and construction.** `O`, `M`, `T` create the element and append it as a new one-element group to `newPathGroups`. If a path is selected, the element is also appended as a new group to that path's first binding (created if the path has none). "Apply to new paths" on an element toggles its one-element group in `newPathGroups`. A new path gets one binding with `newPathGroups` (empty groups list → no binding).
 
-**Drags.** Dragging a clone copy's body moves the first element of the binding's **first group** by the existing inverse formulas. That is exact when later groups are translations and follows in the transformed frame otherwise. `Space`+drag while drawing moves the first element of the first group of each of the path's bindings.
+**Drags.** Dragging a clone copy's body moves the first element of the **first group that contributes to the dragged copy** (the first group with a nonzero power in the copy's clone index) by the existing inverse formulas. That is exact when the other contributing groups are translations and follows in the transformed frame otherwise. `Space`+drag while drawing moves the first element of the first group of each of the path's bindings.
 
 **Migration (v1 → v2).** `ops` becomes `groups: [ops]`; `newPathOps: string[][]` becomes `newPathGroups`: each old chain is one group, in order. Deleting an element removes it from every group; a group left empty is removed; a binding left with no groups is removed.
 

@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { IDENTITY, translation, rotation, reflection, compose, invert, apply, power, cellMatrix, matrixOf, isLatticeTranslation, composite, orbit, ownClones, cloneCount, classify, toSvg, mirrorAngle, mirrorDirFromAngle } from '../../src/engine/transform';
+import { IDENTITY, translation, rotation, reflection, compose, invert, apply, power, cellMatrix, matrixOf, isLatticeTranslation, composite, orbit, ownClones, cloneCount, classify, toSvg, mirrorAngle, mirrorDirFromAngle, clonePowers } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import type { Element, XY } from '../../src/types';
 
@@ -119,6 +119,15 @@ test('clone indices are mixed-radix, stable under appending a group, and null sl
   const dup = orbit([['ma'], ['ma']], grp, lat);
   expect(dup.matrices).toEqual([dup.matrices[0], null, null]);                     // (0,1) equals (1,0); (1,1) is the identity
   expect(dup.matrices[0]).not.toBe(null);
+});
+
+test('clonePowers decodes a clone index into per-group powers, group 1 least significant', () => {
+  expect(clonePowers([['ma'], ['tb']], grp, lat, 1)).toEqual([1, 0]);
+  expect(clonePowers([['ma'], ['tb']], grp, lat, 2)).toEqual([0, 1]);
+  expect(clonePowers([['ma'], ['tb']], grp, lat, 3)).toEqual([1, 1]);
+  expect(clonePowers([['ma'], ['tb']], grp, lat, 0)).toEqual([0, 0]);      // the source / out of range decode to all zeros
+  expect(clonePowers([['ma'], ['tb']], grp, lat, 4)).toEqual([0, 0]);
+  expect(clonePowers([['r6'], ['mh']], grp, hex, 7)).toEqual([1, 1]);     // radix 6 then 2
 });
 
 test('the product is truncated at the clone cap in index order and reported open', () => {

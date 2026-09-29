@@ -1,8 +1,8 @@
 // Draft mutations. Every function takes a Doc draft and mutates it; nothing here touches UI state.
 import { makeId } from '../ids';
 import { toWorld, toUV, cellOf, nodeUV } from './lattice';
-import { IDENTITY, apply, orbit, type Orbit } from './transform';
-import type { Doc, UV, XY, Cell, Node, Segment, Path, Element, Binding, Fill, Matrix, Style, Box, DocLayer } from '../types';
+import { IDENTITY, apply, orbit, clonePowers, type Orbit } from './transform';
+import type { Doc, UV, XY, Cell, Node, Segment, Path, Element, Binding, Fill, Matrix, Style, Box, DocLayer, Lattice } from '../types';
 
 export const getPoint = (doc: Doc, id: string) => doc.points.find((p) => p.id === id) ?? null;
 export const getPath = (doc: Doc, id: string) => doc.paths.find((p) => p.id === id) ?? null;
@@ -254,20 +254,26 @@ export function addBinding(doc: Doc, pathId: string, groups: string[][] = []): B
   return b;
 }
 
+const sameGroups = (a: string[][], b: string[][]) => a.length === b.length && a.every((g, i) => g.length === b[i].length && g.every((x, j) => x === b[i][j]));
+
 // Put an element in group gi of a binding (gi === groups.length starts a new group). An element appears at most
 // once per binding, so it is first removed from wherever it was; a group emptied by that removal is dropped and gi
-// shifts down with it. Placing it in the group it is already in changes nothing and returns false.
+// shifts down with it. A placement that leaves the groups as they were (into the group it is already in, or the sole
+// element of the last group into the new group after it) changes nothing and returns false.
 export function placeInGroup(doc: Doc, bindingId: string, elementId: string, gi: number): boolean {
   const b = getBinding(doc, bindingId);
   if (!b) return false;
   const from = b.groups.findIndex((g) => g.includes(elementId));
   if (from >= 0 && from === gi) return false;
+  const groups = b.groups.map((g) => g.slice());
   if (from >= 0) {
-    b.groups[from] = b.groups[from].filter((x) => x !== elementId);
-    if (!b.groups[from].length) { b.groups.splice(from, 1); if (from < gi) gi--; }
+    groups[from] = groups[from].filter((x) => x !== elementId);
+    if (!groups[from].length) { groups.splice(from, 1); if (from < gi) gi--; }
   }
-  gi = Math.max(0, Math.min(gi, b.groups.length));
-  if (gi === b.groups.length) b.groups.push([elementId]); else b.groups[gi].push(elementId);
+  gi = Math.max(0, Math.min(gi, groups.length));
+  if (gi === groups.length) groups.push([elementId]); else groups[gi].push(elementId);
+  if (sameGroups(groups, b.groups)) return false;
+  b.groups = groups;
   return true;
 }
 
@@ -279,6 +285,14 @@ export function removeFromBinding(doc: Doc, bindingId: string, elementId: string
 }
 
 export function removeBinding(doc: Doc, id: string): void { doc.bindings = doc.bindings.filter((b) => b.id !== id); }
+
+// The group a drag of clone `power`'s body should drive: the first group with a nonzero power in the copy's clone
+// index (moving its first element moves that copy), or the first group when the index decodes to all zeros.
+export function dragGroupFor(b: Binding, power: number, elements: Element[], lat: Lattice, ownCap = 12): string[] | null {
+  if (!b.groups.length) return null;
+  const gi = clonePowers(b.groups, elements, lat, power, ownCap).findIndex((p) => p > 0);
+  return b.groups[gi >= 0 ? gi : 0];
+}
 
 export function cloneMatrices(doc: Doc, bindingId: string, ownCap = 12, cloneCap = 48): Orbit {
   const b = getBinding(doc, bindingId);

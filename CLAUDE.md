@@ -50,5 +50,5 @@ Everything in the document is in lattice `(u, v)` coordinates; world position is
 - Clones are not composed across bindings (no group closure).
 - Collinear overlapping edges that are not identical are not split against each other.
 - Only the base cell's copies are hit-tested for segments in the visible cells; points are hit in the 3×3 window.
-- Clone-body drags move the first element of the first group; with later non-translation groups the copy follows in the transformed frame.
+- Clone-body drags move the first element of the first group that contributes to the dragged copy (the first group with a nonzero power in the copy's clone index); with other non-translation groups contributing, the copy follows in the transformed frame.
 - Layer rename, reorder, hide and lock are not in this chrome (Project 2).
