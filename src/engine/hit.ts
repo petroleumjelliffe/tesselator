@@ -2,7 +2,7 @@
 import { CONFIG } from '../config';
 import { toWorld, toUV, cellOf, nodeUV, windowOffsets, snapGrid } from './lattice';
 import { apply, cellMatrix, compose, orbit } from './transform';
-import { getPath, pathNodes, pathWorld, pathCpsWorld, boundsWorld, getElement } from './paths';
+import { getPath, pathNodes, pathWorld, pathCpsWorld, boundsWorld, getElement, nodeWorld } from './paths';
 import { faceAt, fillOfFace } from './regions';
 import type { Doc, XY, Lattice, Matrix, Copy, CopyInfo, Cell, Face, HitTarget, Layer, Tool, Selection, Box, BoxHandle, Path } from '../types';
 
@@ -10,7 +10,7 @@ export type HitContext = {
   layer: Layer; tool: Tool; selection: Selection; pen: { pathId: string } | null;
   zoom: number; hitScale: number; copies: CopyInfo[]; cloneMatrices: Map<string, (Matrix | null)[]>; faces: Face[];
 };
-export type Anchor = { x: number; y: number; pointId: string; cell: Cell; bindingId?: string; power?: number };
+export type Anchor = { x: number; y: number; pointId: string; cell: Cell; bindingId?: string; power?: number; via?: Copy };
 
 export function copyMatrixOf(copy: Copy, lat: Lattice, cm: Map<string, (Matrix | null)[]>): Matrix {
   const Mo = cellMatrix(copy.cell, lat);
@@ -109,6 +109,13 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
       const d = dist(w, toWorld(nodeUV(pt, cell), lat));
       if (d < bd) { bd = d; best = { kind: 'point', pointId: pt.id, cell }; }
     }
+    // Via nodes of the pen path and the selected path sit on a clone; hit them as points with their via.
+    const penPath = ctx.pen ? getPath(doc, ctx.pen.pathId) : null;
+    for (const p of [penPath, selPath]) if (p) for (const n of pathNodes(p)) {
+      if (!n.via) continue;
+      const d = dist(w, nodeWorld(doc, n));
+      if (d < bd) { bd = d; best = { kind: 'point', pointId: n.pointId, cell: n.cell, via: n.via }; }
+    }
     if (best) return best;
   }
   if (ctx.tool === 'select' || ctx.tool === 'pen') {
@@ -124,9 +131,10 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
       if (t) return t;
     }
   }
-  if (ctx.tool === 'select') {
+  if (ctx.tool === 'select' || ctx.tool === 'pen') {
     let best: HitTarget | null = null, bd = rSeg;
     for (const ci of ctx.copies) {
+      if (ctx.tool === 'pen' && ctx.pen && ci.pathId === ctx.pen.pathId) continue;   // the path in progress is not a join target
       const p = getPath(doc, ci.pathId);
       if (!p) continue;
       const Pw = pathWorld(doc, p).map((q) => apply(ci.M, q)), C = pathCpsWorld(doc, p).map((c) => c && apply(ci.M, c));
@@ -163,7 +171,7 @@ export function anchorsWorld(doc: Doc, skip?: (a: Anchor) => boolean, cap = CONF
       ms.forEach((M, k) => {
         if (!M) return;
         const MM = compose(Mo, M);
-        nodes.forEach((n, i) => { const w = apply(MM, Pw[i]), a: Anchor = { x: w.x, y: w.y, pointId: n.pointId, cell: n.cell, bindingId: b.id, power: k + 1 }; if (!skip || !skip(a)) out.push(a); });
+        nodes.forEach((n, i) => { const w = apply(MM, Pw[i]), a: Anchor = { x: w.x, y: w.y, pointId: n.pointId, cell: n.cell, bindingId: b.id, power: k + 1, via: { cell, bindingId: b.id, power: k + 1 } }; if (!skip || !skip(a)) out.push(a); });
       });
     }
   }

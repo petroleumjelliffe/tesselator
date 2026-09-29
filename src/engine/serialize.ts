@@ -43,7 +43,7 @@ export function migrateV1(d: DocV1): Doc {
 const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 const isStr = (x: unknown): x is string => typeof x === 'string';
 const isCell = (x: any): boolean => !!x && isNum(x.c) && isNum(x.r);
-const isNode = (x: any): boolean => !!x && isStr(x.pointId) && isCell(x.cell);
+const isNode = (x: any): boolean => !!x && isStr(x.pointId) && isCell(x.cell) && (x.via === undefined || (!!x.via && isCell(x.via.cell) && isStr(x.via.bindingId) && Number.isInteger(x.via.power) && x.via.power >= 1));
 const isCp = (x: any): boolean => x === null || (!!x && isNum(x.u) && isNum(x.v));
 const isStyle = (x: any): boolean => !!x && isStr(x.color) && isNum(x.weight);
 const isPoint = (x: any): boolean => !!x && isStr(x.id) && isNum(x.u) && isNum(x.v);
@@ -104,6 +104,8 @@ export function parseDoc(json: string): Doc | null {
     if (o.newPathGroups !== undefined && !isGroups(o.newPathGroups)) return null;
     const bindings = (o.bindings as { id: string; pathId: string; groups: string[][] }[]).map((b) => ({ id: b.id, pathId: b.pathId, groups: knownGroups(b.groups) })).filter((b) => b.groups.length);
     if (bindings.some((b) => hasRepeat(b.groups))) return null;
+    const bindingIds = new Set(bindings.map((b) => b.id));   // a via must name a binding that survives (v1 documents have no via)
+    for (const p of o.paths as Path[]) for (const n of [p.start, ...p.segments.map((s) => s.to)]) if (n.via && !bindingIds.has(n.via.bindingId!)) return null;
     return { version: 2, lattice, points: o.points, paths: o.paths, elements: o.elements, bindings, fills: o.fills, layers: o.layers, newPathGroups: dedupeGroups(knownGroups(Array.isArray(o.newPathGroups) ? o.newPathGroups : [])) };
   } catch { return null; }
 }

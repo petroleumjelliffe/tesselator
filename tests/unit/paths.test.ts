@@ -433,3 +433,18 @@ test('deletePath materialises via nodes on the deleted path and prunes the point
   closeXY(P.nodeWorld(doc, tail.start), before.x, before.y);
   expect(doc.points).toHaveLength(2);
 });
+
+test('a closed path that starts and ends on the same via node stays closed when the node is materialised', () => {
+  const doc = makeDoc();
+  const { b, tail } = mirroredTail(doc);
+  P.appendNode(doc, tail.id, P.addPoint(doc, { u: 0.9, v: 0.5 }));
+  P.appendNode(doc, tail.id, tail.start);
+  expect(P.isClosed(tail)).toBe(true);
+  const before = P.nodeWorld(doc, tail.start);
+  P.removeBinding(doc, b.id);
+  expect(tail.start.via).toBeUndefined();
+  expect(P.isClosed(tail)).toBe(true);
+  expect(tail.segments[tail.segments.length - 1].to).toEqual(tail.start);
+  closeXY(P.nodeWorld(doc, tail.start), before.x, before.y);
+  expect(doc.points).toHaveLength(5);                                                // body 2 + tail 2 free + one materialised
+});

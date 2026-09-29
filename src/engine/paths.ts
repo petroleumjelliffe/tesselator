@@ -339,13 +339,16 @@ export function withViaRepair(doc: Doc, fn: () => void): void {
   try { fn(); } finally { viaRepairDepth--; }
   if (!before.size) return;
   let repaired = false;
+  const made = new Map<string, Node>();   // one new point per dead via node identity, so a path closed on it stays closed
+  const identity = (n: Node) => `${n.pointId}|${n.cell.c},${n.cell.r}|${n.via!.cell.c},${n.via!.cell.r}|${n.via!.bindingId}|${n.via!.power}`;
   for (const p of doc.paths) {
     const prevs = p.segments.map((_, j) => prevNode(p, j)), abs = p.segments.map((_, j) => cpAbs(p, j));
     const fix = (n: Node): Node => {
       if (!n.via || viaLive(doc, n.via)) return n;
-      const w = before.get(n) ?? nodeWorld(doc, n);
-      repaired = true;
-      return addPoint(doc, toUV(w, doc.lattice));
+      const key = identity(n);
+      let m = made.get(key);
+      if (!m) { const w = before.get(n) ?? nodeWorld(doc, n); m = addPoint(doc, toUV(w, doc.lattice)); made.set(key, m); repaired = true; }
+      return cloneNode(m);
     };
     p.start = fix(p.start);
     for (const s of p.segments) s.to = fix(s.to);

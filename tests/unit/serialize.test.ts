@@ -85,3 +85,13 @@ test('exported colours are escaped so a hostile colour string cannot break the S
   expect(svg).not.toContain('<script>');
   expect(svg).toContain('&quot;&gt;&lt;script&gt;');
 });
+
+test('a via node round-trips; a via naming a missing binding is refused', () => {
+  const d = exampleDoc();
+  const b = d.bindings[0], host = d.paths.find((p) => p.id === b.pathId)!;
+  const tail = { id: 'path_via', start: { pointId: host.start.pointId, cell: host.start.cell, via: { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 } }, segments: [{ to: { pointId: d.points[3].id, cell: { c: 0, r: 0 } }, cp: null }], style: { color: '#000', weight: 1 }, layerId: d.layers[0].id };
+  const withVia = { ...d, paths: [...d.paths, tail] };
+  expect(parseDoc(serializeDoc(withVia))).toEqual(withVia);
+  const bad = { ...withVia, paths: withVia.paths.map((p) => (p.id === 'path_via' ? { ...p, start: { ...p.start, via: { ...p.start.via!, bindingId: 'bind_missing' } } } : p)) };
+  expect(parseDoc(JSON.stringify(bad))).toBe(null);
+});

@@ -82,8 +82,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
     if (!d || d.pointerId !== e.pointerId || !dragTool) return;
     const t = dragTool;
     UI.drag.value = null; dragTool = null;
-    endGesture();
-    t.onUp(d, world(e), e, ctxOf(e));
+    try { t.onUp(d, world(e), e, ctxOf(e)); } finally { endGesture(); }   // a commit on release (merge on drop) belongs to the drag's one history entry
     UI.hover.value = hitTest(doc.value, hitCtx(scaleOf(e)), world(e));
   }
 

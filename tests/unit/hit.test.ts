@@ -123,3 +123,22 @@ test('a fill on a region straddling the cell edge is hit from either side of the
   expect(hitTest(d, ctx, { x: 10, y: 120 })).toEqual({ kind: 'fill', fillId: fill.id });   // the copy in cell (-1, 0)
   expect(hitTest(d, ctx, { x: 120, y: 20 })).toBe(null);
 });
+
+test('the Pen hits segments of any copy after points and anchors, but not the path in progress', () => {
+  const { d, path, b } = scene();
+  const pen = ctxFor(d, { tool: 'pen' });
+  expect(hitTest(d, pen, { x: 60, y: 27 })).toMatchObject({ kind: 'segment', pathId: path.id, j: 0, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } });
+  expect(hitTest(d, pen, { x: 180, y: 213 })).toMatchObject({ kind: 'segment', pathId: path.id, j: 0, copy: { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 } });   // the half-turn copy
+  expect(hitTest(d, pen, { x: 25, y: 25 })).toMatchObject({ kind: 'point' });                    // points win
+  expect(hitTest(d, ctxFor(d, { tool: 'pen', pen: { pathId: path.id } }), { x: 60, y: 27 })).toBe(null);
+});
+
+test('a via node of the selected path is hit as a point carrying its via', () => {
+  const { d, path, b } = scene();
+  const via = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 };
+  const tail = P.startPath(d, { pointId: path.start.pointId, cell: path.start.cell, via }, { color: '#000', weight: 2 }, 'L1');
+  P.appendNode(d, tail.id, P.addPoint(d, { u: 0.95, v: 0.4 })); P.appendNode(d, tail.id, P.addPoint(d, { u: 0.4, v: 0.95 }));   // a bend, so the via node (216,216) is inside the box, clear of its handles
+  const w = P.nodeWorld(d, tail.start);
+  const t = hitTest(d, ctxFor(d, { selection: { kind: 'path', id: tail.id, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } } }), { x: w.x + 2, y: w.y + 1 });
+  expect(t).toMatchObject({ kind: 'point', pointId: path.start.pointId, via });
+});

@@ -7,7 +7,7 @@ import { layer, tool, selection, hover, drag, pen, cursor, view, prefs, space, f
 import { cloneMatrices, visibleCells, copies, copyMatrix, faces } from '../state/derived';
 import { toWorld, nodeUV, windowOffsets, cellPolygon } from '../engine/lattice';
 import { IDENTITY, apply, toSvg } from '../engine/transform';
-import { getPath, getElement, pathNodes, pathWorld, pathCpsWorld, boundsWorld, nodeWorld } from '../engine/paths';
+import { getPath, getElement, pathNodes, pathWorld, pathCpsWorld, boundsWorld, nodeWorld, sameNode } from '../engine/paths';
 import { bboxHandles, seedOf } from '../engine/hit';
 import { faceAt, facePathData, fillFace } from '../engine/regions';
 import { segD, pathD } from '../engine/svgpath';
@@ -173,6 +173,14 @@ function Points() {
     const isHover = !!h && h.kind === 'point' && h.pointId === pt.id && h.cell.c === o.c && h.cell.r === o.r;
     const cls = ['pt', (isLast || selPts.has(pt.id)) && 'sel', isHover && 'hover', !isBase(o) && 'dim'].filter(Boolean).join(' ');
     out.push(<circle key={`${pt.id}:${cellKey(o)}`} class={cls} cx={w.x} cy={w.y} r={(isBase(o) ? CONFIG.HANDLE_PX : CONFIG.HANDLE_PX - 1) / z} />);
+  }
+  // Via nodes of the pen path and the selected path: drawn where they are, on the clone.
+  for (const p of [penPath, selPath]) if (p) for (const [i, n] of pathNodes(p).entries()) {
+    if (!n.via) continue;
+    const w = nodeWorld(d, n);
+    const isLast = !!penLast && sameNode(penLast, n);
+    const isHover = !!h && h.kind === 'point' && !!h.via && h.pointId === n.pointId && h.via.bindingId === n.via.bindingId && h.via.power === n.via.power && h.via.cell.c === n.via.cell.c && h.via.cell.r === n.via.cell.r;
+    out.push(<circle key={`via:${p.id}:${i}`} class={['pt', isLast && 'sel', isHover && 'hover'].filter(Boolean).join(' ')} cx={w.x} cy={w.y} r={CONFIG.HANDLE_PX / z} />);
   }
   return <g class={layer.value === 'drawing' ? undefined : 'inactive-layer'}>{out}</g>;
 }

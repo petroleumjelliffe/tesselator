@@ -1,6 +1,7 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
 import { computeFaces, faceAt, seedFor, facePathData, collectSegments, subCurve, faceContains, sameRegion } from '../../src/engine/regions';
+import { apply, invert } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import type { Doc, UV } from '../../src/types';
 
@@ -179,4 +180,44 @@ test('sameRegion identifies the window copies of one region and separates distin
   expect(wrapped).not.toBe(left);                            // the copy in cell (-1, 0)
   expect(sameRegion(left, wrapped, lat)).toBe(true);
   expect(sameRegion(left, faceAt(faces, { x: 80, y: 80 })!, lat)).toBe(false);
+});
+
+test('a T-junction drawn with the Pen splits exactly: a chord ending on both edges of a square gives 18 faces', () => {
+  const doc = makeDoc(); const sq = square(doc);
+  const chord = P.startPath(doc, P.insertNodeAt(doc, sq.id, 3, 0.5), style, 'L1');       // left edge midpoint (60,120)
+  P.appendNode(doc, chord.id, P.insertNodeAt(doc, sq.id, 1, 0.5));                        // right edge midpoint
+  expect(computeFaces(doc)).toHaveLength(18);
+  const curved = makeDoc(); const sq2 = square(curved);
+  P.setControlPointAbs(curved, sq2.id, 1, { u: S(220), v: S(120) });
+  const t = P.nearestT(P.nodeWorld(curved, P.prevNode(sq2, 1)), P.cpWorld(curved, sq2, 1), P.nodeWorld(curved, sq2.segments[1].to), { x: 195, y: 100 });
+  const c2 = P.startPath(curved, P.insertNodeAt(curved, sq2.id, 3, 0.5), style, 'L1');
+  P.appendNode(curved, c2.id, P.insertNodeAt(curved, sq2.id, 1, t));
+  expect(computeFaces(curved)).toHaveLength(18);
+});
+
+test('a fish: body with a glide binding, tail from the body to the body\'s clone through via nodes, produces faces', () => {
+  const doc = makeDoc();
+  doc.lattice = { ax: 240, ay: 0, bx: 0, by: 90 };
+  const m = P.addElement(doc, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+  const t = P.addElement(doc, { kind: 'translate', u: 0, v: 0.5 });
+  // body: a wavy line from the top edge to 1.5 cells down, as in the user's design
+  const body = P.startPath(doc, P.addPoint(doc, { u: 0.5, v: 0 }), style, 'L1');
+  P.appendNode(doc, body.id, P.addPoint(doc, { u: 0.125, v: 0.76 })); P.setControlPointAbs(doc, body.id, 0, { u: 0.09, v: 0 });
+  P.appendNode(doc, body.id, P.addPoint(doc, { u: 0.5, v: 1.5 }));   P.setControlPointAbs(doc, body.id, 1, { u: 0.22, v: 1.46 });
+  const b = P.addBinding(doc, body.id, [[m.id, t.id]]);
+  const before = computeFaces(structuredClone(doc));                                        // the body alone: its zigzag crosses its own cell copies (computeFaces memoises per doc object, hence the clone)
+  // tail: from a point on the body's first segment to a point on the clone of that segment one cell left and down
+  const A0 = P.nodeWorld(doc, body.start), B0 = P.nodeWorld(doc, body.segments[0].to), C0 = P.cpWorld(doc, body, 0);
+  const n1 = P.insertNodeAt(doc, body.id, 0, P.nearestT(A0, C0, B0, { x: 31.5, y: 42.7 }));
+  const tail = P.startPath(doc, n1, style, 'L1');
+  P.addBinding(doc, tail.id, [[m.id, t.id]]);
+  const via = { cell: { c: -1, r: -1 }, bindingId: b.id, power: 1 };
+  const M = P.viaMatrix(doc, via), src = apply(invert(M), { x: -29.5, y: 17.8 });
+  const A1 = P.nodeWorld(doc, body.start), B1 = P.nodeWorld(doc, body.segments[0].to), C1 = P.cpWorld(doc, body, 0);
+  const n2 = P.insertNodeAt(doc, body.id, 0, P.nearestT(A1, C1, B1, src));
+  P.appendNode(doc, tail.id, { pointId: n2.pointId, cell: n2.cell, via });
+  const faces = computeFaces(doc);
+  console.log('fish faces:', before.length, '->', faces.length, faces.map((f) => Math.round(f.area)).join(','));
+  expect(faces.length).toBeGreaterThan(before.length);                                      // the tail closes regions between the body and its clone
+  expect(faces.some((f) => f.area > 1000 && !before.some((g) => Math.abs(g.area - f.area) < 1))).toBe(true);   // a fish-sized one that was not there before
 });

@@ -21,7 +21,7 @@ export function pointDown(t: Extract<HitTarget, { kind: 'point' }>, w: XY, e: Po
     startDrag(e, t, w, hitScale, { kind: 'pts', ids: selPts.slice(), startPos: P.snapshotPositions(doc.value, selPts) });
     return;
   }
-  startDrag(e, t, w, hitScale, { kind: 'pt', pointId: t.pointId, cell: t.cell, snapTo: null });
+  startDrag(e, t, w, hitScale, { kind: 'pt', pointId: t.pointId, cell: t.cell, via: t.via, snapTo: null });
 }
 
 function startBBox(t: HitTarget, w: XY, e: PointerEvent, hitScale: number): void {
@@ -56,8 +56,11 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
     case 'marquee': d.cur = w; return;
     case 'pt': {
       if (!d.moved) return;
-      const s = A.snapPoint(w, ctx.snapOn, (a) => !a.bindingId && a.pointId === d.pointId, ctx.hitScale);
-      A.mutate((dd) => { const uv = toUV(s, dd.lattice); P.movePoint(dd, d.pointId, uv.u - d.cell.c, uv.v - d.cell.r); });
+      const own = d.via;   // a via node must not snap to its own image (the anchor sitting where it is), or the drag advances in threshold-sized jumps
+      const s = A.snapPoint(w, ctx.snapOn, (a) => a.pointId === d.pointId && (!a.bindingId || (!!own && a.bindingId === own.bindingId && a.power === own.power)), ctx.hitScale);
+      d.snapTo = !d.via && s.anchor && !s.anchor.bindingId && s.anchor.pointId !== d.pointId ? { pointId: s.anchor.pointId, cell: s.anchor.cell } : null;   // a raw point copy of another point: merge on release
+      const src = d.via ? apply(invert(P.viaMatrix(doc.value, d.via)), s) : s;   // a via node moves its point through the inverse of its copy
+      A.mutate((dd) => { const uv = toUV(src, dd.lattice); P.movePoint(dd, d.pointId, uv.u - d.cell.c, uv.v - d.cell.r); });
       return;
     }
     case 'pts': {
@@ -77,7 +80,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
     case 'canchor': {
       if (!d.moved) return;
       const M = copyMatrix(d.copy);
-      const s = A.snapPoint(w, ctx.snapOn, (a) => !a.bindingId && a.pointId === d.pointId, ctx.hitScale);
+      const s = A.snapPoint(w, ctx.snapOn, (a) => a.pointId === d.pointId && (!a.bindingId || (a.bindingId === d.copy.bindingId && a.power === d.copy.power)), ctx.hitScale);   // not its own image either
       const src = apply(invert(M), s);
       A.mutate((dd) => { const uv = toUV(src, dd.lattice); P.movePoint(dd, d.pointId, uv.u - d.cell.c, uv.v - d.cell.r); });
       return;
@@ -118,6 +121,7 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
     A.selectPoints([...(d.add ? UI.selectedPointIds() : []), ...pointsInRect(doc.value, r)]);
     return;
   }
+  if (d.kind === 'pt' && d.moved && d.snapTo) { A.mergeDroppedPoint(d.pointId, d.cell, d.snapTo.pointId, d.snapTo.cell); return; }
   if (d.moved || !d.target) return;
   const t = d.target, s = UI.selection.value;
   switch (t.kind) {

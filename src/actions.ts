@@ -10,7 +10,7 @@ import { snapWorld, projectOnSegment, seedOf, type Anchor } from './engine/hit';
 import { faceAt, seedFor, fillOfFace } from './engine/regions';
 import { strokeToPath } from './engine/freehand';
 import { CONFIG } from './config';
-import type { Doc, XY, UV, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer } from './types';
+import type { Doc, XY, UV, Cell, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer } from './types';
 
 export function mutate(fn: (d: Doc) => boolean | void): boolean {
   const d = draft();
@@ -103,7 +103,9 @@ export function penClickEmpty(w: XY, on: boolean, hitScale = 1): boolean {
   const penNow = UI.pen.value;
   let started: string | null = null;
   const ok = mutate((d) => {
-    const node: Node = s.anchor && !s.anchor.bindingId ? { pointId: s.anchor.pointId, cell: s.anchor.cell } : P.addPoint(d, toUV(s, d.lattice));
+    const node: Node = s.anchor && !s.anchor.bindingId ? { pointId: s.anchor.pointId, cell: s.anchor.cell }
+      : s.anchor && s.anchor.via ? { pointId: s.anchor.pointId, cell: s.anchor.cell, via: { ...s.anchor.via, cell: { ...s.anchor.via.cell } } }
+      : P.addPoint(d, toUV(s, d.lattice));
     if (penNow) { P.appendNode(d, penNow.pathId, node); return; }
     const path = P.startPath(d, node, UI.prefs.value.style, activeLayerId(d));
     bindNewPath(d, path.id);
@@ -113,6 +115,7 @@ export function penClickEmpty(w: XY, on: boolean, hitScale = 1): boolean {
   return ok;
 }
 
+// Click a point copy or a clone anchor. A clone anchor arrives as a node with `via`, and the segment lands where it was clicked.
 export function penClickNode(node: Node): boolean {
   const penNow = UI.pen.value;
   if (penNow) {
@@ -124,7 +127,7 @@ export function penClickNode(node: Node): boolean {
   }
   let pathId: string | null = null;
   const ok = mutate((d) => {
-    const openId = P.openEndAt(d, node.pointId);
+    const openId = node.via ? null : P.openEndAt(d, node.pointId);
     if (openId) { P.orientToEnd(d, openId, node.pointId, node.cell); pathId = openId; return; }
     const path = P.startPath(d, node, UI.prefs.value.style, activeLayerId(d));
     bindNewPath(d, path.id);
@@ -132,6 +135,41 @@ export function penClickNode(node: Node): boolean {
   });
   if (pathId) { UI.pen.value = { pathId }; UI.selection.value = null; }
   return ok;
+}
+
+// Click a line with the Pen: split the source segment where the click projects and draw from the new node. On a clone
+// copy the node is seen through that copy (`via`); on the source or a cell copy it is a plain shared node.
+export function penClickSegment(pathId: string, j: number, copy: Copy, w: XY, on: boolean, hitScale = 1): boolean {
+  const penNow = UI.pen.value;
+  if (penNow && penNow.pathId === pathId) return penClickEmpty(w, on, hitScale);
+  const M = copyMatrix(copy), src = apply(invert(M), w);
+  let started: string | null = null;
+  const ok = mutate((d) => {
+    const p = P.getPath(d, pathId);
+    if (!p || j < 0 || j >= p.segments.length) return false;
+    const A = P.nodeWorld(d, P.prevNode(p, j)), B = P.nodeWorld(d, p.segments[j].to), C = P.cpWorld(d, p, j);
+    const n = P.insertNodeAt(d, pathId, j, P.nearestT(A, C, B, src));
+    const node: Node = copy.bindingId ? { pointId: n.pointId, cell: n.cell, via: { cell: { ...copy.cell }, bindingId: copy.bindingId, power: copy.power } }
+      : { pointId: n.pointId, cell: { c: n.cell.c + copy.cell.c, r: n.cell.r + copy.cell.r } };
+    if (penNow) { P.appendNode(d, penNow.pathId, node); return; }
+    const path = P.startPath(d, node, UI.prefs.value.style, activeLayerId(d));
+    bindNewPath(d, path.id);
+    started = path.id;
+  });
+  if (started) { UI.pen.value = { pathId: started }; UI.selection.value = null; }
+  return ok;
+}
+
+// A point drag released on another raw point copy makes them one point.
+export function mergeDroppedPoint(fromId: string, fromCell: Cell, toId: string, toCell: Cell): boolean {
+  if (fromId === toId) return false;
+  const ok = mutate((d) => { if (!P.getPoint(d, fromId) || !P.getPoint(d, toId)) return false; P.mergePoints(d, fromId, fromCell, toId, toCell); });
+  if (!ok) return false;
+  const s = UI.selection.value;
+  if (s && s.kind === 'points') UI.selection.value = { kind: 'points', ids: [...new Set(s.ids.map((id) => (id === fromId ? toId : id)))] };
+  else if (s && s.kind === 'path' && !P.getPath(doc.value, s.id)) UI.selection.value = null;                 // the merge collapsed it
+  if (UI.pen.value && !P.getPath(doc.value, UI.pen.value.pathId)) UI.pen.value = null;                      // a just-started (zero-segment) pen path goes with the merge
+  return true;
 }
 
 export function endPen(): boolean {

@@ -8,6 +8,8 @@ import { parseDoc, serializeDoc } from '../../src/engine/serialize';
 import { faces, copyMatrix } from '../../src/state/derived';
 import { apply, invert } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
+import * as select from '../../src/interaction/tools/select';
+import type { Drag } from '../../src/types';
 
 function fresh() { reset(); UI.resetUi(); doc.value = emptyDoc(); UI.viewport.value = { width: 800, height: 600 }; UI.prefs.value = { ...UI.prefs.value, snap: false }; }
 const W = (u: number, v: number) => ({ x: u * 240, y: v * 240 });
@@ -268,4 +270,119 @@ test('"Apply to new paths" is lit and toggled per element, keeping newPathGroups
   expect(parseDoc(serializeDoc(doc.value))).toEqual(doc.value);
   A.toggleNewPathElement(m);
   expect(doc.value.newPathGroups).toEqual([[t]]);
+});
+
+// --- pen joins (spec 2026-09-29 §3–§4)
+
+const base = { cell: { c: 0, r: 0 }, bindingId: null, power: 0 };
+
+test('pen: clicking a source segment inserts a shared node and starts a path from it; the outline is unchanged', () => {
+  fresh(); A.setTool('pen');
+  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.9, 0.5), false); A.endPen();
+  const body = doc.value.paths[0];
+  A.setTool('pen');
+  expect(A.penClickSegment(body.id, 0, base, W(0.3, 0.52), false)).toBe(true);
+  const b2 = doc.value.paths[0];
+  expect(b2.segments).toHaveLength(2);
+  expect(P.nodeUVAbs(doc.value, b2.segments[0].to)).toEqual({ u: expect.closeTo(0.3, 6), v: expect.closeTo(0.5, 6) });
+  const tail = doc.value.paths[1];
+  expect(UI.pen.value?.pathId).toBe(tail.id);
+  expect(tail.start).toEqual(b2.segments[0].to);                                   // shared node
+  A.penClickEmpty(W(0.3, 0.9), false); A.endPen();
+  expect(doc.value.points).toHaveLength(4);
+});
+
+test('pen: clicking a segment of the path in progress adds a free point instead of splitting it', () => {
+  fresh(); A.setTool('pen');
+  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.9, 0.5), false);
+  const p = doc.value.paths[0];
+  A.penClickSegment(p.id, 0, base, W(0.5, 0.52), false);
+  expect(doc.value.paths).toHaveLength(1);
+  expect(doc.value.paths[0].segments).toHaveLength(2);                              // appended, not split
+  expect(doc.value.paths[0].segments[1].to.via).toBeUndefined();
+});
+
+test('pen: clicking a clone segment splits the source and starts a via node at the clicked spot; releasing a dragged point on a point merges them', () => {
+  fresh();
+  A.addElement('rotate');                                                            // half-turn about the centre, applied to new paths
+  A.setTool('pen');
+  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.4, 0.5), false); A.endPen();
+  const body = doc.value.paths[0], b = doc.value.bindings[0];
+  const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 };
+  A.setTool('pen');
+  A.penClickSegment(body.id, 0, clone, W(0.8, 0.52), false);                         // the clone runs (0.9,0.5)→(0.6,0.5)
+  const tail = doc.value.paths[1];
+  expect(doc.value.paths[0].segments).toHaveLength(2);                              // source split
+  expect(tail.start.via).toEqual(clone);
+  const w = P.nodeWorld(doc.value, tail.start);
+  expect(w.x).toBeCloseTo(0.8 * 240, 4); expect(w.y).toBeCloseTo(0.5 * 240, 4);
+  A.penClickEmpty(W(0.8, 0.9), false); A.endPen();
+  // merge: drag the tail's free end onto the body's start (re-read the tail: each commit is a fresh draft)
+  const end = doc.value.paths[1].segments[0].to, target = body.start;
+  expect(A.mergeDroppedPoint(end.pointId, end.cell, target.pointId, target.cell)).toBe(true);
+  expect(doc.value.points.some((p) => p.id === end.pointId)).toBe(false);
+  expect(doc.value.paths[1].segments[0].to).toEqual({ pointId: target.pointId, cell: target.cell });
+  expect(parseDoc(serializeDoc(doc.value))).toEqual(doc.value);
+});
+
+test('removing the binding a via node depends on materialises the node where it was', () => {
+  fresh(); A.addElement('mirror'); A.setTool('pen');
+  A.penClickEmpty(W(0.1, 0.3), false); A.penClickEmpty(W(0.4, 0.3), false); A.endPen();
+  const body = doc.value.paths[0], b = doc.value.bindings[0];
+  A.setTool('pen');
+  A.penClickSegment(body.id, 0, { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 }, W(0.7, 0.31), false);
+  A.penClickEmpty(W(0.7, 0.8), false); A.endPen();
+  const before = P.nodeWorld(doc.value, doc.value.paths[1].start);
+  A.removeBinding(b.id);
+  const after = doc.value.paths[1].start;
+  expect(after.via).toBeUndefined();
+  expect(P.nodeWorld(doc.value, after).x).toBeCloseTo(before.x, 6); expect(P.nodeWorld(doc.value, after).y).toBeCloseTo(before.y, 6);
+});
+
+// --- tools: the point drag with a via node, and merge on release
+
+test('dragging a via node follows the pointer each move (it never snaps to its own image); releasing a raw point on another point merges them', () => {
+  fresh(); A.addElement('rotate'); A.setTool('pen');
+  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.4, 0.5), false); A.endPen();
+  const body = doc.value.paths[0], b = doc.value.bindings[0];
+  A.setTool('pen');
+  A.penClickSegment(body.id, 0, { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 }, W(0.8, 0.52), false);
+  A.penClickEmpty(W(0.8, 0.9), false); A.endPen();
+  A.setTool('select');
+  const ctx = { snapOn: false, hitScale: 1, threshold: 12 }, ev = {} as PointerEvent;
+  const n = doc.value.paths[1].start, w0 = P.nodeWorld(doc.value, n);
+  const d: Drag = { kind: 'pt', pointId: n.pointId, cell: n.cell, via: n.via, snapTo: null, target: null, start: w0, moved: true, pointerId: 1, hitScale: 1 };
+  for (let i = 1; i <= 4; i++) {
+    select.onMove(d, { x: w0.x + 3 * i, y: w0.y + 2 * i }, ev, ctx);
+    const w = P.nodeWorld(doc.value, doc.value.paths[1].start);
+    expect(w.x).toBeCloseTo(w0.x + 3 * i, 6); expect(w.y).toBeCloseTo(w0.y + 2 * i, 6);
+  }
+  expect(d.snapTo).toBe(null);                                                                   // a via node never merges
+  expect(doc.value.paths[1].start.via).toEqual(n.via);
+  // the tail's free end dragged onto the body's start: snapTo is set on the move, the release merges
+  const end = doc.value.paths[1].segments[0].to, target = P.nodeWorld(doc.value, body.start);
+  const dp: Drag = { kind: 'pt', pointId: end.pointId, cell: end.cell, snapTo: null, target: null, start: P.nodeWorld(doc.value, end), moved: true, pointerId: 1, hitScale: 1 };
+  select.onMove(dp, { x: target.x + 4, y: target.y - 3 }, ev, ctx);
+  expect(dp.snapTo).toEqual({ pointId: body.start.pointId, cell: body.start.cell });
+  select.onUp(dp, { x: target.x + 4, y: target.y - 3 }, ev, ctx);
+  expect(doc.value.points.some((p) => p.id === end.pointId)).toBe(false);
+  expect(doc.value.paths[1].segments[0].to).toEqual({ pointId: body.start.pointId, cell: body.start.cell });
+});
+
+test('a merge on release is part of the drag gesture: one undo restores the document from before the drag', () => {
+  fresh(); A.setTool('pen');
+  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  A.penClickEmpty(W(0.6, 0.6), false); A.penClickEmpty(W(0.9, 0.6), false); A.endPen();
+  const start = doc.value, a = doc.value.paths[0], b = doc.value.paths[1];
+  const from = b.start, to = a.segments[0].to;
+  beginGesture();                                                                                // as pointer.ts does once the drag has moved
+  A.mutate((d) => { P.movePoint(d, from.pointId, 0.45, 0.12); });
+  A.mutate((d) => { P.movePoint(d, from.pointId, 0.41, 0.1); });
+  expect(A.mergeDroppedPoint(from.pointId, from.cell, to.pointId, to.cell)).toBe(true);
+  endGesture();
+  expect(doc.value.paths[1].start).toEqual(to);
+  A.undo();
+  expect(doc.value).toBe(start);                                                                 // not just the merge: the moves went with it
+  A.redo();
+  expect(doc.value.paths[1].start).toEqual(to);
 });
