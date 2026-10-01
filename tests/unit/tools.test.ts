@@ -4,6 +4,7 @@ import { test, expect } from 'vitest';
 import { doc, emptyDoc } from '../../src/state/doc';
 import * as UI from '../../src/state/ui';
 import * as P from '../../src/engine/paths';
+import * as A from '../../src/actions';
 import * as pen from '../../src/interaction/tools/pen';
 import * as freehand from '../../src/interaction/tools/freehand';
 import * as select from '../../src/interaction/tools/select';
@@ -300,4 +301,21 @@ test('Select: ⇧-click trimming a marquee picked through a clone keeps the clon
   const s2 = UI.selection.value;
   expect(s2 && s2.kind === 'points' && s2.copies?.[a]?.bindingId).toBeTruthy();
   expect(s2 && s2.kind === 'points' && s2.copies?.[b]?.bindingId).toBeTruthy();
+});
+
+// --- Residual round
+
+test('N3: a point placed on another layer\'s point stays a target; clicking it again on its own layer resumes its path', () => {
+  let l2 = '';
+  fresh('pen', (d) => { d.layers.push({ id: 'L2', name: 'Layer 2' }); l2 = line(d, [{ u: 0.25, v: 0.25 }, { u: 0.5, v: 0.5 }], 'L2').id; });   // L2 ends at (120,120)
+  const l2Before = JSON.stringify(P.getPath(doc.value, l2));
+  click({ x: 60, y: 180 }); click({ x: 120, y: 120 });                     // on L1: the end is a location-only copy of L2's end
+  const id = UI.pen.value!.pathId;
+  A.endPen();
+  const y = P.getPath(doc.value, id)!.segments[0].to;
+  expect(P.pathNodes(P.getPath(doc.value, l2)!).some((n) => n.pointId === y.pointId)).toBe(false);
+  click({ x: 120, y: 120 });
+  expect(UI.pen.value?.pathId).toBe(id);                                     // resumed (D5), not a new unconnected path
+  expect(doc.value.paths).toHaveLength(2);
+  expect(JSON.stringify(P.getPath(doc.value, l2))).toBe(l2Before);
 });

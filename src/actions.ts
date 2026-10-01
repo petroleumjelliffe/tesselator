@@ -55,9 +55,15 @@ export function drawSnap(w: XY, on: boolean, hitScale: number, stroke: DrawStrok
   const thr = threshold(hitScale), d = doc.value;
   const extra = stroke ? strokeCands(stroke.pts, stroke.groups.flatMap((g) => strokeCopies(d, g)), w, thr) : [];
   const ex = stroke?.pathId ? ownExclusions(d, stroke.pathId) : {};
-  const s = pickSnap(snapTargets.value, w, thr, { extra, sticky: UI.snapSticky.value, cats: on ? undefined : NODE_OR_OWN_START, ...ex });
+  const layerId = (stroke?.pathId && P.getPath(d, stroke.pathId)?.layerId) || activeLayerId(d);
+  const s = pickSnap(snapTargets.value, w, thr, { extra, sticky: UI.snapSticky.value, cats: on ? undefined : NODE_OR_OWN_START, prefer: joinsOn(d, layerId), ...ex });
   return s ?? (on ? gridResult(w, d.lattice, UI.prefs.value.gridDivisions) : null);
 }
+
+// SN5 at choice time: of coincident candidates, prefer the one a release would join on this layer.
+export const joinsOn = (d: Doc, layerId: string) => (x: SnapResult): boolean => joinable(d, x.hit, layerId);
+// The layer of the path(s) using a point; the active layer for a point no path uses.
+export const layerOfPoint = (d: Doc, pointId: string): string => d.paths.find((p) => P.pathNodes(p).some((n) => n.pointId === pointId))?.layerId ?? activeLayerId(d);
 
 // A path's world polyline, curves sampled, in its own node order.
 export function pathPolyline(d: Doc, p: Path): XY[] {
@@ -210,12 +216,11 @@ export function penClickEmpty(w: XY, on: boolean, hitScale = 1): boolean {
 
 // A point drag released on a snap joins the point to what it landed on (same layer only; see engine/joins.ts).
 export function joinDroppedPoint(pointId: string, cell: Cell, hit: SnapHit): boolean {
-  const layerOf = (d: Doc) => d.paths.find((p) => P.pathNodes(p).some((n) => n.pointId === pointId))?.layerId ?? activeLayerId(d);
   let toId: string | null = null;
   const ok = mutate((d) => {
     if (!P.getPoint(d, pointId)) return false;
     const before = new Set(d.points.map((q) => q.id));
-    if (!joinPointToHit(d, pointId, cell, hit, layerOf(d))) return false;
+    if (!joinPointToHit(d, pointId, cell, hit, layerOfPoint(d, pointId))) return false;
     const users = d.paths.flatMap((p) => P.pathNodes(p)).map((n) => n.pointId);
     toId = hit.kind === 'node' ? hit.pointId : users.find((id) => !before.has(id)) ?? null;
   });

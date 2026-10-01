@@ -73,8 +73,10 @@ export function buildTargets(doc: Doc): TargetSet {
   const inBox = (p: XY) => p.x >= x0 - 1e-6 && p.x <= x1 + 1e-6 && p.y >= y0 - 1e-6 && p.y <= y1 + 1e-6;
   const diag = Math.hypot(x1 - x0, y1 - y0), mid = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
   const seenP = new Set<string>(), seenL = new Set<string>();
+  // Duplicates at one spot are dropped per category (SN5), except nodes: different points never hide each other (a
+  // location-only copy on another layer sits exactly on its source). Coincident nodes are told apart at choice time.
   const pushP = (t: Omit<PointTarget, 'id'> & { id?: string }) => {
-    const k = `${t.cat}:${ptKey(t.at)}`;
+    const k = t.cat === 'node' ? `node:${t.pointIds?.[0] ?? ''}:${ptKey(t.at)}` : `${t.cat}:${ptKey(t.at)}`;
     if (!inBox(t.at) || seenP.has(k)) return;
     seenP.add(k);
     points.push({ ...t, id: t.id ?? k });
@@ -154,9 +156,13 @@ export function precedence(x: { cls: 'point' | 'line'; cat: SnapCat }): number {
 // One pick among candidates: the nearest point within the threshold, else the nearest line, ties by precedence. A held
 // (sticky) candidate stays until it is beyond 1.5× the threshold, an earlier-precedence category is in range, or a
 // same-class rival is nearer by half the threshold.
-export function choose(cands: SnapResult[], threshold: number, sticky: string | null): SnapResult | null {
+// `prefer` breaks exact ties (coincident candidates, SN5): e.g. of two nodes at one spot, the one joinable on the
+// drawing layer.
+export function choose(cands: SnapResult[], threshold: number, sticky: string | null, prefer?: (x: SnapResult) => boolean): SnapResult | null {
   const key = (x: SnapResult) => x.d + precedence(x) * 1e-3 * threshold;
-  const best = (xs: SnapResult[]) => xs.reduce<SnapResult | null>((b, x) => (!b || key(x) < key(b) ? x : b), null);
+  const tie = 1e-9 * (1 + threshold);
+  const better = (x: SnapResult, b: SnapResult) => key(x) < key(b) - tie || (Math.abs(key(x) - key(b)) <= tie && !!prefer && prefer(x) && !prefer(b));
+  const best = (xs: SnapResult[]) => xs.reduce<SnapResult | null>((b, x) => (!b || better(x, b) ? x : b), null);
   const within = cands.filter((x) => x.d <= threshold);
   let pick = best(within.filter((x) => x.cls === 'point')) ?? best(within.filter((x) => x.cls === 'line'));
   const prev = sticky ? cands.find((x) => x.id === sticky) ?? null : null;
@@ -173,7 +179,7 @@ export function choose(cands: SnapResult[], threshold: number, sticky: string | 
 
 export type PickOpts = {
   extra?: SnapResult[]; sticky?: string | null; excludePoints?: ReadonlySet<string>; excludePaths?: ReadonlySet<string>;
-  cats?: ReadonlySet<SnapCat>; pointsOnly?: boolean; linesOnly?: boolean;
+  cats?: ReadonlySet<SnapCat>; pointsOnly?: boolean; linesOnly?: boolean; prefer?: (x: SnapResult) => boolean;
 };
 
 export function pickSnap(set: TargetSet, p: XY, threshold: number, opts: PickOpts = {}): SnapResult | null {
@@ -198,7 +204,7 @@ export function pickSnap(set: TargetSet, p: XY, threshold: number, opts: PickOpt
     if (x.d > reach || !allowed(x.cat) || (opts.pointsOnly && x.cls === 'line') || (opts.linesOnly && x.cls === 'point')) continue;
     cands.push(x);
   }
-  return choose(cands, threshold, opts.sticky ?? null);
+  return choose(cands, threshold, opts.sticky ?? null, opts.prefer);
 }
 
 export function gridResult(p: XY, lat: Lattice, div: number): SnapResult {

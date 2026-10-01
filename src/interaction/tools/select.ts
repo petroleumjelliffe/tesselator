@@ -21,7 +21,7 @@ const sameCopy = (a: Copy, b: Copy) => a.cell.c === b.cell.c && a.cell.r === b.c
 // `also` names further points that move with it (a several-point drag), which are not targets either.
 function nodeSnap(targets: TargetSet, pointId: string, S: Matrix, w: XY, ctx: ToolCtx, also: string[] = []): SnapResult | null {
   const extra = ctx.snapOn ? ownFixedCands(S, pointCopyMatrices(doc.value, pointId), w, ctx.threshold) : [];
-  const s = pickSnap(targets, w, ctx.threshold, { extra, sticky: UI.snapSticky.value, excludePoints: new Set([pointId, ...also]), cats: ctx.snapOn ? undefined : NODE_ONLY });
+  const s = pickSnap(targets, w, ctx.threshold, { extra, sticky: UI.snapSticky.value, excludePoints: new Set([pointId, ...also]), cats: ctx.snapOn ? undefined : NODE_ONLY, prefer: A.joinsOn(doc.value, A.layerOfPoint(doc.value, pointId)) });
   return s ?? (ctx.snapOn ? gridResult(w, doc.value.lattice, UI.prefs.value.gridDivisions) : null);
 }
 
@@ -29,13 +29,13 @@ function nodeSnap(targets: TargetSet, pointId: string, S: Matrix, w: XY, ctx: To
 // a drop joins what lies under it in that frame: the node or line at M⁻¹(at), which the instance shows exactly on the
 // snapped target. Where nothing is there (the target cannot be expressed in that frame, e.g. a plain node whose
 // pre-image is no copy of anything), the drop stays location only. Same-layer rule as every join (joinDroppedPoint).
-// `targets` are the drag's own, taken before the point moved: the moved point now sits on the pre-image, and targets
-// built from the current document would have merged the node there into its own (excluded) target.
+// The moved point now sits on the pre-image; node targets of different points never hide each other, so the node
+// there is still a target.
 const JOINABLE: ReadonlySet<SnapCat> = new Set<SnapCat>(['node', 'line']);
-function joinThrough(targets: TargetSet, M: Matrix, pointId: string, cell: Cell, s: SnapResult, also: string[] = []): void {
+function joinThrough(M: Matrix, pointId: string, cell: Cell, s: SnapResult, also: string[] = []): void {
   if (s.hit.kind !== 'node' && s.hit.kind !== 'curve') return;
-  const src = apply(invert(M), s.at);
-  const r = pickSnap(targets, src, 1e-6 * (1 + Math.hypot(src.x, src.y)), { excludePoints: new Set([pointId, ...also]), cats: JOINABLE });
+  const src = apply(invert(M), s.at), d = doc.value;
+  const r = pickSnap(snapTargets.value, src, 1e-6 * (1 + Math.hypot(src.x, src.y)), { excludePoints: new Set([pointId, ...also]), cats: JOINABLE, prefer: A.joinsOn(d, A.layerOfPoint(d, pointId)) });
   if (r && (r.hit.kind === 'node' || r.hit.kind === 'curve')) A.joinDroppedPoint(pointId, cell, r.hit);
 }
 
@@ -216,10 +216,10 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
     return;
   }
   if (d.kind === 'pt' && d.moved && d.snap && !d.via) { A.joinDroppedPoint(d.pointId, d.cell, d.snap.hit); return; }
-  if (d.kind === 'canchor' && d.moved && d.snap) { joinThrough(d.targets, copyMatrix(d.copy), d.pointId, d.cell, d.snap); return; }
+  if (d.kind === 'canchor' && d.moved && d.snap) { joinThrough(copyMatrix(d.copy), d.pointId, d.cell, d.snap); return; }
   if (d.kind === 'pts' && d.moved && d.snap && d.grab) {
     const g = d.grab, others = d.ids.filter((id) => id !== g.pointId);
-    if (g.via) joinThrough(d.targets, P.viaMatrix(doc.value, g.via), g.pointId, g.cell, d.snap, others);
+    if (g.via) joinThrough(P.viaMatrix(doc.value, g.via), g.pointId, g.cell, d.snap, others);
     else if (d.snap.hit.kind === 'node' || d.snap.hit.kind === 'curve') A.joinDroppedPoint(g.pointId, g.cell, d.snap.hit);
     return;
   }
