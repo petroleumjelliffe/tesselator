@@ -43,7 +43,6 @@ export function visiblePointIds(doc: Doc, ctx: HitContext): Set<string> | null {
   if (ctx.pen || ctx.tool === 'freehand' || ctx.tool === 'pen') return null;
   const s = ctx.selection, set = new Set<string>();
   if (s && s.kind === 'points') for (const id of s.ids) set.add(id);
-  if (s && s.kind === 'path') { const p = getPath(doc, s.id); if (p) for (const n of pathNodes(p)) set.add(n.pointId); }
   return set;
 }
 
@@ -87,6 +86,17 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
   const selPath = sel && sel.kind === 'path' ? getPath(doc, sel.id) : null;
   const selM = sel && sel.kind === 'path' ? copyMatrixOf(sel.copy, lat, ctx.cloneMatrices) : null;
 
+  // S2/S6: the selected instance's own nodes, tested first so a node beats a coincident box handle.
+  if (ctx.tool === 'select' && selPath && selM && sel && sel.kind === 'path') {
+    const nodes = pathNodes(selPath), Pw = pathWorld(doc, selPath).map((q) => apply(selM, q)), k = sel.copy.cell;
+    for (let i = 0; i < nodes.length; i++) {
+      if (dist(w, Pw[i]) > rPoint) continue;
+      const n = nodes[i];
+      if (sel.copy.bindingId) { if (!n.via) return { kind: 'canchor', pathId: selPath.id, pointId: n.pointId, cell: n.cell, copy: sel.copy }; continue; }
+      return n.via ? { kind: 'point', pointId: n.pointId, cell: n.cell, via: { ...n.via, cell: { c: n.via.cell.c + k.c, r: n.via.cell.r + k.r } } }
+        : { kind: 'point', pointId: n.pointId, cell: { c: n.cell.c + k.c, r: n.cell.r + k.r } };
+    }
+  }
   if (ctx.tool === 'select' && selPath && selM && sel && sel.kind === 'path') {
     const box = boundsWorld(doc, selPath, selM);
     const hs = bboxHandles(box);
@@ -111,7 +121,7 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
     }
     // Via nodes of the pen path and the selected path sit on a clone; hit them as points with their via.
     const penPath = ctx.pen ? getPath(doc, ctx.pen.pathId) : null;
-    for (const p of [penPath, selPath]) if (p) for (const n of pathNodes(p)) {
+    for (const p of [penPath]) if (p) for (const n of pathNodes(p)) {
       if (!n.via) continue;
       const d = dist(w, nodeWorld(doc, n));
       if (d < bd) { bd = d; best = { kind: 'point', pointId: n.pointId, cell: n.cell, via: n.via }; }
@@ -126,9 +136,6 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
     };
     if (ctx.tool === 'pen') {
       for (const ci of ctx.copies) { if (!ci.copy.bindingId) continue; const p = getPath(doc, ci.pathId); const t = p && anchorsOf(p, ci.copy, ci.M); if (t) return t; }
-    } else if (selPath && selM && sel && sel.kind === 'path' && sel.copy.bindingId) {
-      const t = anchorsOf(selPath, sel.copy, selM);
-      if (t) return t;
     }
   }
   if (ctx.tool === 'select' || ctx.tool === 'pen') {

@@ -48,7 +48,7 @@ test('priority: bbox handle beats point beats segment; points are only hit when 
   const { d, path } = scene();
   const sel: Selection = { kind: 'path', id: path.id, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } };
   const ctx = ctxFor(d, { selection: sel });
-  expect(hitTest(d, ctx, { x: 24, y: 24 })!.kind).toBe('bbox');       // corner handle sits on the point
+  expect(hitTest(d, ctx, { x: 24, y: 24 })!.kind).toBe('point');      // the node beats the coincident corner handle (S6)
   expect(hitTest(d, ctx, { x: 60, y: 24 })!.kind).toBe('bbox');       // a zero-height box puts its edge handle on the midpoint too
   P.setControlPointWorld(d, path.id, 0, { x: 50, y: 70 });            // now the box has height and the diamond sits away from every handle
   expect(hitTest(d, ctxFor(d, { selection: sel }), { x: 50, y: 70 })!.kind).toBe('diamond');
@@ -141,6 +141,17 @@ test('a via node of the selected path is hit as a point carrying its via', () =>
   const w = P.nodeWorld(d, tail.start);
   const t = hitTest(d, ctxFor(d, { selection: { kind: 'path', id: tail.id, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } } }), { x: w.x + 2, y: w.y + 1 });
   expect(t).toMatchObject({ kind: 'point', pointId: path.start.pointId, via });
+});
+
+test('S2/S6: a selected instance\'s nodes are hit there and only there, before its box handles', () => {
+  const d = makeDoc();
+  const n0 = P.addPoint(d, { u: 0.2, v: 0.2 });
+  const p = P.startPath(d, n0, { color: '#000', weight: 2 }, 'L1');
+  P.appendNode(d, p.id, P.addPoint(d, { u: 0.6, v: 0.2 }));                         // (48,48)-(144,48): a flat box whose corners are the nodes
+  const sel = { kind: 'path' as const, id: p.id, copy: { cell: { c: 1, r: 0 }, bindingId: null, power: 0 } };
+  const ctx = ctxFor(d, { selection: sel });
+  expect(hitTest(d, ctx, { x: 288, y: 48 })).toEqual({ kind: 'point', pointId: n0.pointId, cell: { c: 1, r: 0 } });   // the node beats the coincident box corner
+  expect(hitTest(d, ctx, { x: 48, y: 48 })?.kind).not.toBe('point');                                                    // the same node in the base cell is not shown
 });
 
 test('the clone image of a via node is neither an anchor nor a canchor hit; the plain nodes of the same clone still are', () => {

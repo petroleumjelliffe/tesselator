@@ -162,7 +162,7 @@ function Points() {
   const show = new Set<string>();
   if (sel && sel.kind === 'points') for (const id of sel.ids) show.add(id);
   const penPath = pn ? getPath(d, pn.pathId) : null, selPath = sel && sel.kind === 'path' ? getPath(d, sel.id) : null;
-  for (const p of [penPath, selPath]) if (p) for (const n of pathNodes(p)) show.add(n.pointId);
+  if (penPath) for (const n of pathNodes(penPath)) show.add(n.pointId);
   const penLast = penPath ? pathNodes(penPath).at(-1)! : null;
   const selPts = new Set(sel && sel.kind === 'points' ? sel.ids : []);
   const out = [];
@@ -174,13 +174,22 @@ function Points() {
     const cls = ['pt', (isLast || selPts.has(pt.id)) && 'sel', isHover && 'hover', !isBase(o) && 'dim'].filter(Boolean).join(' ');
     out.push(<circle key={`${pt.id}:${cellKey(o)}`} class={cls} cx={w.x} cy={w.y} r={(isBase(o) ? CONFIG.HANDLE_PX : CONFIG.HANDLE_PX - 1) / z} />);
   }
-  // Via nodes of the pen path and the selected path: drawn where they are, on the clone.
-  for (const p of [penPath, selPath]) if (p) for (const [i, n] of pathNodes(p).entries()) {
+  // Via nodes of the pen path: drawn where they are, on the clone.
+  for (const p of [penPath]) if (p) for (const [i, n] of pathNodes(p).entries()) {
     if (!n.via) continue;
     const w = nodeWorld(d, n);
     const isLast = !!penLast && sameNode(penLast, n);
     const isHover = !!h && h.kind === 'point' && !!h.via && h.pointId === n.pointId && h.via.bindingId === n.via.bindingId && h.via.power === n.via.power && h.via.cell.c === n.via.cell.c && h.via.cell.r === n.via.cell.r;
     out.push(<circle key={`via:${p.id}:${i}`} class={['pt', isLast && 'sel', isHover && 'hover'].filter(Boolean).join(' ')} cx={w.x} cy={w.y} r={CONFIG.HANDLE_PX / z} />);
+  }
+  // S2: the selected instance's nodes, drawn only there (a clone instance's are drawn by CloneAnchors).
+  if (layer.value === 'drawing' && sel && sel.kind === 'path' && selPath && !sel.copy.bindingId && !showAll) {
+    const M = copyMatrix(sel.copy);
+    pathNodes(selPath).forEach((n, i) => {
+      const w = apply(M, nodeWorld(d, n));
+      const isHover = !!h && h.kind === 'point' && h.pointId === n.pointId;
+      out.push(<circle key={`sel:${i}`} class={['pt', isHover && 'hover'].filter(Boolean).join(' ')} cx={w.x} cy={w.y} r={CONFIG.HANDLE_PX / z} />);
+    });
   }
   return <g class={layer.value === 'drawing' ? undefined : 'inactive-layer'}>{out}</g>;
 }
