@@ -154,7 +154,9 @@ test('snapBodyDelta: an end meets its own quarter-turn clone', () => {
   near(s.delta, sol.delta);
 });
 
-test('snapBodyDelta: the start meets the clone of the end (rotation, SN3a)', () => {
+const TIE_EPS = [-0.5, -1e-6, -1e-9, 0, 1e-9, 1e-6, 0.5];
+
+test('snapBodyDelta: the start meets the clone of the end (rotation, SN3a), stably across tiny pointer changes', () => {
   const d = makeDoc();
   const stub = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.4, v: 0.1 }]);       // open two-node path
   const el = P.addElement(d, { kind: 'rotate', u: 0.5, v: 0.5, n: 4 });
@@ -164,12 +166,25 @@ test('snapBodyDelta: the start meets the clone of the end (rotation, SN3a)', () 
   const sol = solveCopyMeet(IDENTITY, wc.M, Pw[0], Pw[1]);              // start (pi) meets the clone of the end (pj)
   expect(sol?.kind).toBe('point');
   if (sol?.kind !== 'point') return;
-  const s = snapBodyDelta(bodyTargets(d, buildTargets(d), stub.id)!, addXY(sol.delta, { x: 1, y: 1 }), 12, null)!;
-  near(s.delta, sol.delta);                                             // the body moves by exactly the solved delta
-  near(apply(wc.M, addXY(Pw[1], s.delta)), addXY(Pw[0], s.delta));      // the end's clone now sits on the moved start
-  expect(s.res.cls).toBe('point');
-  expect(s.res.cat).toBe('ownFixed');
-  expect(s.res.label).toBe(STR.snap.meetsCloneEnd);
+  const T = bodyTargets(d, buildTargets(d), stub.id)!;
+  // End B (the end) meets the inverse clone of end A (the start) at the exact same body delta: a tie on `d` that must
+  // resolve to one stable nodeIndex/id/at, not flip with sub-pixel pointer noise (round 1 fix).
+  let ref: ReturnType<typeof snapBodyDelta> = null;
+  for (const ox of TIE_EPS) for (const oy of TIE_EPS) {
+    const s = snapBodyDelta(T, addXY(sol.delta, { x: ox, y: oy }), 12, null)!;
+    expect(s).toBeTruthy();
+    expect(s.res.cls).toBe('point');
+    expect(s.res.cat).toBe('ownFixed');
+    expect(s.res.label).toBe(STR.snap.meetsCloneEnd);
+    if (!ref) ref = s;
+    else {
+      expect(s.nodeIndex).toBe(ref.nodeIndex);
+      expect(s.res.id).toBe(ref.res.id);
+      near(s.res.at, ref.res.at);
+    }
+  }
+  near(ref!.delta, sol.delta);                                          // the body moves by exactly the solved delta
+  near(apply(wc.M, addXY(Pw[1], ref!.delta)), addXY(Pw[0], ref!.delta)); // the end's clone now sits on the moved start
 });
 
 function mirrorAxisDoc(): { d: Doc; elId: string } {                   // square 240, vertical mirror axis through u = 0.5 (x = 120)
@@ -178,7 +193,7 @@ function mirrorAxisDoc(): { d: Doc; elId: string } {                   // square
   return { d, elId: el.id };
 }
 
-test('snapBodyDelta: ends lined up along a mirror axis offer a clone-end line hint', () => {
+test('snapBodyDelta: ends lined up along a mirror axis offer a clone-end line hint, stably across tiny pointer changes', () => {
   const { d, elId } = mirrorAxisDoc();
   const stub = line(d, [{ u: 0.2, v: 0.3 }, { u: 0.4, v: 0.3 }]);       // same v: lined up along the (vertical) axis
   const b = P.addBinding(d, stub.id, [[elId]]);
@@ -187,11 +202,26 @@ test('snapBodyDelta: ends lined up along a mirror axis offer a clone-end line hi
   const sol = solveCopyMeet(IDENTITY, wc.M, Pw[0], Pw[1]);
   expect(sol?.kind).toBe('line');
   if (sol?.kind !== 'line') return;
-  const delta = addXY(sol.base, { x: 1, y: 1 });                       // near the solved line, slightly off it
-  const s = snapBodyDelta(bodyTargets(d, buildTargets(d), stub.id)!, delta, 12, null);
-  expect(s?.res.cls).toBe('line');
-  expect(s?.res.cat).toBe('ownFixed');
-  expect(s?.res.label).toBe(STR.snap.meetsCloneEndLine);
+  const T = bodyTargets(d, buildTargets(d), stub.id)!;
+  // The end-meets-start pairing (mirror is self-inverse) solves to the identical line, so the same tie as the rotation
+  // case arises here on the perpendicular distance to the line; sweep across it and require a stable winner.
+  const along = addXY(sol.base, sol.dir);                               // a point on the line, one unit from the base
+  const perp = { x: -sol.dir.y, y: sol.dir.x };                         // unit vector perpendicular to the line
+  let ref: ReturnType<typeof snapBodyDelta> = null;
+  for (const e of TIE_EPS) {
+    const raw = addXY(along, { x: perp.x * e, y: perp.y * e });
+    const s = snapBodyDelta(T, raw, 12, null)!;
+    expect(s).toBeTruthy();
+    expect(s.res.cls).toBe('line');
+    expect(s.res.cat).toBe('ownFixed');
+    expect(s.res.label).toBe(STR.snap.meetsCloneEndLine);
+    if (!ref) ref = s;
+    else {
+      expect(s.nodeIndex).toBe(ref.nodeIndex);
+      expect(s.res.id).toBe(ref.res.id);
+      near(s.res.at, ref.res.at);
+    }
+  }
 });
 
 test('snapBodyDelta: ends not lined up along a mirror axis can never meet, so no clone-end hint appears', () => {

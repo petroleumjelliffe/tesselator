@@ -340,12 +340,16 @@ export function bodyTargets(doc: Doc, set: TargetSet, pathId: string): BodyTarge
 }
 
 // The best snap for a raw source-frame delta: each moving end looks for a target (precedence and stickiness as everywhere),
-// plus meeting the path's own rotated or mirrored copies (solved, never chased); the best end moves the whole path.
+// plus meeting the path's own rotated or mirrored copies (solved, never chased); the best end moves the whole path. Two
+// ends can solve to the exact same body delta (end A meets a clone of end B via K and, inseparably, B meets the clone of
+// A via K⁻¹): same event, but a different `at`/id per end. That tie is broken by index, not by float noise in `d`, so
+// the shown hint (and its id, for stickiness) doesn't flip for a sub-pixel pointer change.
 export function snapBodyDelta(T: BodyTargets, raw: XY, threshold: number, sticky: string | null): BodySnap | null {
   const reach = CONFIG.SNAP_STICKY_RELEASE * threshold;
   const exPaths = new Set([T.pathId]);
   let best: BodySnap | null = null;
   const better = (a: SnapResult, b: SnapResult) => (a.id === sticky) || (b.id !== sticky && (a.cls !== b.cls ? a.cls === 'point' : a.d + precedence(a) * 1e-3 * threshold < b.d + precedence(b) * 1e-3 * threshold));
+  const sameEvent = (a: XY, b: XY) => dist(a, b) <= 1e-6 * (1 + Math.hypot(a.x, a.y));
   for (const m of T.moving) {
     const e0 = add(m.p, raw), extra: SnapResult[] = [];
     for (const o of T.own) {
@@ -361,7 +365,13 @@ export function snapBodyDelta(T: BodyTargets, raw: XY, threshold: number, sticky
       }
     }
     const res = pickSnap(T.set, e0, threshold, { extra, sticky, excludePoints: T.exclude, excludePaths: exPaths });
-    if (res && (!best || better(res, best.res))) best = { delta: add(raw, sub(res.at, e0)), nodeIndex: m.index, res };
+    if (!res) continue;
+    const cand: BodySnap = { delta: add(raw, sub(res.at, e0)), nodeIndex: m.index, res };
+    if (!best) best = cand;
+    else if (sameEvent(cand.delta, best.delta)) {
+      if (cand.res.id === sticky) best = cand;
+      else if (best.res.id !== sticky && cand.nodeIndex < best.nodeIndex) best = cand;
+    } else if (better(res, best.res)) best = cand;
   }
   return best;
 }
