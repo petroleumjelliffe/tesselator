@@ -4,6 +4,7 @@ import * as UI from '../../src/state/ui';
 import * as A from '../../src/actions';
 import * as P from '../../src/engine/paths';
 import { reset } from '../../src/state/history';
+import { traceStep } from '../../src/interaction/tools/freehand';
 import type { Doc, Drag, XY, UV, SnapResult } from '../../src/types';
 
 function fresh(build: (d: Doc) => void = () => {}) { reset(); UI.resetUi(); const d = emptyDoc(); build(d); doc.value = d; UI.view.value = { pan: { x: 0, y: 0 }, zoom: 1 }; UI.prefs.value = { ...UI.prefs.value, snap: true }; UI.tool.value = 'freehand'; }
@@ -74,4 +75,14 @@ test('Pen: a click near a mirror axis lands on it; with snapping off a click nea
   const pts = doc.value.points.length;
   A.penClickEmpty({ x: 32, y: 31 }, false);
   expect(doc.value.points.length).toBe(pts);
+});
+
+test('tracing: with Alt held the stroke follows a nearby line, lets go past the breakaway, and does not re-pin until far', () => {
+  fresh((d) => { line(d, [{ u: 0.1, v: 0.5 }, { u: 0.9, v: 0.5 }]); });
+  const dr = { kind: 'free', raw: [{ x: 30, y: 125 }], pin: null, cooldown: null } as unknown as Extract<Drag, { kind: 'free' }>;
+  expect(traceStep(dr, { x: 60, y: 126 }, true, 12, 24).y).toBeCloseTo(120, 6);     // pinned to y = 120
+  expect(traceStep(dr, { x: 90, y: 140 }, true, 12, 24).y).toBeCloseTo(120, 6);     // 20 away: still pinned
+  expect(traceStep(dr, { x: 100, y: 150 }, true, 12, 24).y).toBeCloseTo(150, 6);    // 30 away: let go
+  expect(traceStep(dr, { x: 110, y: 128 }, true, 12, 24).y).toBeCloseTo(128, 6);    // within 2× breakaway of the same line: no re-pin
+  expect(traceStep(dr, { x: 120, y: 125 }, false, 12, 24).y).toBeCloseTo(125, 6);   // Alt released: free
 });
