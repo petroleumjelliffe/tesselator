@@ -104,7 +104,7 @@ export type Drag = DragBase & (
   | { kind: 'canchor'; pathId: string; pointId: string; cell: Cell; copy: Copy; targets: TargetSet; snap: SnapResult | null; unlinked?: boolean }
   | { kind: 'cp'; pathId: string; j: number; copy: Copy; lines: Line[] }
   | { kind: 'bbox'; mode: 'scale' | 'rot'; h: BoxHandle; box: Box; cx: number; cy: number; pathId: string; copy: Copy; startDoc: Doc; M: Matrix | null; nodes: XY[] }
-  | { kind: 'free'; raw: XY[]; startNode: Node | null; cloneMatrices: Matrix[] }
+  | { kind: 'free'; raw: XY[]; startNode: Node | null; startSnap: SnapResult | null; groups: string[][][]; cloneMatrices: Matrix[]; end: SnapResult | null; pin: { id: string; geom: XY[] } | null; cooldown: { id: string; geom: XY[] } | null }
   | { kind: 'fillpress' }
   | { kind: 'elc'; id: string; u0: number; v0: number }
   | { kind: 'elrot'; id: string }

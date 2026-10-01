@@ -9,8 +9,8 @@ import { apply, invert, mirrorAngle, mirrorDirFromAngle } from './engine/transfo
 import { snapWorld, projectOnSegment, seedOf, type Anchor } from './engine/hit';
 import { faceAt, seedFor, fillOfFace } from './engine/regions';
 import { strokeToPath } from './engine/freehand';
-import { pickSnap, gridResult, strokeCopies, strokeCands, NODE_ONLY } from './engine/snap';
-import { joinPointToHit } from './engine/joins';
+import { pickSnap, gridResult, strokeCopies, strokeCands, NODE_ONLY, nearestOnSeg } from './engine/snap';
+import { joinPointToHit, nodeForSnap, splitNearest } from './engine/joins';
 import { CONFIG } from './config';
 import type { Doc, XY, UV, Cell, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer, SnapResult, SnapHit } from './types';
 
@@ -132,21 +132,33 @@ export function setFillLayer(fillId: string, layerId: string): boolean {
 
 function bindNewPath(d: Doc, pathId: string) { if (d.newPathGroups.length) P.addBinding(d, pathId, d.newPathGroups); }
 
+// A Pen click on empty space (spec D14): the same targets and commits as a stroke end. On a path in progress, its own
+// start closes it, its repeated start wraps it, and its own earlier line splits it; each ends the path.
 export function penClickEmpty(w: XY, on: boolean, hitScale = 1): boolean {
   if (UI.selection.value && !UI.pen.value) { UI.selection.value = null; return true; }
-  const s = snapPoint(w, on, undefined, hitScale);
   const penNow = UI.pen.value;
-  let started: string | null = null;
+  const s = drawSnap(w, on, hitScale, penNow ? penStroke() : null);
+  let started: string | null = null, ended = false;
   const ok = mutate((d) => {
-    const node: Node = s.anchor && !s.anchor.bindingId ? { pointId: s.anchor.pointId, cell: s.anchor.cell }
-      : s.anchor && s.anchor.via ? { pointId: s.anchor.pointId, cell: s.anchor.cell, via: { ...s.anchor.via, cell: { ...s.anchor.via.cell } } }
-      : P.addPoint(d, toUV(s, d.lattice));
+    const penPath = penNow ? P.getPath(d, penNow.pathId) : null;
+    const layerId = penPath ? penPath.layerId : activeLayerId(d);
+    const h = s?.hit;
+    if (penPath && h && (h.kind === 'ownStart' || h.kind === 'ownRepeat' || h.kind === 'ownLine')) {
+      const st = penPath.start;
+      let node: Node | null = null;
+      if (h.kind === 'ownStart') node = st;
+      else if (h.kind === 'ownRepeat' && !st.via) node = { pointId: st.pointId, cell: { c: st.cell.c + h.cell.c, r: st.cell.r + h.cell.r } };
+      else if (h.kind === 'ownLine') node = splitNearest(d, penPath.id, s!.at, penPath.segments.length - 1);
+      if (node) { P.appendNode(d, penPath.id, node); ended = true; return; }
+    }
+    const node = nodeForSnap(d, s, w, layerId);
     if (penNow) { P.appendNode(d, penNow.pathId, node); return; }
-    const path = P.startPath(d, node, UI.prefs.value.style, activeLayerId(d));
+    const path = P.startPath(d, node, UI.prefs.value.style, layerId);
     bindNewPath(d, path.id);
     started = path.id;
   });
   if (started) UI.pen.value = { pathId: started };
+  if (ended) endPen();
   return ok;
 }
 
@@ -430,28 +442,46 @@ export function fillAt(w: XY): boolean {
 
 // --- freehand
 
-export function finishFreehand(dr: Extract<Drag, { kind: 'free' }>): boolean {
-  const fit = strokeToPath(dr.raw, { eps: CONFIG.FREEHAND_EPS, minDeviation: CONFIG.FREEHAND_MIN_DEVIATION });
+// End a Freehand stroke (spec D3–D11): fit it, then make its start and end nodes from their snaps: share or split
+// same-layer geometry, close on its own start, wrap into its own repeat, split itself (loop and tail), or sit on its
+// own clone's line re-snapped to the fitted clone; anything else is a new point where the snap put it.
+export function finishFreehand(dr: Extract<Drag, { kind: 'free' }>, end: SnapResult | null): boolean {
+  const raw = end ? [...dr.raw.slice(0, -1), end.at] : dr.raw;
+  const fit = strokeToPath(raw, { eps: CONFIG.FREEHAND_EPS, minDeviation: CONFIG.FREEHAND_MIN_DEVIATION });
   if (!fit) return false;
-  const last = fit.points[fit.points.length - 1];
-  const endSnap = snapPoint(last, false, (a) => !!a.bindingId, dr.hitScale);
   let pathId: string | null = null;
   const ok = mutate((d) => {
-    const nodes = fit.points.map((v, j) => {
-      if (j === 0 && dr.startNode) return dr.startNode;
-      if (j === fit.points.length - 1 && endSnap.anchor) return { pointId: endSnap.anchor.pointId, cell: endSnap.anchor.cell };
-      return P.addPoint(d, toUV(v, d.lattice));
-    });
-    const extendId = dr.startNode && !dr.startNode.via ? P.openEndAt(d, dr.startNode.pointId) : null;   // a stroke from a via node sits on a clone: it never extends the path its point ends
+    const extendId = dr.startNode && !dr.startNode.via ? P.openEndAt(d, dr.startNode.pointId) : null;
+    const layerId = extendId ? P.getPath(d, extendId)!.layerId : activeLayerId(d);
+    const startNode = dr.startNode ?? nodeForSnap(d, dr.startSnap, fit.points[0], layerId);
+    const h = end?.hit, n = fit.points.length;
+    const inner = fit.points.slice(1, -1).map((v) => P.addPoint(d, toUV(v, d.lattice)));
+    let last: Node | 'self' | 'copy';
+    if (h?.kind === 'ownStart') last = startNode;
+    else if (h?.kind === 'ownRepeat' && !startNode.via) last = { pointId: startNode.pointId, cell: { c: startNode.cell.c + h.cell.c, r: startNode.cell.r + h.cell.r } };
+    else if (h?.kind === 'ownLine') last = 'self';
+    else if (h?.kind === 'ownCopy') last = 'copy';
+    else last = nodeForSnap(d, end, fit.points[n - 1], layerId);
+    const lastNode: Node = typeof last === 'string' ? P.addPoint(d, toUV(fit.points[n - 1], d.lattice)) : last;
     let path;
-    if (extendId) { path = P.getPath(d, extendId)!; P.orientToEnd(d, extendId, dr.startNode!.pointId, dr.startNode!.cell); }
-    else path = P.startPath(d, nodes[0], UI.prefs.value.style, activeLayerId(d));
-    nodes.slice(1).forEach((n, j) => { if (P.appendNode(d, path.id, n) && fit.cps[j]) P.setControlPointWorld(d, path.id, path.segments.length - 1, fit.cps[j]); });
-    if (!extendId) bindNewPath(d, path.id);
+    if (extendId) { path = P.getPath(d, extendId)!; P.orientToEnd(d, extendId, startNode.pointId, startNode.cell); }
+    else path = P.startPath(d, startNode, UI.prefs.value.style, layerId);
+    const from = path.segments.length;
+    [...inner, lastNode].forEach((node, j) => { if (P.appendNode(d, path.id, node) && fit.cps[j]) P.setControlPointWorld(d, path.id, path.segments.length - 1, fit.cps[j]); });
     if (path.segments.length === 0) { P.deletePath(d, path.id); return false; }
+    if (last === 'self') {                                   // D7: land on the stroke's own earlier line and share the node there
+      const at = fit.points[n - 1], host = splitNearest(d, path.id, at, path.segments.length - 1);
+      if (host) P.mergePoints(d, lastNode.pointId, lastNode.cell, host.pointId, host.cell);
+    } else if (last === 'copy' && h?.kind === 'ownCopy') {  // D8: re-snap the end onto the fitted copy (location only)
+      const p = P.getPath(d, path.id)!, W = P.pathWorld(d, p).map((q) => apply(h.M, q)), C = P.pathCpsWorld(d, p).map((c) => c && apply(h.M, c));
+      let best: XY | null = null, bd = Infinity;
+      for (let j = from; j < p.segments.length - 1; j++) { const r = nearestOnSeg(W[j], C[j], W[j + 1], fit.points[n - 1]); if (r.d < bd) { bd = r.d; best = r.q; } }
+      if (best) { const uv = toUV(best, d.lattice); P.movePoint(d, lastNode.pointId, uv.u - lastNode.cell.c, uv.v - lastNode.cell.r); }
+    }
+    if (!extendId) bindNewPath(d, path.id);
     pathId = path.id;
   });
-  if (pathId) UI.selection.value = { kind: 'path', id: pathId, copy: baseCopy };
+  if (pathId && P.getPath(doc.value, pathId)) UI.selection.value = { kind: 'path', id: pathId, copy: baseCopy };
   return ok;
 }
 

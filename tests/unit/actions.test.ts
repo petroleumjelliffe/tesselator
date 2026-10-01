@@ -98,10 +98,10 @@ test('insertNodeOnSegment through a clone copy maps the click back to the source
 test('finishFreehand creates a bound path and rejects a jitter', () => {
   fresh();
   A.addElement('rotate'); A.setTool('freehand');
-  const base = { target: null, start: { x: 0, y: 0 }, moved: true, pointerId: 1, hitScale: 1, kind: 'free' as const, startNode: null, cloneMatrices: [] };
-  expect(A.finishFreehand({ ...base, raw: [{ x: 0, y: 0 }, { x: 1, y: 1 }] })).toBe(false);
+  const base = { target: null, start: { x: 0, y: 0 }, moved: true, pointerId: 1, hitScale: 1, kind: 'free' as const, startNode: null, startSnap: null, groups: [], cloneMatrices: [], end: null, pin: null, cooldown: null };
+  expect(A.finishFreehand({ ...base, raw: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }, null)).toBe(false);
   const raw = Array.from({ length: 30 }, (_, i) => ({ x: 20 + i * 5, y: 40 + 30 * Math.sin(i / 5) }));
-  expect(A.finishFreehand({ ...base, raw })).toBe(true);
+  expect(A.finishFreehand({ ...base, raw }, null)).toBe(true);
   expect(doc.value.paths).toHaveLength(1); expect(doc.value.bindings).toHaveLength(1);
   expect(doc.value.paths[0].segments.length).toBeGreaterThan(0);
 });
@@ -120,9 +120,9 @@ test('finishFreehand starting on a via node keeps the via on the new path\'s sta
   const startNode = { pointId: tailStart.pointId, cell: tailStart.cell, via: tailStart.via };
   const start = P.nodeWorld(doc.value, startNode);
   const raw = Array.from({ length: 30 }, (_, i) => ({ x: start.x + i * 5, y: start.y + 30 * Math.sin(i / 5) }));
-  const dr: Extract<Drag, { kind: 'free' }> = { kind: 'free', raw, startNode, cloneMatrices: [], target: null, start, moved: true, pointerId: 1, hitScale: 1 };
+  const dr: Extract<Drag, { kind: 'free' }> = { kind: 'free', raw, startNode, startSnap: null, groups: [], cloneMatrices: [], end: null, pin: null, cooldown: null, target: null, start, moved: true, pointerId: 1, hitScale: 1 };
   const pathsBefore = doc.value.paths.length;
-  expect(A.finishFreehand(dr)).toBe(true);
+  expect(A.finishFreehand(dr, null)).toBe(true);
   expect(doc.value.paths).toHaveLength(pathsBefore + 1);                              // a new path, not an extension of the via-ended tail
   expect(doc.value.paths[doc.value.paths.length - 1].start).toEqual(startNode);
 });
@@ -578,9 +578,9 @@ test('freehand: a stroke started on a via node whose point is a plain open end s
   const startNode = { pointId: body.start.pointId, cell: body.start.cell, via: clone };
   const start = P.nodeWorld(doc.value, startNode);
   const raw = Array.from({ length: 30 }, (_, i) => ({ x: start.x + i * 5, y: start.y + 30 * Math.sin(i / 5) }));
-  const dr: Extract<Drag, { kind: 'free' }> = { kind: 'free', raw, startNode, cloneMatrices: [], target: null, start, moved: true, pointerId: 1, hitScale: 1 };
-  expect(A.finishFreehand(dr)).toBe(true);
-  expect(doc.value.paths).toHaveLength(3);                                              // a new path
+  const dr: Extract<Drag, { kind: 'free' }> = { kind: 'free', raw, startNode, startSnap: null, groups: [], cloneMatrices: [], end: null, pin: null, cooldown: null, target: null, start, moved: true, pointerId: 1, hitScale: 1 };
+  expect(A.finishFreehand(dr, null)).toBe(true);
+  expect(doc.value.paths).toHaveLength(3);                                            // a new path
   expect(doc.value.paths[0]).toEqual(bodyBefore);                                       // the body is unchanged
   expect(doc.value.paths[2].start).toEqual(startNode);                                  // and the new path's start keeps the via
 });

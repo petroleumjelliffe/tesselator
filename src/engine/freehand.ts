@@ -2,10 +2,13 @@ import type { XY } from '../types';
 
 export function simplify(pts: XY[], eps: number): XY[] {
   if (pts.length < 3) return pts.slice();
-  const a = pts[0], b = pts[pts.length - 1], L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const a = pts[0], b = pts[pts.length - 1], L = Math.hypot(b.x - a.x, b.y - a.y);
   let idx = 0, md = 0;
   for (let i = 1; i < pts.length - 1; i++) {
-    const p = pts[i], d = Math.abs((b.x - a.x) * (a.y - p.y) - (a.x - p.x) * (b.y - a.y)) / L;
+    const p = pts[i];
+    // A closed loop (a === b, as a stroke snapped onto its own start) has no line to measure a perpendicular distance
+    // against; fall back to distance from the shared endpoint, so the farthest point still becomes the split.
+    const d = L < 1e-9 ? Math.hypot(p.x - a.x, p.y - a.y) : Math.abs((b.x - a.x) * (a.y - p.y) - (a.x - p.x) * (b.y - a.y)) / L;
     if (d > md) { md = d; idx = i; }
   }
   if (md <= eps) return [a, b];
