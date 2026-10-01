@@ -25,6 +25,7 @@ export const STR = {
     grid: 'grid',
     scale: (f: string) => `scale ${f}`,
     guide: 'guide',
+    traced: 'traced line',
   },
   hint: {
     rotate: 'Rotation: drag to move · pick 1/2, 1/3, 1/4 or 1/6 · clones turn about it · O on a selected path stacks it as a new group',

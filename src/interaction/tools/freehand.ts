@@ -6,8 +6,9 @@ import { orbit } from '../../engine/transform';
 import { pickSnap } from '../../engine/snap';
 import { snapTargets } from '../../state/derived';
 import { CONFIG } from '../../config';
-import { startDrag, type ToolModule } from './common';
-import type { Matrix, XY, Drag, SnapCat } from '../../types';
+import { STR } from '../../strings';
+import { startDrag, type ToolModule, type ToolCtx } from './common';
+import type { Matrix, XY, Drag, SnapCat, SnapResult } from '../../types';
 
 const TRACE_CATS: ReadonlySet<SnapCat> = new Set<SnapCat>(['edge', 'axis', 'line']);
 const nearestOnPolyline = (pl: XY[], p: XY): { q: XY; d: number } => {
@@ -49,12 +50,27 @@ export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
   UI.snapSticky.value = null;
 };
 
+// Spec §6.6, I3: while pinned, the snap is taken at the pointer's projection onto the pinned line, holding that line, so
+// a node or intersection on it still wins by precedence. The traced line is a guide: landing on it is location only.
+function pinnedSnap(d: Extract<Drag, { kind: 'free' }>, pin: { id: string; geom: XY[] }, w: XY, ctx: ToolCtx): SnapResult {
+  const q = nearestOnPolyline(pin.geom, w).q;
+  UI.snapSticky.value = pin.id;
+  const s = A.drawSnap(q, ctx.snapOn, ctx.hitScale, A.freeStroke(d));
+  if (s && s.id !== pin.id && s.cat !== 'grid') return s;
+  return { at: s && s.id === pin.id ? s.at : q, cls: 'line', cat: 'line', id: pin.id, label: s && s.id === pin.id ? s.label : STR.snap.traced, hit: { kind: 'place' }, d: 0, line: pin.geom };
+}
+
 export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
   if (d.kind !== 'free') return;
   const k = UI.view.value.zoom, p = traceStep(d, w, e.altKey, ctx.threshold, (CONFIG.TRACE_BREAKAWAY_PX * ctx.hitScale) / k);
   const last = d.raw[d.raw.length - 1];
   if (Math.hypot(p.x - last.x, p.y - last.y) >= 1.5) d.raw.push({ x: p.x, y: p.y });
-  if (d.pin) { UI.snapHint.value = { at: p, line: d.pin.geom }; d.end = null; return; }
+  if (d.pin) {
+    d.end = pinnedSnap(d, d.pin, w, ctx);
+    UI.snapSticky.value = d.end.id;
+    UI.snapHint.value = { at: d.end.at, label: d.end.label, line: d.pin.geom };   // H4: the followed line stays highlighted
+    return;
+  }
   const s = A.drawSnap(w, ctx.snapOn, ctx.hitScale, A.freeStroke(d));
   d.end = s && s.cat !== 'grid' ? s : null;
   UI.snapSticky.value = d.end?.id ?? null;
@@ -63,6 +79,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
 
 export const onUp: ToolModule['onUp'] = (d, w, _e, ctx) => {
   if (d.kind !== 'free') return;
-  const end = A.drawSnap(w, ctx.snapOn, ctx.hitScale, A.freeStroke(d));   // H6: the held snap is the snap used
+  // H6: the held snap is the snap used; while pinned, the end is on the pinned line, never at the raw pointer.
+  const end = d.pin ? pinnedSnap(d, d.pin, w, ctx) : A.drawSnap(w, ctx.snapOn, ctx.hitScale, A.freeStroke(d));
   A.finishFreehand(d, end);
 };

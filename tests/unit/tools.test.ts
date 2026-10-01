@@ -170,3 +170,18 @@ test('Select: dragging a shared end of the selected path never lands on that pat
   expect(a.segments).toHaveLength(1);
   expect(end.x).toBeCloseTo(90, 6); expect(end.y).toBeCloseTo(90, 6);          // the grid point, not (68.06, 68.06) on A's old line
 });
+
+// --- C / I3: a traced stroke ends on the traced line
+
+test('Freehand: Alt-tracing a line and releasing 16 px off it ends on the line; the traced line is not split', () => {
+  let id = '';
+  fresh('freehand', (d) => { id = line(d, [{ u: 0.1, v: 0.5 }, { u: 0.9, v: 0.5 }]).id; });   // y = 120, x 24..216
+  const alt = ev({ altKey: true });
+  gesture(freehand, [{ x: 40, y: 160 }, { x: 45, y: 140 }, ...along({ x: 50, y: 126 }, { x: 150, y: 136 }, 20)], alt);   // starts off the line, pins at (50, 126)
+  const p = newest();
+  expect(p.id).not.toBe(id);
+  const nodes = P.pathNodes(p), end = P.nodeWorld(doc.value, nodes[nodes.length - 1]);
+  expect(end.y).toBeCloseTo(120, 6);
+  expect(end.x).toBeCloseTo(150, 6);
+  expect(P.getPath(doc.value, id)!.segments).toHaveLength(1);
+});
