@@ -71,6 +71,9 @@ export type PointTarget = { at: XY; cat: SnapCat; id: string; label: string; hit
 export type LineTarget = { a: XY; b: XY; cp: XY | null; cat: SnapCat; id: string; label: string; source?: { pathId: string; copy: Copy; j: number }; ends?: string[] };
 export type TargetSet = { points: PointTarget[]; lines: LineTarget[] };
 export type StrokeCopy = { M: Matrix; kind: 'clone' | 'repeat'; cell: Cell };
+export type Line = { p: XY; dir: XY };   // dir is a unit vector
+export type BodyTargets = { pathId: string; moving: { index: number; p: XY }[]; own: { K: Matrix; p: XY }[]; exclude: ReadonlySet<string>; set: TargetSet };
+export type BodySnap = { delta: XY; nodeIndex: number; res: SnapResult };
 
 export type BoxHandle = { x: number; y: number; ax: number; ay: number; cursor: string };
 export type Box = { x0: number; y0: number; x1: number; y1: number };

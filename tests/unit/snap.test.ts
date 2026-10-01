@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
-import { buildTargets, pickSnap, precedence, strokeCopies, strokeCands, pointCopyMatrices, ownFixedCands, nearestOnSeg, gridResult, NODE_ONLY } from '../../src/engine/snap';
-import { cellMatrix } from '../../src/engine/transform';
+import { buildTargets, pickSnap, precedence, strokeCopies, strokeCands, pointCopyMatrices, ownFixedCands, nearestOnSeg, gridResult, NODE_ONLY, solveCopyMeet, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines } from '../../src/engine/snap';
+import { cellMatrix, apply, rotation, IDENTITY } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import { makeDoc, line } from './fixtures';
 import type { Doc, XY, SnapResult } from '../../src/types';
@@ -103,4 +103,91 @@ test('gridResult rounds to the grid', () => {
 test('a stroke result is a SnapResult', () => {
   const r: SnapResult = { at: { x: 0, y: 0 }, cls: 'point', cat: 'grid', id: 'grid', label: 'grid', hit: { kind: 'place' }, d: 0 };
   expect(r.cls).toBe('point');
+});
+
+const addXY = (a: XY, b: XY): XY => ({ x: a.x + b.x, y: a.y + b.y });
+
+test('solveCopyMeet: a point for a quarter turn, a line for a mirror, nothing for a translation', () => {
+  const K = rotation(Math.PI / 2, 120, 120), pi = { x: 100, y: 50 }, pj = { x: 30, y: 60 };
+  const r = solveCopyMeet(IDENTITY, K, pi, pj);
+  expect(r?.kind).toBe('point');
+  if (r?.kind === 'point') near(addXY(pi, r.delta), apply(K, addXY(pj, r.delta)));
+  const m = solveCopyMeet(IDENTITY, [-1, 0, 0, 1, 240, 0], { x: 100, y: 50 }, { x: 100, y: 50 });   // the vertical line x = 120
+  expect(m?.kind).toBe('line');
+  if (m?.kind === 'line') { near(m.base, { x: 20, y: 0 }); expect(Math.abs(m.dir.x)).toBeCloseTo(0, 9); }
+  expect(solveCopyMeet(IDENTITY, [1, 0, 0, 1, 240, 0], pi, pj)).toBe(null);
+});
+
+test('snapBodyDelta: an end lands on a corner, on another path\'s line, or nothing', () => {
+  const d = makeDoc();
+  const stub = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.5, v: 0.1 }]);          // (24,24)-(120,24)
+  const other = line(d, [{ u: -0.2, v: 0.3 }, { u: 0.2, v: 0.3 }]);        // (-48,72)-(48,72)
+  const T = bodyTargets(d, buildTargets(d), stub.id)!;
+  const c = snapBodyDelta(T, { x: -20, y: -20 }, 12, null)!;               // start lands at (4, 4): corner (0, 0)
+  expect(c.res.cat).toBe('corner'); near(c.delta, { x: -24, y: -24 }); expect(c.nodeIndex).toBe(0);
+  const k = snapBodyDelta(T, { x: 6, y: 45 }, 12, null)!;                  // start lands at (30, 69): 3 from the other line
+  expect(k.res.hit).toMatchObject({ kind: 'curve', pathId: other.id, j: 0 }); near(k.delta, { x: 6, y: 48 });
+  expect(snapBodyDelta(T, { x: 60, y: 160 }, 12, null)).toBe(null);
+});
+
+test('snapBodyDelta: segments touching the dragged points are not targets', () => {
+  const d = makeDoc();
+  const stub = line(d, [{ u: 0.3, v: 0.3 }, { u: 0.6, v: 0.3 }]);
+  const joined = P.startPath(d, { ...stub.start, cell: { ...stub.start.cell } }, { color: '#000', weight: 2 }, 'L1');
+  P.appendNode(d, joined.id, P.addPoint(d, { u: 0.3, v: 0.6 }));          // moves with the stub
+  expect(snapBodyDelta(bodyTargets(d, buildTargets(d), stub.id)!, { x: 2, y: 0 }, 12, null)).toBe(null);
+});
+
+test('snapBodyDelta: an end meets its own quarter-turn clone', () => {
+  const d = makeDoc();
+  const stub = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.4, v: 0.1 }]);
+  const el = P.addElement(d, { kind: 'rotate', u: 0.5, v: 0.5, n: 4 });
+  const b = P.addBinding(d, stub.id, [[el.id]]);
+  const K = P.cloneMatrices(d, b.id).matrices[0]!;
+  const Pw = P.pathWorld(d, stub);
+  const sol = solveCopyMeet(IDENTITY, K, Pw[1], Pw[0]);
+  expect(sol?.kind).toBe('point');
+  if (sol?.kind !== 'point') return;
+  const s = snapBodyDelta(bodyTargets(d, buildTargets(d), stub.id)!, addXY(sol.delta, { x: 1, y: 1 }), 12, null)!;
+  expect(s.res.hit).toEqual({ kind: 'own' });
+  near(s.delta, sol.delta);
+});
+
+const lat = { ...CONFIG.LATTICE_PRESETS.Square }, F = [1, 1 / 2, 1 / 3];
+
+test('snapScale: an edge lands on a half and a third of the lattice span; a flat axis is not snapped', () => {
+  const nodes = [{ x: 0, y: 0 }, { x: 100, y: 0 }], right = { x: 100, y: 0, ax: 0, ay: 0, cursor: '' };
+  expect(snapScale(nodes, lat, right, { sx: 1.21, sy: 1 }, false, 12, F)).toEqual({ sx: 1.2, sy: 1, snapped: true });
+  expect(snapScale(nodes, lat, right, { sx: 0.81, sy: 1 }, false, 12, F).sx).toBeCloseTo(0.8, 9);
+  expect(snapScale(nodes, lat, right, { sx: 1.5, sy: 1 }, false, 12, F).snapped).toBe(false);
+  const bottom = { x: 50, y: 10, ax: 50, ay: 0, cursor: '' };
+  expect(snapScale(nodes, lat, bottom, { sx: 1, sy: 3 }, false, 12, F)).toEqual({ sx: 1, sy: 3, snapped: false });
+});
+
+test('snapScale: a uniform corner takes the nearest target from either axis', () => {
+  const nodes = [{ x: 0, y: 0 }, { x: 100, y: 60 }], corner = { x: 100, y: 60, ax: 0, ay: 0, cursor: '' };
+  const s = snapScale(nodes, lat, corner, { sx: 1.19, sy: 1.19 }, false, 12, F);
+  expect(s.snapped).toBe(true); expect(s.sx).toBeCloseTo(1.2, 9); expect(s.sy).toBeCloseTo(1.2, 9);
+});
+
+test('cpLines and snapToLines: tangent to a straight neighbour, and the crossing of two lines', () => {
+  const d = makeDoc();
+  const p = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.6, v: 0.2 }, { u: 0.9, v: 0.5 }]);   // A (48,48), B (144,48), C (216,120)
+  const L = cpLines(d, p.id, 0, { cell: { c: 0, r: 0 }, bindingId: null, power: 0 });
+  const t = snapToLines({ x: 116, y: 16 }, L, 12)!;
+  expect(t.used).toHaveLength(1); expect(t.at.x).toBeCloseTo(114, 6); expect(t.at.y).toBeCloseTo(18, 6);
+  const x = snapToLines({ x: 50, y: -45 }, L, 12)!;
+  expect(x.used).toHaveLength(2); expect(x.at.x).toBeCloseTo(48, 6); expect(x.at.y).toBeCloseTo(-48, 6);
+  expect(snapToLines({ x: 90, y: 100 }, L, 12)).toBe(null);
+});
+
+test('cpLines: a node on the path\'s own mirror line offers the mirror normal; lines follow a copy in another cell', () => {
+  const d = makeDoc();
+  const p = line(d, [{ u: 0.2, v: 0.1 }, { u: 0.4, v: 0.4 }]);                        // B (96, 96) lies on y = x
+  const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 1, dv: 1 });
+  P.addBinding(d, p.id, [[el.id]]);
+  const L = cpLines(d, p.id, 0, { cell: { c: 0, r: 0 }, bindingId: null, power: 0 });
+  expect(L.some((l) => Math.hypot(l.p.x - 96, l.p.y - 96) < 1e-6 && Math.abs(l.dir.x + l.dir.y) < 1e-9)).toBe(true);
+  const L2 = cpLines(d, p.id, 0, { cell: { c: 2, r: 0 }, bindingId: null, power: 0 });
+  expect(L2.some((l) => Math.hypot(l.p.x - 576, l.p.y - 96) < 1e-6 && Math.abs(l.dir.x + l.dir.y) < 1e-9)).toBe(true);
 });

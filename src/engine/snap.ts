@@ -5,10 +5,10 @@ import { CONFIG } from '../config';
 import { STR } from '../strings';
 import { toWorld, toUV, snapGrid, windowOffsets } from './lattice';
 import { apply, compose, invert, cellMatrix, classify, orbit } from './transform';
-import { getPath, pathNodes, cloneMatrices } from './paths';
+import { getPath, pathNodes, cloneMatrices, pathWorld, isClosed, viaMatrix } from './paths';
 import { collectSegments } from './regions';
 import { anchorsWorld } from './hit';
-import type { Doc, XY, Matrix, Copy, Lattice, SnapCat, SnapHit, SnapResult, PointTarget, LineTarget, TargetSet, StrokeCopy } from '../types';
+import type { Doc, XY, Matrix, Copy, Lattice, SnapCat, SnapHit, SnapResult, PointTarget, LineTarget, TargetSet, StrokeCopy, Line, BoxHandle, BodyTargets, BodySnap } from '../types';
 
 const add = (a: XY, b: XY): XY => ({ x: a.x + b.x, y: a.y + b.y });
 const sub = (a: XY, b: XY): XY => ({ x: a.x - b.x, y: a.y - b.y });
@@ -295,4 +295,142 @@ export function ownFixedCands(S: Matrix, Ks: Matrix[], p: XY, threshold: number)
     }
   }
   return out;
+}
+
+// Solve S(pi) + S_L δ = K(pj) + K_L δ for the source-frame delta δ. Full rank: one δ. Rank 1 (a reflection relative to S):
+// a line of δ when solvable. K_L = S_L (a translation relative to S): the two move in lockstep, so null.
+export function solveCopyMeet(S: Matrix, K: Matrix, pi: XY, pj: XY): { kind: 'point'; delta: XY } | { kind: 'line'; base: XY; dir: XY } | null {
+  const A = [S[0] - K[0], S[1] - K[1], S[2] - K[2], S[3] - K[3]];
+  const r = sub(apply(K, pj), apply(S, pi));
+  const f2 = A[0] ** 2 + A[1] ** 2 + A[2] ** 2 + A[3] ** 2;
+  if (f2 < 1e-12) return null;
+  const det = A[0] * A[3] - A[2] * A[1];
+  if (Math.abs(det) > 1e-9 * f2) return { kind: 'point', delta: { x: (A[3] * r.x - A[2] * r.y) / det, y: (-A[1] * r.x + A[0] * r.y) / det } };
+  const base = { x: (A[0] * r.x + A[1] * r.y) / f2, y: (A[2] * r.x + A[3] * r.y) / f2 };
+  const back = { x: A[0] * base.x + A[2] * base.y, y: A[1] * base.x + A[3] * base.y };
+  if (dist(back, r) > 1e-6 * (1 + Math.hypot(r.x, r.y))) return null;
+  const r0 = { x: A[0], y: A[2] }, r1 = { x: A[1], y: A[3] };
+  const row = Math.hypot(r0.x, r0.y) >= Math.hypot(r1.x, r1.y) ? r0 : r1, L = Math.hypot(row.x, row.y);
+  return { kind: 'line', base, dir: { x: -row.y / L, y: row.x / L } };
+}
+
+export function windowCopies(doc: Doc, pathId: string): { copy: Copy; M: Matrix }[] {
+  const out: { copy: Copy; M: Matrix }[] = [];
+  const clones = doc.bindings.filter((b) => b.pathId === pathId).map((b) => ({ b, ms: cloneMatrices(doc, b.id).matrices }));
+  for (const cell of windowOffsets()) {
+    const Mo = cellMatrix(cell, doc.lattice);
+    out.push({ copy: { cell, bindingId: null, power: 0 }, M: Mo });
+    for (const { b, ms } of clones) ms.forEach((M, k) => { if (M) out.push({ copy: { cell, bindingId: b.id, power: k + 1 }, M: compose(Mo, M) }); });
+  }
+  return out;
+}
+
+// A body drag's inputs, taken once at drag start: the moving ends (every node of a closed path) in the source frame, the
+// path's own clone copies for SN3 meets, and every point that moves with the path (its own and those of paths that share
+// them), whose targets and adjacent lines are excluded.
+export function bodyTargets(doc: Doc, set: TargetSet, pathId: string): BodyTargets | null {
+  const path = getPath(doc, pathId);
+  if (!path) return null;
+  const nodes = pathNodes(path), Pw = pathWorld(doc, path);
+  const idx = isClosed(path) ? nodes.slice(0, -1).map((_, i) => i) : [0, nodes.length - 1];
+  const moving = idx.filter((i) => !nodes[i].via).map((i) => ({ index: i, p: Pw[i] }));
+  const own: BodyTargets['own'] = [];
+  for (const { copy, M } of windowCopies(doc, pathId)) if (copy.bindingId) for (const m of moving) own.push({ K: M, p: m.p });
+  return { pathId, moving, own, exclude: new Set(nodes.map((n) => n.pointId)), set };
+}
+
+// The best snap for a raw source-frame delta: each moving end looks for a target (precedence and stickiness as everywhere),
+// plus meeting the path's own rotated or mirrored copies (solved, never chased); the best end moves the whole path.
+export function snapBodyDelta(T: BodyTargets, raw: XY, threshold: number, sticky: string | null): BodySnap | null {
+  const reach = CONFIG.SNAP_STICKY_RELEASE * threshold;
+  const exPaths = new Set([T.pathId]);
+  let best: BodySnap | null = null;
+  const better = (a: SnapResult, b: SnapResult) => (a.id === sticky) || (b.id !== sticky && (a.cls !== b.cls ? a.cls === 'point' : a.d + precedence(a) * 1e-3 * threshold < b.d + precedence(b) * 1e-3 * threshold));
+  for (const m of T.moving) {
+    const e0 = add(m.p, raw), extra: SnapResult[] = [];
+    for (const o of T.own) {
+      const r = solveCopyMeet([1, 0, 0, 1, 0, 0], o.K, m.p, o.p);
+      if (r?.kind === 'point') {
+        const at = add(m.p, r.delta), d = dist(at, e0);
+        if (d <= reach) extra.push({ at, cls: 'point', cat: 'ownFixed', id: `own:p:${ptKey(at)}`, label: STR.snap.meetsOwn, hit: { kind: 'own' }, d });
+      } else if (r?.kind === 'line') {
+        const delta = add(r.base, mul(r.dir, dot(sub(raw, r.base), r.dir))), at = add(m.p, delta), d = dist(at, e0);
+        if (d <= reach) extra.push({ at, cls: 'line', cat: 'ownFixed', id: `own:l:${ptKey(add(m.p, r.base))}:${r.dir.x.toFixed(4)}`, label: STR.snap.meetsMirror, hit: { kind: 'own' }, d, line: [add(at, mul(r.dir, -1e4)), add(at, mul(r.dir, 1e4))] });
+      }
+    }
+    const res = pickSnap(T.set, e0, threshold, { extra, sticky, excludePoints: T.exclude, excludePaths: exPaths });
+    if (res && (!best || better(res, best.res))) best = { delta: add(raw, sub(res.at, e0)), nodeIndex: m.index, res };
+  }
+  return best;
+}
+
+const unit = (v: XY): XY | null => { const L = Math.hypot(v.x, v.y); return L < 1e-9 ? null : { x: v.x / L, y: v.y / L }; };
+
+export function snapScale(nodes: XY[], lat: Lattice, h: BoxHandle, raw: { sx: number; sy: number }, free: boolean, threshold: number, fractions: readonly number[]): { sx: number; sy: number; snapped: boolean } {
+  const xs = nodes.map((p) => p.x), ys = nodes.map((p) => p.y);
+  const Wn = Math.max(...xs) - Math.min(...xs), Hn = Math.max(...ys) - Math.min(...ys);
+  const spans = (a: number, b: number) => [Math.abs(a), Math.abs(b)].filter((s) => s >= 1).flatMap((s) => fractions.map((f) => f * s));
+  const sgn = (s: number) => (s < 0 ? -1 : 1);
+  const cands = (ext: number, targets: number[], s: number) => (ext < 1e-6 ? [] : targets.map((t) => (sgn(s) * t) / ext));
+  const pick = (s: number, cs: number[], len: number): number | null => {
+    let best: number | null = null, bd = threshold;
+    for (const c of cs) { const dd = Math.abs(s - c) * len; if (dd <= bd) { bd = dd; best = c; } }
+    return best;
+  };
+  const vx = h.x - h.ax, vy = h.y - h.ay;
+  const cx = cands(Wn, spans(lat.ax, lat.bx), raw.sx), cy = cands(Hn, spans(lat.ay, lat.by), raw.sy);
+  if (vx && vy && !free) {
+    const s = pick(raw.sx, [...cx, ...cy], Math.hypot(vx, vy));
+    return s === null ? { ...raw, snapped: false } : { sx: s, sy: s, snapped: true };
+  }
+  const sx = vx ? pick(raw.sx, cx, Math.abs(vx)) : null, sy = vy ? pick(raw.sy, cy, Math.abs(vy)) : null;
+  return { sx: sx ?? raw.sx, sy: sy ?? raw.sy, snapped: sx !== null || sy !== null };
+}
+
+// Lines a control point of segment j may snap to, in world at `copy`: horizontal and vertical through either end; through
+// an end along any other segment meeting it there (that segment's control point, or other end if straight); through an
+// end along the normal of a mirror copy of this path that fixes that end. Worked out at the copy's cell-(0, 0) version,
+// then shifted by the copy's cell.
+export function cpLines(doc: Doc, pathId: string, j: number, copy: Copy): Line[] {
+  const path = getPath(doc, pathId);
+  if (!path || !path.segments[j]) return [];
+  const M0 = viaMatrix(doc, { ...copy, cell: { c: 0, r: 0 } }), off = toWorld({ u: copy.cell.c, v: copy.cell.r }, doc.lattice);
+  const Pw = pathWorld(doc, path), ends = [apply(M0, Pw[j]), apply(M0, Pw[j + 1])];
+  const out: Line[] = [];
+  for (const X of ends) out.push({ p: X, dir: { x: 1, y: 0 } }, { p: X, dir: { x: 0, y: 1 } });
+  const segs = collectSegments(doc).filter((s) => !(s.source.pathId === pathId && s.source.j === j));
+  for (const X of ends) for (const s of segs) {
+    for (const [end, other] of [[s.a, s.cp ?? s.b], [s.b, s.cp ?? s.a]] as const) {
+      if (dist(end, X) > 1e-4) continue;
+      const dir = unit(sub(other, end));
+      if (dir) out.push({ p: X, dir });
+    }
+  }
+  const M0inv = invert(M0);
+  for (const { M: K } of windowCopies(doc, pathId)) {
+    const T = compose(K, M0inv);
+    if (T[0] * T[3] - T[2] * T[1] >= 0) continue;
+    for (const X of ends) {
+      if (dist(apply(T, X), X) > 1e-4) continue;
+      const c0 = { x: T[0] - 1, y: T[1] }, c1 = { x: T[2], y: T[3] - 1 };
+      const dir = unit(Math.hypot(c0.x, c0.y) >= Math.hypot(c1.x, c1.y) ? c0 : c1);
+      if (dir) out.push({ p: X, dir });
+    }
+  }
+  return out.map((l) => ({ p: add(l.p, off), dir: l.dir }));
+}
+
+export function snapToLines(w: XY, lines: Line[], threshold: number): { at: XY; used: Line[] } | null {
+  const nearL = lines.map((l) => ({ l, d: Math.abs(cross(l.dir, sub(w, l.p))) })).filter((x) => x.d <= threshold).sort((a, b) => a.d - b.d);
+  if (!nearL.length) return null;
+  let best: { at: XY; used: Line[] } | null = null, bd = threshold;
+  for (let i = 0; i < nearL.length; i++) for (let k = i + 1; k < nearL.length; k++) {
+    const a = nearL[i].l, b = nearL[k].l, den = cross(a.dir, b.dir);
+    if (Math.abs(den) < 1e-9) continue;
+    const at = add(a.p, mul(a.dir, cross(sub(b.p, a.p), b.dir) / den)), dd = dist(at, w);
+    if (dd <= bd) { bd = dd; best = { at, used: [a, b] }; }
+  }
+  if (best) return best;
+  const l = nearL[0].l;
+  return { at: add(l.p, mul(l.dir, dot(sub(w, l.p), l.dir))), used: [l] };
 }
