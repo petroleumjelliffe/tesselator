@@ -59,7 +59,7 @@ function ToolBar() {
     <Sep />
     <LayerPicker />
     <Sep />
-    <Btn on={p.snap} cls="small" kbd="G" title={STR.titles.snap} onClick={() => A.toggleSnap()}>{STR.bar.snap}</Btn>
+    <Btn on={p.grid} cls="small" kbd="G" title={STR.titles.grid} onClick={() => A.toggleGrid()}>{STR.bar.grid}</Btn>
     {UI.pen.value && <><Sep /><Btn cls="small outline" kbd="↵" title={STR.titles.endPath} onClick={() => A.endPen()}>{STR.bar.endPath}</Btn></>}
     {t === 'select' && <Btn cls="small" on={UI.addToSelection.value} title={STR.titles.addToSelection} onClick={() => A.toggleAddToSelection()}>{STR.bar.addToSelection}</Btn>}
   </div>;
@@ -233,7 +233,7 @@ function Help() {
   const p = UI.prefs.value;
   return <div class="help">
     <span><K k="Tab" />{STR.help.tabSwitch}<K k="Esc" />{STR.help.escCancel}</span>
-    <span><K k="V" />{STR.help.toolSelect}<K k="P" />{STR.help.toolPen}<K k="F" />{STR.help.toolFreehand}<K k="B" />{STR.help.toolFill}<K k="G" />{STR.help.toolSnapHold}<K k="⌘" />{STR.help.toolSnapOr}<K k="Ctrl" />{STR.help.toolSnapInvert}</span>
+    <span><K k="V" />{STR.help.toolSelect}<K k="P" />{STR.help.toolPen}<K k="F" />{STR.help.toolFreehand}<K k="B" />{STR.help.toolFill}<K k="G" />{STR.help.toolGridHold}<K k="⌘" />{STR.help.toolSnapOr}<K k="Ctrl" />{STR.help.toolSnapFree}</span>
     <span><K k="O" />{STR.help.elRotation}<K k="M" />{STR.help.elMirror}<K k="T" />{STR.help.elTranslation}</span>
     <span class="violet">{STR.help.elementsIntro}<K k="[" />{STR.help.elementsBetween}<K k="]" />{STR.help.elementsRest}</span>
     <span>{STR.help.penIntro}<K k="Esc" />{STR.help.penOr}<K k="↵" />{STR.help.penToEnd}<K k="Space" />{STR.help.penSpace}</span>

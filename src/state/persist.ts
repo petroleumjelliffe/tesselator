@@ -17,6 +17,14 @@ export function rejectStoredDoc(): void {
   try { const raw = localStorage.getItem(CONFIG.STORAGE_DOC_KEY); if (raw) reject(CONFIG.STORAGE_DOC_KEY, raw); } catch { /* storage unavailable */ }
 }
 
+// Stored prefs over the defaults. Before 2026-10-01 `G` was `snap` (it turned targets off too); its value becomes `grid`.
+export function migratePrefs(base: Prefs, stored: Partial<Prefs> & { snap?: unknown }): Prefs {
+  const { snap, ...rest } = stored;
+  const out: Prefs = { ...base, ...rest };
+  if (typeof rest.grid !== 'boolean') out.grid = typeof snap === 'boolean' ? snap : base.grid;
+  return out;
+}
+
 export function restore(): boolean {
   let loaded = false;
   try {
@@ -29,7 +37,7 @@ export function restore(): boolean {
     if (p) {
       const s = JSON.parse(p) as Partial<StoredPrefs>;
       if (s && s.prefs && typeof s.prefs.gridDivisions === 'number' && s.prefs.style) {
-        UI.prefs.value = { ...UI.prefs.value, ...s.prefs };
+        UI.prefs.value = migratePrefs(UI.prefs.value, s.prefs);
         if (s.tool && ['select', 'pen', 'freehand', 'fill'].includes(s.tool)) UI.tool.value = s.tool;
         if (s.activeLayerId === null || typeof s.activeLayerId === 'string') UI.activeLayerId.value = s.activeLayerId ?? null;
         const v = s.view;

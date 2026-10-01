@@ -6,8 +6,9 @@ import * as P from '../../src/engine/paths';
 import { reset } from '../../src/state/history';
 import { traceStep } from '../../src/interaction/tools/freehand';
 import type { Doc, Drag, XY, UV, SnapResult } from '../../src/types';
+const GRID = { targetsOn: true, gridOn: true, hitScale: 1 }, NOGRID = { targetsOn: true, gridOn: false, hitScale: 1 };
 
-function fresh(build: (d: Doc) => void = () => {}) { reset(); UI.resetUi(); const d = emptyDoc(); build(d); doc.value = d; UI.view.value = { pan: { x: 0, y: 0 }, zoom: 1 }; UI.prefs.value = { ...UI.prefs.value, snap: true }; UI.tool.value = 'freehand'; }
+function fresh(build: (d: Doc) => void = () => {}) { reset(); UI.resetUi(); const d = emptyDoc(); build(d); doc.value = d; UI.view.value = { pan: { x: 0, y: 0 }, zoom: 1 }; UI.prefs.value = { ...UI.prefs.value, grid: true }; UI.tool.value = 'freehand'; }
 function line(d: Doc, pts: UV[], layerId = d.layers[0].id) {
   const p = P.startPath(d, P.addPoint(d, pts[0]), { color: '#000', weight: 2 }, layerId);
   for (const uv of pts.slice(1)) P.appendNode(d, p.id, P.addPoint(d, uv));
@@ -16,11 +17,11 @@ function line(d: Doc, pts: UV[], layerId = d.layers[0].id) {
 const stroke = (from: XY, to: XY, n = 12): XY[] => Array.from({ length: n + 1 }, (_, i) => ({ x: from.x + ((to.x - from.x) * i) / n, y: from.y + ((to.y - from.y) * i) / n }));
 // Mirrors the Freehand tool: the start snaps on press, the end on release.
 function draw(raw: XY[]): boolean {
-  const s0 = A.drawSnap(raw[0], true, 1, null);
+  const s0 = A.drawSnap(raw[0], GRID, null);
   const start = s0 ? s0.at : raw[0];
   const dr = { kind: 'free', raw: [start, ...raw.slice(1)], startNode: null, startSnap: s0, groups: [doc.value.newPathGroups], cloneMatrices: [], end: null, pin: null, cooldown: null,
     target: null, start, moved: true, pointerId: 1, hitScale: 1 } as unknown as Extract<Drag, { kind: 'free' }>;
-  const end = A.drawSnap(raw[raw.length - 1], true, 1, { pts: dr.raw, groups: dr.groups });
+  const end = A.drawSnap(raw[raw.length - 1], GRID, { pts: dr.raw, groups: dr.groups });
   return A.finishFreehand(dr, end);
 }
 const newest = () => doc.value.paths[doc.value.paths.length - 1];
@@ -68,12 +69,12 @@ test('a stroke ending on its own line splits itself: a loop with a tail', () => 
 test('Pen: a click near a mirror axis lands on it; with snapping off a click near a point reuses it', () => {
   fresh();
   A.addElement('mirror'); A.setTool('pen'); A.clearSel();     // addElement selects the element; a Pen click would only clear that
-  A.penClickEmpty({ x: 116, y: 60 }, true);
+  A.penClickEmpty({ x: 116, y: 60 }, GRID);
   expect(P.nodeWorld(doc.value, newest().start).x).toBeCloseTo(120, 6);
   A.endPen();
-  A.penClickEmpty({ x: 30, y: 30 }, false); A.penClickEmpty({ x: 90, y: 30 }, false); A.endPen();
+  A.penClickEmpty({ x: 30, y: 30 }, NOGRID); A.penClickEmpty({ x: 90, y: 30 }, NOGRID); A.endPen();
   const pts = doc.value.points.length;
-  A.penClickEmpty({ x: 32, y: 31 }, false);
+  A.penClickEmpty({ x: 32, y: 31 }, NOGRID);
   expect(doc.value.points.length).toBe(pts);
 });
 

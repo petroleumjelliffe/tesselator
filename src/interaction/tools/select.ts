@@ -8,7 +8,7 @@ import { copyMatrix, snapTargets } from '../../state/derived';
 import { pointsInRectAll, bboxHandles, scaleFor, scaleMatrix } from '../../engine/hit';
 import { toUV } from '../../engine/lattice';
 import { apply, invert, compose, rotation, cellMatrix } from '../../engine/transform';
-import { pickSnap, gridResult, pointCopyMatrices, ownFixedCands, NODE_ONLY, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines } from '../../engine/snap';
+import { pickSnap, gridResult, pointCopyMatrices, ownFixedCands, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines } from '../../engine/snap';
 import { CONFIG } from '../../config';
 import { STR } from '../../strings';
 import { startDrag, cloneBodyMove, type ToolModule, type ToolCtx } from './common';
@@ -19,10 +19,12 @@ const sameCopy = (a: Copy, b: Copy) => a.cell.c === b.cell.c && a.cell.r === b.c
 // Snap for a node being dragged: every target except the point itself and lines touching it, plus its own clones resolved
 // to their axis or centre (SN3), the held snap, and the grid as a fallback. S maps the point's base-cell position to the drag.
 // `also` names further points that move with it (a several-point drag), which are not targets either.
+// With targets off (⌘ / Ctrl) nothing attracts but the grid.
 function nodeSnap(targets: TargetSet, pointId: string, S: Matrix, w: XY, ctx: ToolCtx, also: string[] = []): SnapResult | null {
-  const extra = ctx.snapOn ? ownFixedCands(S, pointCopyMatrices(doc.value, pointId), w, ctx.threshold) : [];
-  const s = pickSnap(targets, w, ctx.threshold, { extra, sticky: UI.snapSticky.value, excludePoints: new Set([pointId, ...also]), cats: ctx.snapOn ? undefined : NODE_ONLY, prefer: A.joinsOn(doc.value, A.layerOfPoint(doc.value, pointId)) });
-  return s ?? (ctx.snapOn ? gridResult(w, doc.value.lattice, UI.prefs.value.gridDivisions) : null);
+  const s = ctx.targetsOn
+    ? pickSnap(targets, w, ctx.threshold, { extra: ownFixedCands(S, pointCopyMatrices(doc.value, pointId), w, ctx.threshold), sticky: UI.snapSticky.value, excludePoints: new Set([pointId, ...also]), prefer: A.joinsOn(doc.value, A.layerOfPoint(doc.value, pointId)) })
+    : null;
+  return s ?? (ctx.gridOn ? gridResult(w, doc.value.lattice, UI.prefs.value.gridDivisions) : null);
 }
 
 // A node dragged through a copy (a clone anchor, or a point picked through a clone) is moved in its source frame, so
@@ -148,9 +150,9 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
       // A source or cell copy is a pure translation of the source, so the pointer delta is the source delta.
       if (!d.targets) d.targets = bodyTargets(doc.value, snapTargets.value, d.pathId);
       const raw = { x: w.x - d.start.x, y: w.y - d.start.y };
-      const sn = ctx.snapOn && d.targets ? snapBodyDelta(d.targets, raw, ctx.threshold, UI.snapSticky.value) : null;
+      const sn = ctx.targetsOn && d.targets ? snapBodyDelta(d.targets, raw, ctx.threshold, UI.snapSticky.value) : null;
       d.snap = sn; UI.snapSticky.value = sn?.res.id ?? null;
-      const dv = sn ? A.uvOf(sn.delta) : A.snapDeltaUV(raw, ctx.snapOn);
+      const dv = sn ? A.uvOf(sn.delta) : A.snapDeltaUV(raw, ctx.gridOn);
       const off = A.worldOf({ u: d.copy.cell.c, v: d.copy.cell.r }), sh = (p: XY): XY => ({ x: p.x + off.x, y: p.y + off.y });
       UI.snapHint.value = sn ? { at: sh(sn.res.at), label: sn.res.label, line: sn.res.line?.map(sh) } : null;
       A.mutate((dd) => { P.movePointsBy(dd, d.ids, d.startPos, dv.u, dv.v); });
@@ -168,7 +170,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
     }
     case 'cp': {
       if (!d.moved) return;
-      const M = copyMatrix(d.copy), s = ctx.snapOn ? snapToLines(w, d.lines, ctx.threshold) : null;
+      const M = copyMatrix(d.copy), s = ctx.targetsOn ? snapToLines(w, d.lines, ctx.threshold) : null;
       UI.snapHint.value = s ? { at: s.at, label: STR.snap.guide, line: s.used.flatMap((l) => [{ x: l.p.x - l.dir.x * 1e4, y: l.p.y - l.dir.y * 1e4 }, { x: l.p.x + l.dir.x * 1e4, y: l.p.y + l.dir.y * 1e4 }]) } : null;
       A.mutate((dd) => { P.setControlPointWorld(dd, d.pathId, d.j, apply(invert(M), s ? s.at : w)); });
       return;
@@ -178,13 +180,13 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
       let T;
       if (d.mode === 'rot') {
         let th = Math.atan2(w.y - d.cy, w.x - d.cx) - Math.atan2(d.h.y - d.cy, d.h.x - d.cx);
-        if (ctx.snapOn) th = Math.round(th / (Math.PI / 12)) * (Math.PI / 12);
+        if (ctx.gridOn) th = Math.round(th / (Math.PI / 12)) * (Math.PI / 12);
         T = rotation(th, d.cx, d.cy);
       } else {
         const free = e.shiftKey || UI.freeScale.value;
         let { sx, sy } = scaleFor(d.h, w, free);
         UI.snapHint.value = null;
-        if (UI.prefs.value.snap) {   // ⇧ means "free" here, so it does not invert snapping
+        if (ctx.targetsOn) {   // T13; ⇧ means "free" here (free scale), not "no snapping"
           const s = snapScale(d.nodes, doc.value.lattice, d.h, { sx, sy }, free, ctx.threshold, CONFIG.SCALE_FRACTIONS);
           if (s.snapped) { sx = s.sx; sy = s.sy; UI.snapHint.value = { at: { x: d.h.ax + sx * (d.h.x - d.h.ax), y: d.h.ay + sy * (d.h.y - d.h.ay) }, label: STR.snap.scale(`${Math.round(sx * 1000) / 1000} × ${Math.round(sy * 1000) / 1000}`) }; }
         }
@@ -196,7 +198,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
       P.transformPath(next, d.pathId, Msrc);
       commit(next);
       d.M = T;
-      if (!UI.snapHint.value && UI.prefs.value.snap) {
+      if (!UI.snapHint.value && ctx.targetsOn) {
         const ends = d.nodes.length ? [apply(T, d.nodes[0]), apply(T, d.nodes[d.nodes.length - 1])] : [];
         for (const q of ends) { const s = pickSnap(d.targets, q, ctx.threshold, { pointsOnly: true, excludePaths: new Set([d.pathId]), excludePoints: d.own }); if (s && s.d < 1) { UI.snapHint.value = A.hintOf(s); break; } }
       }
@@ -230,7 +232,7 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
     case 'point': if (e.shiftKey || UI.addToSelection.value) A.togglePointSelection(t.pointId, t.via); else A.selectPoints([t.pointId], t.via ? { [t.pointId]: t.via } : undefined); return;
     case 'segment':
       if (e.shiftKey || UI.addToSelection.value) { A.toggleInstance(t.pathId, t.copy); return; }
-      if (s && s.kind === 'path' && s.id === t.pathId && sameCopy(s.copy, t.copy)) A.insertNodeOnSegment(t.pathId, t.j, w, t.copy, ctx.snapOn);
+      if (s && s.kind === 'path' && s.id === t.pathId && sameCopy(s.copy, t.copy)) A.insertNodeOnSegment(t.pathId, t.j, w, t.copy, ctx.gridOn);
       else A.selectPathAt(t.pathId, t.copy);
       return;
     case 'canchor': A.selectPathAt(t.pathId, t.copy); return;

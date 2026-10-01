@@ -9,7 +9,7 @@ import type { Doc, HitTarget, XY, UV, Copy } from '../../src/types';
 
 const base: Copy = { cell: { c: 0, r: 0 }, bindingId: null, power: 0 };
 const ev = () => ({ pointerId: 1, shiftKey: false, metaKey: false, ctrlKey: false, pointerType: 'mouse' }) as unknown as PointerEvent;
-const ctxOn = { snapOn: true, hitScale: 1, threshold: 12 }, ctxOff = { snapOn: false, hitScale: 1, threshold: 12 };
+const ctxOn = { targetsOn: true, gridOn: true, hitScale: 1, threshold: 12 }, ctxOff = { targetsOn: true, gridOn: false, hitScale: 1, threshold: 12 };
 function fresh(build: (d: Doc) => void) { reset(); UI.resetUi(); const d = emptyDoc(); build(d); doc.value = d; UI.tool.value = 'select'; UI.view.value = { pan: { x: 0, y: 0 }, zoom: 1 }; }
 function line(d: Doc, pts: UV[], layerId = d.layers[0].id) {
   const p = P.startPath(d, P.addPoint(d, pts[0]), { color: '#000', weight: 2 }, layerId);
@@ -56,10 +56,10 @@ test('drag through cell (2, 0) snaps and joins as in the base cell', () => {
   expect(P.getPath(doc.value, hostId)!.segments).toHaveLength(2);
 });
 
-test('with snapping off a body drag moves by the raw delta and joins nothing', () => {
+test('with ⌘ held (targets off) and the grid off a body drag moves by the raw delta and joins nothing', () => {
   let stubId = '', hostId = '';
   fresh((d) => { hostId = line(d, [{ u: 0.2, v: 0.5 }, { u: 0.8, v: 0.5 }]).id; stubId = line(d, [{ u: 0.5, v: 0.1 }, { u: 0.5, v: 0.45 }]).id; });
-  drag(seg(stubId), { x: 120, y: 60 }, { x: 120, y: 70 }, ctxOff);
+  drag(seg(stubId), { x: 120, y: 60 }, { x: 120, y: 70 }, { ...ctxOff, targetsOn: false });
   expect(P.getPath(doc.value, hostId)!.segments).toHaveLength(1);
   expect(P.nodeWorld(doc.value, P.getPath(doc.value, stubId)!.segments[0].to).y).toBeCloseTo(118, 6);
 });

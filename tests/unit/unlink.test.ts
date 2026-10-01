@@ -11,7 +11,7 @@ import type { Doc, HitTarget, XY, UV, Copy } from '../../src/types';
 
 const base: Copy = { cell: { c: 0, r: 0 }, bindingId: null, power: 0 };
 const ev = () => ({ pointerId: 1, shiftKey: false, metaKey: false, ctrlKey: false, pointerType: 'mouse' }) as unknown as PointerEvent;
-const ctxOff = { snapOn: false, hitScale: 1, threshold: 12 };
+const ctxOff = { targetsOn: false, gridOn: false, hitScale: 1, threshold: 12 };   // ⌘ held: a free drag
 function line(d: Doc, pts: UV[]) {
   const p = P.startPath(d, P.addPoint(d, pts[0]), { color: '#000', weight: 2 }, d.layers[0].id);
   for (const uv of pts.slice(1)) P.appendNode(d, p.id, P.addPoint(d, uv));
@@ -26,13 +26,13 @@ function scene() {
   doc.value = d;
   return { aId: a.id, bId: b.id, shared: shared.pointId };
 }
-function drag(t: HitTarget, from: XY, to: XY) {
-  S.onDown(t, from, ev(), ctxOff);
+function drag(t: HitTarget, from: XY, to: XY, ctx = ctxOff) {
+  S.onDown(t, from, ev(), ctx);
   const d = UI.drag.value!;
   d.moved = true; beginGesture();
-  S.onMove(d, to, ev(), ctxOff);
+  S.onMove(d, to, ev(), ctx);
   UI.drag.value = null;
-  S.onUp(d, to, ev(), ctxOff);
+  S.onUp(d, to, ev(), ctx);
   endGesture();
 }
 const pt = (pointId: string): HitTarget => ({ kind: 'point', pointId, cell: { c: 0, r: 0 } });
@@ -76,12 +76,12 @@ test('S2/S6 fix round 2: dragging a shared plain node of a path selected at a no
   expect(endOf(aId).pointId).toBe(shared);
 });
 
-test('dropping the unlinked node back on the old point merges them again (points attract with snapping off)', () => {
+test('dropping the unlinked node back on the old point merges them again (points attract with the grid off)', () => {
   const { aId, shared } = scene();
   UI.selection.value = { kind: 'path', id: aId, copy: base };
   drag(pt(shared), { x: 120, y: 120 }, { x: 150, y: 120 });
   expect(endOf(aId).pointId).not.toBe(shared);
-  drag(pt(endOf(aId).pointId), { x: 150, y: 120 }, { x: 125, y: 121 });
+  drag(pt(endOf(aId).pointId), { x: 150, y: 120 }, { x: 125, y: 121 }, { ...ctxOff, targetsOn: true });
   expect(endOf(aId).pointId).toBe(shared);
 });
 

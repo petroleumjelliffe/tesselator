@@ -17,10 +17,10 @@ import type { ToolModule, ToolCtx } from '../../src/interaction/tools/common';
 import type { Doc, XY, UV } from '../../src/types';
 
 const ev = (over: Partial<PointerEvent> = {}) => ({ pointerId: 1, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, pointerType: 'mouse', ...over }) as unknown as PointerEvent;
-const ctx: ToolCtx = { snapOn: true, hitScale: 1, threshold: 12 };
+const ctx: ToolCtx = { targetsOn: true, gridOn: true, hitScale: 1, threshold: 12 };
 function fresh(tool: 'pen' | 'freehand', build: (d: Doc) => void = () => {}) {
   reset(); UI.resetUi(); const d = emptyDoc(); build(d); doc.value = d;
-  UI.view.value = { pan: { x: 0, y: 0 }, zoom: 1 }; UI.prefs.value = { ...UI.prefs.value, snap: true }; UI.tool.value = tool; UI.activeLayerId.value = d.layers[0].id;
+  UI.view.value = { pan: { x: 0, y: 0 }, zoom: 1 }; UI.prefs.value = { ...UI.prefs.value, grid: true }; UI.tool.value = tool; UI.activeLayerId.value = d.layers[0].id;
 }
 function line(d: Doc, pts: UV[], layerId = d.layers[0].id) {
   const p = P.startPath(d, P.addPoint(d, pts[0]), { color: '#000', weight: 2 }, layerId);

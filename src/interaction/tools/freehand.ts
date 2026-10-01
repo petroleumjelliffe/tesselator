@@ -3,7 +3,7 @@ import { doc } from '../../state/doc';
 import * as UI from '../../state/ui';
 import * as A from '../../actions';
 import { orbit } from '../../engine/transform';
-import { pickSnap } from '../../engine/snap';
+import { pickSnap, gridResult } from '../../engine/snap';
 import { snapTargets } from '../../state/derived';
 import { CONFIG } from '../../config';
 import { STR } from '../../strings';
@@ -42,7 +42,7 @@ export function traceStep(d: Extract<Drag, { kind: 'free' }>, w: XY, alt: boolea
 // plain open end of a path on the active layer; otherwise the new path starts there (a same-layer join or location only,
 // decided by nodeForSnap at the end). The stroke's clones come from the extended path's bindings, else the new-path groups.
 export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
-  const d = doc.value, startSnap = A.drawSnap(w, ctx.snapOn, ctx.hitScale, null), ext = A.extendTarget(d, startSnap);
+  const d = doc.value, startSnap = A.pressSnap(w, ctx, null), ext = A.extendTarget(d, startSnap);
   const start = startSnap ? startSnap.at : w;
   const groups = ext ? d.bindings.filter((b) => b.pathId === ext.pathId).map((b) => b.groups) : [d.newPathGroups];
   const cloneMatrices = groups.flatMap((g) => orbit(g, d.elements, d.lattice, CONFIG.ORBIT_CAP, CONFIG.CLONE_CAP).matrices.filter((M): M is Matrix => M !== null));
@@ -55,7 +55,7 @@ export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
 function pinnedSnap(d: Extract<Drag, { kind: 'free' }>, pin: { id: string; geom: XY[] }, w: XY, ctx: ToolCtx): SnapResult {
   const q = nearestOnPolyline(pin.geom, w).q;
   UI.snapSticky.value = pin.id;
-  const s = A.drawSnap(q, ctx.snapOn, ctx.hitScale, A.freeStroke(d));
+  const s = A.drawSnap(q, ctx, A.freeStroke(d));
   if (s && s.id !== pin.id && s.cat !== 'grid') return s;
   return { at: s && s.id === pin.id ? s.at : q, cls: 'line', cat: 'line', id: pin.id, label: s && s.id === pin.id ? s.label : STR.snap.traced, hit: { kind: 'place' }, d: 0, line: pin.geom };
 }
@@ -71,7 +71,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
     UI.snapHint.value = { at: d.end.at, label: d.end.label, line: d.pin.geom };   // H4: the followed line stays highlighted
     return;
   }
-  const s = A.drawSnap(w, ctx.snapOn, ctx.hitScale, A.freeStroke(d));
+  const s = A.drawSnap(w, ctx, A.freeStroke(d));
   d.end = s && s.cat !== 'grid' ? s : null;
   UI.snapSticky.value = d.end?.id ?? null;
   UI.snapHint.value = A.hintOf(d.end);
@@ -79,7 +79,10 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
 
 export const onUp: ToolModule['onUp'] = (d, w, _e, ctx) => {
   if (d.kind !== 'free') return;
-  // H6: the held snap is the snap used; while pinned, the end is on the pinned line, never at the raw pointer.
-  const end = d.pin ? pinnedSnap(d, d.pin, w, ctx) : A.drawSnap(w, ctx.snapOn, ctx.hitScale, A.freeStroke(d));
+  // H6, H7: the end is the snap last shown while moving (while pinned, on the pinned line), never a re-pick at the
+  // release. With none shown it is the release point, or the grid while `G` is on.
+  const end = d.end ?? (ctx.gridOn ? gridResult(w, doc.value.lattice, UI.prefs.value.gridDivisions) : null);
+  const last = d.raw[d.raw.length - 1];
+  if (!end && (last.x !== w.x || last.y !== w.y)) d.raw.push({ x: w.x, y: w.y });
   A.finishFreehand(d, end);
 };

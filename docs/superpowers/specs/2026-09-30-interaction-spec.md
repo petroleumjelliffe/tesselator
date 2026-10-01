@@ -82,7 +82,8 @@ Rotation centres that a pattern implies without an element (the extra 2-fold cen
 |---|---|---|
 | Layer mode | Drawing · Construction (`Tab`) | built |
 | Tool | Select `V` · Pen `P` · Freehand `F` · Fill `B` | built |
-| Snap | on · off (`G`); hold `⌘` / `Ctrl` to invert for one gesture | `G` built; override change (was `⇧`) |
+| Grid snap | on · off (`G`); silent, never hinted | built; decided 2026-10-01 |
+| Target snap | always on; hold `⌘` / `Ctrl` to turn it off for one gesture | decided 2026-10-01 (was: `G` turned targets off) |
 
 Pen, Freehand and (later) Shape tools share one rule set for nodes, snapping and commit (§5, §6).
 
@@ -197,7 +198,8 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 
 ### 6.5 Toggles
 
-- `G` on/off; `⌘` / `Ctrl` held inverts for one gesture. The canvas suppresses the context menu so `Ctrl`-click works on a Mac.
+- **Grid** (decided 2026-10-01): `G` turns grid snapping on and off. The grid is the fallback when no target is near, and it is never hinted.
+- **Targets** (decided 2026-10-01): snapping to every target in §6.1 (T1–T10, T12–T13) is always on. Holding `⌘` / `Ctrl` turns it off for that gesture, existing points included, for a fully free placement. The grid still applies while `G` is on. There is no target toggle for now. The canvas suppresses the context menu so `Ctrl`-click works on a Mac.
 - `⇧` keeps its meanings: free scale, add to selection.
 
 ### 6.6 Pinned movement (tracing)
@@ -239,6 +241,7 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 | E3 | Handles move rigidly with a dragged node. | specced |
 | E4 | Dragging a node of the selected path pulls it off a shared point. | specced |
 | E5 | Drag a path's body; its endpoints snap as they move (§6.3) and join on release (§6.4). | move built; snapping specced, extended |
+| E5a | Dragging the body of a clone or repeat moves the **original** path so the grabbed copy follows the pointer; transforms never move (decided 2026-10-01: moving the transform broke rational placement and multiplied copies). Snapping is measured at the grabbed copy. Transforms move only by their own handles. | change (was: moved the transform) |
 | E6 | Box handles scale and rotate; scale snaps to lattice fractions; endpoint hints while scaling. | built; snap specced; hints new |
 | E7 | Handle drags snap to axis angles, tangents, mirror normals. | specced |
 | E8 | Dropping a node on a node (same layer) merges them. | built; cross-layer change |
@@ -256,6 +259,8 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 | H4 | While pinned, the followed line stays highlighted. | new |
 | H5 | Hints update every pointer move, and while dragging or scaling they show at the selection's endpoints. | new |
 | H6 | What you see is what you get: if a hint is showing when the pointer goes down or up, that is the snap used, including a sticky hold beyond the plain threshold (SN4). | new |
+| H7 | No hint, no snap (decided 2026-10-01): a target snap happens only if its hint is visible at that moment; otherwise the point lands where the pointer is, or on the grid while `G` is on. A commit never re-picks a snap that was not shown. | new |
+| H8 | While Pen or Freehand is selected, nodes are shown only for paths near the cursor (within a few thresholds of any of their instances), not for every path (decided 2026-10-01). | new |
 
 ---
 

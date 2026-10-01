@@ -39,7 +39,7 @@ export type CopyInfo = { pathId: string; copy: Copy; M: Matrix };
 export type Layer = 'drawing' | 'construction';
 export type Tool = 'select' | 'pen' | 'freehand' | 'fill';
 export type View = { pan: XY; zoom: number };
-export type Prefs = { style: Style; fillColor: string; snap: boolean; gridDivisions: number; ghostOpacity: number };
+export type Prefs = { style: Style; fillColor: string; grid: boolean; gridDivisions: number; ghostOpacity: number };
 
 export type Selection =
   | null

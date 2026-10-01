@@ -2,7 +2,7 @@
 import { signal } from '@preact/signals';
 import { CONFIG } from '../config';
 import { doc, draft } from './doc';
-import { selection, pen, hover, drag, pendingGroup, snapHint, snapSticky } from './ui';
+import { selection, pen, hover, drag, pendingGroup, clearSnap } from './ui';
 import { viaSnapshot, repairVia, pathNodes, viaLive } from '../engine/paths';
 import type { Doc, XY } from '../types';
 
@@ -16,7 +16,7 @@ export const historyVersion = signal(0);
 function trim() { while (past.length > CONFIG.MAX_HISTORY) past.shift(); }
 function clearTransient() {
   selection.value = null; pen.value = null; hover.value = null; drag.value = null; pendingGroup.value = null;
-  snapHint.value = null; snapSticky.value = null;
+  clearSnap();
 }
 
 export function commit(next: Doc): void {

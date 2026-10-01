@@ -24,8 +24,8 @@ const mid = (a: XY, b: XY): XY => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 export function hoverAt(w: XY, hit: HitTarget | null, c: ToolCtx): void {
   UI.hover.value = hit;
   const drawing = UI.layer.value === 'drawing' && (UI.tool.value === 'pen' || UI.tool.value === 'freehand');
-  if (drawing) A.hoverSnap(w, c.snapOn, c.hitScale);
-  else if (UI.snapHint.value) { UI.snapHint.value = null; UI.snapSticky.value = null; }
+  if (drawing) A.hoverSnap(w, c);
+  else if (UI.snapHint.value || UI.snapShown.value) UI.clearSnap();
 }
 
 export function attachPointer(svg: SVGSVGElement): () => void {
@@ -38,7 +38,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
   const world = (e: PointerEvent | WheelEvent): XY => { const s = screen(e), v = UI.view.value; return { x: (s.x - v.pan.x) / v.zoom, y: (s.y - v.pan.y) / v.zoom }; };
   const kindOf = (e: PointerEvent): PointerKind => (e.pointerType === 'touch' ? 'touch' : e.pointerType === 'pen' ? 'pen' : 'mouse');
   const scaleOf = (e: PointerEvent) => (e.pointerType === 'touch' ? CONFIG.TOUCH_HIT_SCALE : 1);
-  const ctxOf = (e: PointerEvent): ToolCtx => ({ snapOn: UI.prefs.value.snap !== (e.metaKey || e.ctrlKey), hitScale: scaleOf(e), threshold: A.threshold(scaleOf(e)) });
+  const ctxOf = (e: PointerEvent): ToolCtx => ({ targetsOn: !(e.metaKey || e.ctrlKey), gridOn: UI.prefs.value.grid, hitScale: scaleOf(e), threshold: A.threshold(scaleOf(e)) });
   const hitCtx = (hitScale: number): HitContext => ({ layer: UI.layer.value, tool: UI.tool.value, selection: UI.selection.value, pen: UI.pen.value, zoom: UI.view.value.zoom, hitScale, copies: copies.value, cloneMatrices: cloneMatrices.value, faces: faces.value });
   const activeTool = (): ToolModule => (UI.layer.value === 'construction' ? construct : TOOLS[UI.tool.value]);
 
@@ -92,14 +92,14 @@ export function attachPointer(svg: SVGSVGElement): () => void {
     const t = dragTool;
     UI.drag.value = null; dragTool = null;
     try { t.onUp(d, world(e), e, ctxOf(e)); } finally { endGesture(); }   // a commit on release (merge on drop) belongs to the drag's one history entry
-    UI.snapHint.value = null; UI.snapSticky.value = null;
+    UI.clearSnap();
     UI.hover.value = hitTest(doc.value, hitCtx(scaleOf(e)), world(e));
   }
 
   function onCancel(e?: PointerEvent) {
     if (e) pointers.delete(e.pointerId); else pointers.clear();
     if (!pointers.size) { nav = null; navDead = false; }
-    if (UI.drag.value || dragTool) { UI.drag.value = null; dragTool = null; endGesture(); UI.fillPreview.value = null; UI.snapHint.value = null; UI.snapSticky.value = null; }
+    if (UI.drag.value || dragTool) { UI.drag.value = null; dragTool = null; endGesture(); UI.fillPreview.value = null; UI.clearSnap(); }
   }
 
   // Safety net for a release the SVG never sees (over a floating panel, outside the window, or capture lost): forget the
@@ -133,7 +133,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
     if (meta) return;
     switch (k) {
       case 'Escape':
-        if (UI.drag.value) { abortGesture(); UI.drag.value = null; dragTool = null; UI.fillPreview.value = null; UI.snapHint.value = null; UI.snapSticky.value = null; return; }   // cancel the gesture, restoring what it moved
+        if (UI.drag.value) { abortGesture(); UI.drag.value = null; dragTool = null; UI.fillPreview.value = null; UI.clearSnap(); return; }   // cancel the gesture, restoring what it moved
         if (UI.pen.value) { A.endPen(); return; }
         A.clearSel(); A.setTool('select'); return;
       case 'Enter': A.endPen(); return;
@@ -151,7 +151,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
       case 'o': A.addElement('rotate'); break;
       case 'm': A.addElement('mirror'); break;
       case 't': A.addElement('translate'); break;
-      case 'g': A.toggleSnap(); break;
+      case 'g': A.toggleGrid(); break;
       default:
     }
   }

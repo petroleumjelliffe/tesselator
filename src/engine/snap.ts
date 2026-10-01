@@ -145,8 +145,6 @@ export function buildTargets(doc: Doc): TargetSet {
   return { points, lines };
 }
 
-export const NODE_ONLY: ReadonlySet<SnapCat> = new Set<SnapCat>(['node']);
-
 export function precedence(x: { cls: 'point' | 'line'; cat: SnapCat }): number {
   const list = (x.cls === 'point' ? CONFIG.SNAP_PRECEDENCE.point : CONFIG.SNAP_PRECEDENCE.line) as readonly SnapCat[];
   const i = list.indexOf(x.cat);

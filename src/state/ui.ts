@@ -1,6 +1,6 @@
 import { signal } from '@preact/signals';
 import { CONFIG } from '../config';
-import type { Layer, Tool, Selection, HitTarget, Drag, XY, View, Prefs, PointerKind, Copy, Lattice } from '../types';
+import type { Layer, Tool, Selection, HitTarget, Drag, XY, View, Prefs, PointerKind, Copy, Lattice, SnapResult } from '../types';
 
 export const layer = signal<Layer>('drawing');
 export const tool = signal<Tool>('pen');
@@ -14,7 +14,7 @@ export const cursor = signal<XY | null>(null);
 export const view = signal<View>({ pan: { x: 0, y: 0 }, zoom: 1 });
 export const viewport = signal({ width: 0, height: 0 });
 export const space = signal(false);
-export const prefs = signal<Prefs>({ style: { color: '#1c1b18', weight: 2 }, fillColor: '#c2255c', snap: true, gridDivisions: CONFIG.DEFAULT_GRID_DIVISIONS, ghostOpacity: CONFIG.DEFAULT_GHOST_OPACITY });
+export const prefs = signal<Prefs>({ style: { color: '#1c1b18', weight: 2 }, fillColor: '#c2255c', grid: true, gridDivisions: CONFIG.DEFAULT_GRID_DIVISIONS, ghostOpacity: CONFIG.DEFAULT_GHOST_OPACITY });
 export const showHelp = signal(false);
 export const exportOpen = signal(false);
 export const lastSavedAt = signal<number | null>(null);
@@ -27,6 +27,10 @@ export const addToSelection = signal(false);   // touch stand-in for Shift while
 export type SnapHint = { at: XY; label?: string; line?: XY[] };
 export const snapHint = signal<SnapHint | null>(null);       // what the current gesture or hover would snap to, for the canvas
 export const snapSticky = signal<string | null>(null);       // id of the held snap (spec SN4, H6): hover hands it to the press
+// H7: the target snap behind the hover hint and the pointer position it was shown for (s null: no hint showed there). A
+// press at that position uses exactly this; cleared with the hint.
+export const snapShown = signal<{ w: XY; s: SnapResult | null } | null>(null);
+export function clearSnap(): void { snapHint.value = null; snapSticky.value = null; snapShown.value = null; }
 
 export function resetUi(): void {
   layer.value = 'drawing'; tool.value = 'pen'; pen.value = null; selection.value = null;
@@ -34,7 +38,7 @@ export function resetUi(): void {
   showHelp.value = false; exportOpen.value = false; fillPreview.value = null;
   freeScale.value = false; addToSelection.value = false;
   activeLayerId.value = null; pendingGroup.value = null;
-  snapHint.value = null; snapSticky.value = null;
+  clearSnap();
 }
 
 export function clearSelection(): void { selection.value = null; }

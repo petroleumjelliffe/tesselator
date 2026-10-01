@@ -11,7 +11,7 @@ import { startDrag, type ToolModule } from './common';
 export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
   if (t && (t.kind === 'point' || t.kind === 'canchor')) { select.onDown(t, w, e, ctx); return; }   // a click, or a node drag
   if (t && UI.selection.value && !UI.pen.value) UI.selection.value = null;                             // a hit starts drawing at once
-  A.penClickEmpty(w, ctx.snapOn, ctx.hitScale);
+  A.penClickEmpty(w, ctx);
   startDrag(e, t, w, ctx.hitScale, { kind: 'click' });
 };
 
@@ -28,5 +28,5 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
     if (P.sameNode(nodes[nodes.length - 1], { pointId: t.pointId, cell: t.cell, ...(t.via ? { via: t.via } : {}) })) { A.endPen(); return; }
   }
   if (!pn) UI.selection.value = null;
-  A.penClickEmpty(d.start, ctx.snapOn, ctx.hitScale);   // H6: the snap at the press, as the hint showed it
+  A.penClickEmpty(d.start, ctx);   // H6, H7: the snap hinted at the press
 };

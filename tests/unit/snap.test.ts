@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
-import { buildTargets, pickSnap, precedence, choose, strokeCopies, strokeCands, pointCopyMatrices, ownFixedCands, nearestOnSeg, gridResult, NODE_ONLY, solveCopyMeet, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines, windowCopies } from '../../src/engine/snap';
+import { buildTargets, pickSnap, precedence, choose, strokeCopies, strokeCands, pointCopyMatrices, ownFixedCands, nearestOnSeg, gridResult, solveCopyMeet, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines, windowCopies } from '../../src/engine/snap';
 import { cellMatrix, apply, rotation, IDENTITY } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import { STR } from '../../src/strings';
@@ -49,8 +49,8 @@ test('pickSnap: other paths\' nodes and lines carry hits; exclusions drop them a
   expect((l.hit as { t: number }).t).toBeCloseTo(0.5, 6);
   expect(pickSnap(T, { x: 120, y: 125 }, 12, { excludePoints: new Set([p.start.pointId]) })).toBe(null);
   expect(pickSnap(T, { x: 120, y: 125 }, 12, { excludePaths: new Set([p.id]) })).toBe(null);
-  expect(pickSnap(T, { x: 120, y: 125 }, 12, { cats: NODE_ONLY })).toBe(null);
-  expect(pickSnap(T, { x: 50, y: 118 }, 12, { cats: NODE_ONLY })?.cat).toBe('node');
+  expect(pickSnap(T, { x: 120, y: 125 }, 12, { cats: new Set(['node' as const]) })).toBe(null);
+  expect(pickSnap(T, { x: 50, y: 118 }, 12, { cats: new Set(['node' as const]) })?.cat).toBe('node');
 });
 
 test('stickiness: a held line survives out to 1.5× and a same-class rival must be clearly nearer; an earlier class takes over', () => {

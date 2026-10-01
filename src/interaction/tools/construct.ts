@@ -35,7 +35,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
     case 'elc': {
       const lat = doc.value.lattice, delta = toUV({ x: w.x - d.start.x, y: w.y - d.start.y }, lat);
       const target = { u: d.u0 + delta.u, v: d.v0 + delta.v };
-      const uv = snapElement(A.worldOf(target), ctx.snapOn, ctx.hitScale);
+      const uv = snapElement(A.worldOf(target), ctx);
       A.mutate((dd) => { const el = P.getElement(dd, d.id); if (!el) return false; el.u = uv.u; el.v = uv.v; });
       return;
     }
@@ -44,7 +44,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
         const el = P.getElement(dd, d.id); if (!el || el.kind !== 'mirror') return false;
         const c = A.worldOf(el);
         let ang = (Math.atan2(w.y - c.y, w.x - c.x) * 180) / Math.PI;
-        if (ctx.snapOn) ang = Math.round(ang / 15) * 15;
+        if (ctx.gridOn) ang = Math.round(ang / 15) * 15;
         const dir = mirrorDirFromAngle(ang, dd.lattice); el.du = dir.du; el.dv = dir.dv;
       });
       return;
@@ -53,14 +53,14 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
       A.mutate((dd) => {
         const el = P.getElement(dd, d.id); if (!el || el.kind !== 'translate') return false;
         let { u, v } = toUV(w, dd.lattice);
-        if (ctx.snapOn) { u = twelfths(u); v = twelfths(v); }
+        if (ctx.gridOn) { u = twelfths(u); v = twelfths(v); }
         el.u = u; el.v = v;
       });
       return;
     }
     case 'lat': {
       let x = w.x, y = w.y;
-      if (ctx.snapOn) { const len = Math.max(40, Math.round(Math.hypot(x, y) / 10) * 10), ang = Math.round(Math.atan2(y, x) / (Math.PI / 12)) * (Math.PI / 12); x = len * Math.cos(ang); y = len * Math.sin(ang); }
+      if (ctx.gridOn) { const len = Math.max(40, Math.round(Math.hypot(x, y) / 10) * 10), ang = Math.round(Math.atan2(y, x) / (Math.PI / 12)) * (Math.PI / 12); x = len * Math.cos(ang); y = len * Math.sin(ang); }
       const nl = { ...doc.value.lattice };
       if (d.which === 'a') { nl.ax = x; nl.ay = y; } else { nl.bx = x; nl.by = y; }
       if (isDegenerate(nl, CONFIG.MIN_LATTICE_DET)) return;
@@ -68,7 +68,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
       return;
     }
     case 'elmulti': {
-      const dv = A.snapDeltaUV({ x: w.x - d.start.x, y: w.y - d.start.y }, ctx.snapOn);
+      const dv = A.snapDeltaUV({ x: w.x - d.start.x, y: w.y - d.start.y }, ctx.gridOn);
       A.mutate((dd) => {
         for (const id of d.ids) {
           const x = P.getElement(dd, id), s = d.startEls.find((z) => z.id === id) as Element | undefined;

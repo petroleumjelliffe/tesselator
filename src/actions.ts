@@ -12,7 +12,7 @@ import { strokeToPath } from './engine/freehand';
 import { pickSnap, gridResult, strokeCopies, strokeCands, nearestOnSeg, bezAt } from './engine/snap';
 import { joinable, joinPointToHit, nodeForSnap, splitNearest } from './engine/joins';
 import { CONFIG } from './config';
-import type { Doc, XY, UV, Cell, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer, SnapResult, SnapHit, Path, SnapCat } from './types';
+import type { Doc, XY, UV, Cell, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer, SnapResult, SnapHit, Path } from './types';
 
 // Every mutation is bracketed by via repair, so a change that removes a binding or clone slot (element edits, lattice
 // edits, deletions) materialises the via nodes that depended on it where they were, whether or not `fn` remembered
@@ -47,17 +47,21 @@ function ownExclusions(d: Doc, pathId: string): { excludePaths: Set<string>; exc
   return { excludePaths: new Set([pathId]), excludePoints: new Set(own ? P.pathNodes(own).map((n) => n.pointId).filter((id) => !others.has(id)) : []) };
 }
 
+// How a gesture snaps (spec §6.5): targets attract unless ⌘ / Ctrl is held; the grid is the silent fallback while `G` is on.
+export type SnapMode = { targetsOn: boolean; gridOn: boolean; hitScale: number };
+
 // The snap for a drawing point (Pen click, stroke start or end, hover): every target, the stroke's own targets, the held
-// snap; the grid when nothing else is near. With snapping off only existing points attract: nodes, and the stroke's own
-// start (its own nodes are not node targets, I1, so closing a shape still works with snapping off).
-const NODE_OR_OWN_START: ReadonlySet<SnapCat> = new Set<SnapCat>(['node', 'ownStart']);
-export function drawSnap(w: XY, on: boolean, hitScale: number, stroke: DrawStroke | null): SnapResult | null {
-  const thr = threshold(hitScale), d = doc.value;
-  const extra = stroke ? strokeCands(stroke.pts, stroke.groups.flatMap((g) => strokeCopies(d, g)), w, thr) : [];
-  const ex = stroke?.pathId ? ownExclusions(d, stroke.pathId) : {};
-  const layerId = (stroke?.pathId && P.getPath(d, stroke.pathId)?.layerId) || activeLayerId(d);
-  const s = pickSnap(snapTargets.value, w, thr, { extra, sticky: UI.snapSticky.value, cats: on ? undefined : NODE_OR_OWN_START, prefer: joinsOn(d, layerId), ...ex });
-  return s ?? (on ? gridResult(w, d.lattice, UI.prefs.value.gridDivisions) : null);
+// snap; the grid when nothing else is near. With targets off (⌘ / Ctrl held) nothing attracts but the grid.
+export function drawSnap(w: XY, m: SnapMode, stroke: DrawStroke | null): SnapResult | null {
+  const thr = threshold(m.hitScale), d = doc.value;
+  let s: SnapResult | null = null;
+  if (m.targetsOn) {
+    const extra = stroke ? strokeCands(stroke.pts, stroke.groups.flatMap((g) => strokeCopies(d, g)), w, thr) : [];
+    const ex = stroke?.pathId ? ownExclusions(d, stroke.pathId) : {};
+    const layerId = (stroke?.pathId && P.getPath(d, stroke.pathId)?.layerId) || activeLayerId(d);
+    s = pickSnap(snapTargets.value, w, thr, { extra, sticky: UI.snapSticky.value, prefer: joinsOn(d, layerId), ...ex });
+  }
+  return s ?? (m.gridOn ? gridResult(w, d.lattice, UI.prefs.value.gridDivisions) : null);
 }
 
 // SN5 at choice time: of coincident candidates, prefer the one a release would join on this layer.
@@ -91,11 +95,28 @@ export function extendTarget(d: Doc, s: SnapResult | null, layerId: string = act
   return path && path.layerId === layerId ? { pathId: path.id, node: { pointId: h.pointId, cell: { ...h.cell } } } : null;
 }
 
-export function hoverSnap(w: XY, on: boolean, hitScale: number): void {
-  const s = drawSnap(w, on, hitScale, UI.tool.value === 'pen' ? penStroke() : null);
-  const shown = s && s.cat !== 'grid' ? s : null;           // the grid is not worth a hint
+// H2, H6, H7: the hover hint is the snap a press here would use. The grid is never hinted, so only a target is shown;
+// `snapShown` records what was shown at which pointer position, so the press uses exactly that.
+export function hoverSnap(w: XY, m: SnapMode): void {
+  const s = drawSnap(w, m, UI.tool.value === 'pen' ? penStroke() : null);
+  showSnap(w, s && s.cat !== 'grid' ? s : null);
+}
+function showSnap(w: XY, shown: SnapResult | null): void {
   UI.snapHint.value = hintOf(shown);
   UI.snapSticky.value = shown?.id ?? null;
+  UI.snapShown.value = { w: { x: w.x, y: w.y }, s: shown };
+}
+
+// H7, no hint, no snap: a press uses the target hinted at that pointer position, never a re-pick. A press away from the
+// last hover (or after the hover was consumed or cleared) computes once here and shows that. With no target shown, the
+// press lands on the grid while `G` is on, else at the pointer. The record is consumed, so a second press recomputes.
+export function pressSnap(w: XY, m: SnapMode, stroke: DrawStroke | null): SnapResult | null {
+  const rec = UI.snapShown.value;
+  let shown: SnapResult | null;
+  if (rec && rec.w.x === w.x && rec.w.y === w.y) shown = rec.s;
+  else { const s = drawSnap(w, m, stroke); shown = s && s.cat !== 'grid' ? s : null; showSnap(w, shown); }
+  UI.snapShown.value = null;
+  return shown ?? (m.gridOn ? gridResult(w, doc.value.lattice, UI.prefs.value.gridDivisions) : null);
 }
 
 const baseCopy: Copy = { cell: { c: 0, r: 0 }, bindingId: null, power: 0 };
@@ -117,7 +138,7 @@ export function setTool(t: Tool): boolean {
   UI.tool.value = t;
   if (t === 'freehand' || t === 'fill') UI.selection.value = null;
   UI.fillPreview.value = null;
-  UI.snapHint.value = null; UI.snapSticky.value = null;
+  UI.clearSnap();
   return true;
 }
 export function setLayer(l: Layer): boolean {
@@ -126,10 +147,10 @@ export function setLayer(l: Layer): boolean {
   UI.layer.value = l;
   const s = UI.selection.value;
   if (s && (l === 'construction') !== (s.kind === 'element')) UI.selection.value = null;
-  UI.snapHint.value = null; UI.snapSticky.value = null;
+  UI.clearSnap();
   return true;
 }
-export function toggleSnap(): boolean { UI.prefs.value = { ...UI.prefs.value, snap: !UI.prefs.value.snap }; UI.snapHint.value = null; UI.snapSticky.value = null; return true; }
+export function toggleGrid(): boolean { UI.prefs.value = { ...UI.prefs.value, grid: !UI.prefs.value.grid }; UI.clearSnap(); return true; }
 export function toggleFreeScale(): boolean { UI.freeScale.value = !UI.freeScale.value; return true; }
 export function toggleAddToSelection(): boolean { UI.addToSelection.value = !UI.addToSelection.value; return true; }
 export function toggleHelp(): boolean { UI.showHelp.value = !UI.showHelp.value; return true; }
@@ -184,10 +205,10 @@ function ownEndNode(d: Doc, path: Path, h: SnapHit | undefined, at: XY, maxJ: nu
 // its own start closes it, its repeated start wraps it, and its own earlier line splits it; each ends the path, as does
 // landing on a node the path already has. With no path in progress, an open end on the drawing layer resumes that path
 // (D5); anything else starts a new one. Joins are same-layer only (O2, in nodeForSnap / extendTarget).
-export function penClickEmpty(w: XY, on: boolean, hitScale = 1): boolean {
+export function penClickEmpty(w: XY, m: SnapMode): boolean {
   if (UI.selection.value && !UI.pen.value) { UI.selection.value = null; return true; }
   const penNow = UI.pen.value;
-  const s = drawSnap(w, on, hitScale, penNow ? penStroke() : null);
+  const s = pressSnap(w, m, penNow ? penStroke() : null);
   let started: string | null = null, ended = false;
   const ok = mutate((d) => {
     const penPath = penNow ? P.getPath(d, penNow.pathId) : null;
@@ -261,7 +282,7 @@ export function joinDroppedNode(pathId: string, nodeIndex: number, hit: SnapHit)
 }
 
 export function endPen(): boolean {
-  UI.snapHint.value = null; UI.snapSticky.value = null;
+  UI.clearSnap();
   const penNow = UI.pen.value;
   if (!penNow) return false;
   UI.pen.value = null;

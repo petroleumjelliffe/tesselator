@@ -14,16 +14,17 @@ import * as pen from '../../src/interaction/tools/pen';
 import type { Drag, XY, Node } from '../../src/types';
 import { computeFaces } from '../../src/engine/regions';
 import { anchorsWorld, hitTest, type HitContext } from '../../src/engine/hit';
+const GRID = { targetsOn: true, gridOn: true, hitScale: 1 }, NOGRID = { targetsOn: true, gridOn: false, hitScale: 1 };
 
-function fresh() { reset(); UI.resetUi(); doc.value = emptyDoc(); UI.viewport.value = { width: 800, height: 600 }; UI.prefs.value = { ...UI.prefs.value, snap: false }; }
+function fresh() { reset(); UI.resetUi(); doc.value = emptyDoc(); UI.viewport.value = { width: 800, height: 600 }; UI.prefs.value = { ...UI.prefs.value, grid: false }; }
 const W = (u: number, v: number) => ({ x: u * 240, y: v * 240 });
-// A Pen click as pointer.ts delivers it: hit-test, then the Pen's onDown and onUp. Snapping off by default (nodes still
-// attract); segment clicks need it on, since with snapping off lines are not targets.
+// A Pen click as pointer.ts delivers it: hit-test, then the Pen's onDown and onUp. The grid is off by default (targets
+// always attract); `snapOn` turns the grid on.
 function penAt(w: XY, snapOn = false): boolean {
   const hc: HitContext = { layer: UI.layer.value, tool: UI.tool.value, selection: UI.selection.value, pen: UI.pen.value, zoom: UI.view.value.zoom, hitScale: 1, copies: copies.value, cloneMatrices: cloneMatrices.value, faces: faces.value };
   const before = doc.value, penBefore = UI.pen.value;
   const ev = { pointerId: 1, shiftKey: false, metaKey: false, ctrlKey: false, pointerType: 'mouse' } as unknown as PointerEvent;
-  const ctx = { snapOn, hitScale: 1, threshold: A.threshold(1) };
+  const ctx = { targetsOn: true, gridOn: snapOn, hitScale: 1, threshold: A.threshold(1) };
   pen.onDown(hitTest(doc.value, hc, w), w, ev, ctx);
   const d = UI.drag.value; UI.drag.value = null;
   if (d) pen.onUp(d, w, ev, ctx);
@@ -33,13 +34,13 @@ const penOn = (n: Node) => penAt(P.nodeWorld(doc.value, n));
 
 test('pen: empty clicks build a path, clicking the last node ends it, short paths are discarded', () => {
   fresh();
-  A.penClickEmpty(W(0.1, 0.1), false); expect(UI.pen.value).toBeTruthy();
-  A.penClickEmpty(W(0.4, 0.1), false);
+  A.penClickEmpty(W(0.1, 0.1), NOGRID); expect(UI.pen.value).toBeTruthy();
+  A.penClickEmpty(W(0.4, 0.1), NOGRID);
   const path = doc.value.paths[0];
   expect(path.segments).toHaveLength(1);
   penOn(path.segments[0].to);
   expect(UI.pen.value).toBe(null);
-  A.penClickEmpty(W(0.8, 0.8), false); A.endPen();
+  A.penClickEmpty(W(0.8, 0.8), NOGRID); A.endPen();
   expect(doc.value.paths).toHaveLength(1);
   expect(doc.value.points).toHaveLength(2);
 });
@@ -48,7 +49,7 @@ test('pen: new paths receive newPathGroups; clicking an open end resumes and rev
   fresh();
   A.addElement('rotate'); expect(UI.layer.value).toBe('construction');
   A.setTool('pen'); expect(UI.layer.value).toBe('drawing');
-  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID); A.endPen();
   expect(doc.value.bindings).toHaveLength(1);
   const path = doc.value.paths[0], first = path.start.pointId;
   penOn(path.start);
@@ -58,7 +59,7 @@ test('pen: new paths receive newPathGroups; clicking an open end resumes and rev
 
 test('addElement binds the selected path; deleteElement drops bindings and chains', () => {
   fresh();
-  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID); A.endPen();
   A.selectPathAt(doc.value.paths[0].id);
   A.addElement('mirror');
   const el = doc.value.elements[0];
@@ -69,7 +70,7 @@ test('addElement binds the selected path; deleteElement drops bindings and chain
 
 test('fillAt seeds at the centroid, recolours on a second click, and maps neighbour cells to the same region', () => {
   fresh();
-  for (const p of [W(0.25, 0.25), W(0.75, 0.25), W(0.75, 0.75), W(0.25, 0.75)]) A.penClickEmpty(p, false);
+  for (const p of [W(0.25, 0.25), W(0.75, 0.25), W(0.75, 0.75), W(0.25, 0.75)]) A.penClickEmpty(p, NOGRID);
   penOn(doc.value.paths[0].start); A.endPen();
   A.setTool('fill');
   expect(faces.value).toHaveLength(9);
@@ -85,7 +86,7 @@ test('fillAt seeds at the centroid, recolours on a second click, and maps neighb
 test('editing through a copy in cell (1,0) and through a clone moves the source', () => {
   fresh();
   A.addElement('rotate'); A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID); A.endPen();
   const path = doc.value.paths[0], pid = path.start.pointId, b = doc.value.bindings[0];
   // a drag of the point through its copy in cell (1,0): pointer at world (1.2, 0.2) → point becomes (0.2, 0.2)
   A.mutate((d) => { const uv = A.uvOf(W(1.2, 0.2)); P.movePoint(d, pid, uv.u - 1, uv.v - 0); });
@@ -100,7 +101,7 @@ test('editing through a copy in cell (1,0) and through a clone moves the source'
 test('insertNodeOnSegment through a clone copy maps the click back to the source segment', () => {
   fresh();
   A.addElement('rotate'); A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.5, 0.1), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.5, 0.1), NOGRID); A.endPen();
   const path = doc.value.paths[0], b = doc.value.bindings[0];
   const copy = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 };
   const clickOnClone = apply(copyMatrix(copy), W(0.3, 0.1));
@@ -122,12 +123,12 @@ test('finishFreehand creates a bound path and rejects a jitter', () => {
 
 test('finishFreehand starting on a via node keeps the via on the new path\'s start instead of resuming the via-ended path', () => {
   fresh(); A.addElement('rotate'); A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.4, 0.5), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.5), NOGRID); A.penClickEmpty(W(0.4, 0.5), NOGRID); A.endPen();
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 };
   A.setTool('pen');
   penAt(W(0.8, 0.52), true);                          // splits the source, tail starts on a via node
-  A.penClickEmpty(W(0.8, 0.9), false); A.endPen();
+  A.penClickEmpty(W(0.8, 0.9), NOGRID); A.endPen();
   const tailStart = doc.value.paths[1].start;
   expect(tailStart.via).toEqual(clone);
   A.setTool('freehand');
@@ -152,7 +153,7 @@ test('zoomAt keeps the point under the cursor fixed and never enters history', (
 
 test('a gesture of many mutate() calls is one undo step', () => {
   fresh();
-  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID); A.endPen();
   const pid = doc.value.paths[0].start.pointId;
   beginGesture();
   for (let i = 1; i <= 5; i++) A.mutate((d) => { P.movePoint(d, pid, 0.1 + i * 0.01, 0.1); });
@@ -164,7 +165,7 @@ test('a gesture of many mutate() calls is one undo step', () => {
 
 test('straightenPath clears every curved segment on a path, and is a no-op once straight', () => {
   fresh();
-  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.penClickEmpty(W(0.4, 0.4), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.4), NOGRID); A.endPen();
   const path = doc.value.paths[0];
   A.mutate((d) => { const p = P.getPath(d, path.id)!; p.segments[0].cp = { u: 0.25, v: 0.05 }; p.segments[1].cp = { u: 0.45, v: 0.25 }; });
   expect(doc.value.paths[0].segments.some((s) => s.cp)).toBe(true);
@@ -176,7 +177,7 @@ test('straightenPath clears every curved segment on a path, and is a no-op once 
 
 test('undo right after the first pen click removes the one-node path and its point', () => {
   fresh();
-  A.penClickEmpty(W(0.1, 0.1), false);
+  A.penClickEmpty(W(0.1, 0.1), NOGRID);
   expect(doc.value.paths).toHaveLength(1); expect(UI.pen.value).toBeTruthy();
   expect(A.undo()).toBe(true);
   expect(doc.value.paths).toHaveLength(0);
@@ -186,7 +187,7 @@ test('undo right after the first pen click removes the one-node path and its poi
 
 test('undo after two pen clicks resumes drawing the one-node path instead of leaving it stranded', () => {
   fresh();
-  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false);
+  A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID);
   A.undo();
   const path = doc.value.paths[0];
   expect(path.segments).toHaveLength(0);
@@ -198,7 +199,7 @@ test('undo after two pen clicks resumes drawing the one-node path instead of lea
 
 test('undo that restores a pen path in progress also restores the Pen tool and Drawing layer', () => {
   fresh();
-  A.penClickEmpty(W(0.1, 0.1), false);
+  A.penClickEmpty(W(0.1, 0.1), NOGRID);
   A.setTool('select');                                       // endPen commits the delete of the one-node path
   expect(doc.value.paths).toHaveLength(0);
   A.setLayer('construction');
@@ -211,7 +212,7 @@ test('undo that restores a pen path in progress also restores the Pen tool and D
 
 test('a region straddling the cell edge is one fill from either side, seeded inside the base cell', () => {
   fresh();
-  for (const p of [W(0.75, 0.25), W(1.25, 0.25), W(1.25, 0.75), W(0.75, 0.75)]) A.penClickEmpty(p, false);
+  for (const p of [W(0.75, 0.25), W(1.25, 0.25), W(1.25, 0.75), W(0.75, 0.75)]) A.penClickEmpty(p, NOGRID);
   penOn(doc.value.paths[0].start); A.endPen();
   A.setTool('fill');
   expect(A.fillAt({ x: 250, y: 120 })).toBe(true);
@@ -230,7 +231,7 @@ test('a new path gets one binding holding every new-path group; O on a selected 
   fresh();
   A.addElement('rotate'); A.addElement('mirror');
   expect(doc.value.newPathGroups).toHaveLength(2);
-  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID); A.endPen();
   expect(doc.value.bindings).toHaveLength(1);
   expect(doc.value.bindings[0].groups).toEqual(doc.value.newPathGroups);
   const path = doc.value.paths[0];
@@ -249,7 +250,7 @@ test('a stale activeLayerId falls back to the top layer; addLayer makes the new 
   A.addLayer();
   const top = doc.value.layers[1].id;
   expect(UI.activeLayerId.value).toBe(top);
-  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID); A.endPen();
   expect(doc.value.paths[0].layerId).toBe(top);
   A.setPathLayer(doc.value.paths[0].id, doc.value.layers[0].id);
   expect(doc.value.paths[0].layerId).toBe(doc.value.layers[0].id);
@@ -259,7 +260,7 @@ test('a stale activeLayerId falls back to the top layer; addLayer makes the new 
 test('group editing actions move an element between groups and clear the pending group', () => {
   fresh();
   A.addElement('mirror'); A.addElement('rotate');
-  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID); A.endPen();
   const b = doc.value.bindings[0], [m, r] = doc.value.elements.map((e) => e.id);
   expect(b.groups).toEqual([[m], [r]]);
   A.startGroup(b.id); expect(UI.pendingGroup.value).toEqual({ bindingId: b.id });
@@ -302,7 +303,7 @@ test('"Apply to new paths" is lit and toggled per element, keeping newPathGroups
   expect(A.isNewPathElement(m)).toBe(false);
   A.toggleNewPathElement(m);                             // and on an unlit m: m joins as its own group
   expect(doc.value.newPathGroups).toEqual([[t], [m]]);
-  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  A.setTool('pen'); A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID); A.endPen();
   const ids = doc.value.bindings[0].groups.flat();
   expect(new Set(ids).size).toBe(ids.length);
   expect(parseDoc(serializeDoc(doc.value))).toEqual(doc.value);
@@ -316,7 +317,7 @@ const base = { cell: { c: 0, r: 0 }, bindingId: null, power: 0 };
 
 test('pen: clicking a source segment inserts a shared node and starts a path from it; the outline is unchanged', () => {
   fresh(); A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.9, 0.5), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.5), NOGRID); A.penClickEmpty(W(0.9, 0.5), NOGRID); A.endPen();
   const body = doc.value.paths[0];
   A.setTool('pen');
   expect(penAt(W(0.3, 0.52), true)).toBe(true);
@@ -326,13 +327,13 @@ test('pen: clicking a source segment inserts a shared node and starts a path fro
   const tail = doc.value.paths[1];
   expect(UI.pen.value?.pathId).toBe(tail.id);
   expect(tail.start).toEqual(b2.segments[0].to);                                   // shared node
-  A.penClickEmpty(W(0.3, 0.9), false); A.endPen();
+  A.penClickEmpty(W(0.3, 0.9), NOGRID); A.endPen();
   expect(doc.value.points).toHaveLength(4);
 });
 
 test('pen: clicking a segment of the path in progress splits it there and ends the path (D7)', () => {
   fresh(); A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.9, 0.5), false); A.penClickEmpty(W(0.9, 0.9), false);
+  A.penClickEmpty(W(0.1, 0.5), NOGRID); A.penClickEmpty(W(0.9, 0.5), NOGRID); A.penClickEmpty(W(0.9, 0.9), NOGRID);
   const p = doc.value.paths[0];
   penAt(W(0.5, 0.52), true);
   expect(doc.value.paths).toHaveLength(1);
@@ -347,7 +348,7 @@ test('pen: clicking a clone segment splits the source and starts a via node at t
   fresh();
   A.addElement('rotate');                                                            // half-turn about the centre, applied to new paths
   A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.4, 0.5), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.5), NOGRID); A.penClickEmpty(W(0.4, 0.5), NOGRID); A.endPen();
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 };
   A.setTool('pen');
@@ -357,7 +358,7 @@ test('pen: clicking a clone segment splits the source and starts a via node at t
   expect(tail.start.via).toEqual(clone);
   const w = P.nodeWorld(doc.value, tail.start);
   expect(w.x).toBeCloseTo(0.8 * 240, 4); expect(w.y).toBeCloseTo(0.5 * 240, 4);
-  A.penClickEmpty(W(0.8, 0.9), false); A.endPen();
+  A.penClickEmpty(W(0.8, 0.9), NOGRID); A.endPen();
   // merge: drag the tail's free end onto the body's start (re-read the tail: each commit is a fresh draft)
   const end = doc.value.paths[1].segments[0].to, target = body.start;
   expect(A.joinDroppedPoint(end.pointId, end.cell, { kind: 'node', pointId: target.pointId, cell: target.cell, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } })).toBe(true);
@@ -368,11 +369,11 @@ test('pen: clicking a clone segment splits the source and starts a via node at t
 
 test('removing the binding a via node depends on materialises the node where it was', () => {
   fresh(); A.addElement('mirror'); A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.3), false); A.penClickEmpty(W(0.4, 0.3), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.3), NOGRID); A.penClickEmpty(W(0.4, 0.3), NOGRID); A.endPen();
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   A.setTool('pen');
   penAt(W(0.7, 0.31), true);
-  A.penClickEmpty(W(0.7, 0.8), false); A.endPen();
+  A.penClickEmpty(W(0.7, 0.8), NOGRID); A.endPen();
   const before = P.nodeWorld(doc.value, doc.value.paths[1].start);
   A.removeBinding(b.id);
   const after = doc.value.paths[1].start;
@@ -384,13 +385,13 @@ test('removing the binding a via node depends on materialises the node where it 
 
 test('dragging a via node follows the pointer each move (it never snaps to its own image); releasing a raw point on another point merges them', () => {
   fresh(); A.addElement('rotate'); A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.4, 0.5), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.5), NOGRID); A.penClickEmpty(W(0.4, 0.5), NOGRID); A.endPen();
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   A.setTool('pen');
   penAt(W(0.8, 0.52), true);
-  A.penClickEmpty(W(0.8, 0.9), false); A.endPen();
+  A.penClickEmpty(W(0.8, 0.9), NOGRID); A.endPen();
   A.setTool('select');
-  const ctx = { snapOn: false, hitScale: 1, threshold: 12 }, ev = {} as PointerEvent;
+  const ctx = { targetsOn: true, gridOn: false, hitScale: 1, threshold: 12 }, ev = {} as PointerEvent;
   const n = doc.value.paths[1].start, w0 = P.nodeWorld(doc.value, n);
   const d: Drag = { kind: 'pt', pointId: n.pointId, cell: n.cell, via: n.via, targets: snapTargets.value, snap: null, target: null, start: w0, moved: true, pointerId: 1, hitScale: 1 };
   for (let i = 1; i <= 4; i++) {
@@ -412,8 +413,8 @@ test('dragging a via node follows the pointer each move (it never snaps to its o
 
 test('a merge on release is part of the drag gesture: one undo restores the document from before the drag', () => {
   fresh(); A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
-  A.penClickEmpty(W(0.6, 0.6), false); A.penClickEmpty(W(0.9, 0.6), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID); A.endPen();
+  A.penClickEmpty(W(0.6, 0.6), NOGRID); A.penClickEmpty(W(0.9, 0.6), NOGRID); A.endPen();
   const start = doc.value, a = doc.value.paths[0], b = doc.value.paths[1];
   const from = b.start, to = a.segments[0].to;
   beginGesture();                                                                                // as pointer.ts does once the drag has moved
@@ -433,7 +434,7 @@ test('a merge on release is part of the drag gesture: one undo restores the docu
 // Body (0.1,0.5)→(0.4,0.5) under a half-turn about the centre; its clone runs (216,120)→(144,120).
 function bodyWithHalfTurn() {
   fresh(); A.addElement('rotate'); A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.4, 0.5), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.5), NOGRID); A.penClickEmpty(W(0.4, 0.5), NOGRID); A.endPen();
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   return { body, b, clone: { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 } };
 }
@@ -441,7 +442,7 @@ function bodyWithHalfTurn() {
 test('pen: a plain click on a point does not resume an open path whose end is a via node on that point', () => {
   const { body, clone } = bodyWithHalfTurn();
   A.setTool('pen');
-  A.penClickEmpty(W(0.2, 0.8), false);
+  A.penClickEmpty(W(0.2, 0.8), NOGRID);
   penAt(W(0.8, 0.52), true);                          // tail ends on the clone at (192,120); the split point itself is at (48,120)
   A.endPen();
   const tail = doc.value.paths[1], split = doc.value.paths[0].segments[0].to;
@@ -457,7 +458,7 @@ test('pen: a plain click on a point does not resume an open path whose end is a 
 test('pen: with a path in progress, clicking a clone anchor appends a via node at the anchor', () => {
   const { body, clone } = bodyWithHalfTurn();
   A.setTool('pen');
-  A.penClickEmpty(W(0.8, 0.8), false);
+  A.penClickEmpty(W(0.8, 0.8), NOGRID);
   expect(penOn({ pointId: body.start.pointId, cell: body.start.cell, via: clone })).toBe(true);
   const p = doc.value.paths[1], last = p.segments[p.segments.length - 1].to;
   expect(last).toEqual({ pointId: body.start.pointId, cell: body.start.cell, via: clone });
@@ -470,7 +471,7 @@ test('pen: with a path in progress, clicking a clone anchor appends a via node a
 test('pen: an empty click within the snap threshold of a clone anchor starts a path on a via node at that anchor', () => {
   const { body, clone } = bodyWithHalfTurn();
   A.setTool('pen');
-  expect(A.penClickEmpty({ x: 216 + 5, y: 120 - 3 }, true)).toBe(true);                // no raw point near (221,117); the clone anchor is at (216,120)
+  expect(A.penClickEmpty({ x: 216 + 5, y: 120 - 3 }, GRID)).toBe(true);                // no raw point near (221,117); the clone anchor is at (216,120)
   const p = doc.value.paths[1];
   expect(p.start).toEqual({ pointId: body.start.pointId, cell: body.start.cell, via: clone });
   expect(P.nodeWorld(doc.value, p.start)).toEqual({ x: 216, y: 120 });
@@ -481,7 +482,7 @@ test('pen: an empty click within the snap threshold of a clone anchor starts a p
 test('regions: a straight and a curved T-junction drawn with the Pen through penClickSegment each split a square exactly (18 faces)', () => {
   const drawSquare = () => {
     fresh(); A.setTool('pen');
-    for (const q of [W(0.25, 0.25), W(0.75, 0.25), W(0.75, 0.75), W(0.25, 0.75)]) A.penClickEmpty(q, false);
+    for (const q of [W(0.25, 0.25), W(0.75, 0.25), W(0.75, 0.75), W(0.25, 0.75)]) A.penClickEmpty(q, NOGRID);
     penOn(doc.value.paths[0].start); A.endPen();                             // closes; segments: 0 top, 1 right, 2 bottom, 3 left
     return doc.value.paths[0];
   };
@@ -508,13 +509,13 @@ function bodyWithFourFoldAndPower3Tail() {
   const el = doc.value.elements[0];
   A.setRotationOrder(el.id, 4);
   A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.3), false); A.penClickEmpty(W(0.4, 0.3), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.3), NOGRID); A.penClickEmpty(W(0.4, 0.3), NOGRID); A.endPen();
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   expect(cloneMatrices.value.get(b.id)).toHaveLength(3);
   const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 3 };
   A.setTool('pen');
   penAt(apply(copyMatrix(clone), W(0.25, 0.3)), true);
-  A.penClickEmpty(W(0.8, 0.8), false); A.endPen();
+  A.penClickEmpty(W(0.8, 0.8), NOGRID); A.endPen();
   const tail = doc.value.paths[1];
   expect(tail.start.via).toEqual(clone);
   return { el, b, tail, before: P.nodeWorld(doc.value, tail.start) };
@@ -535,13 +536,13 @@ test('a gesture whose element edits remove a clone slot materialises the via nod
   const el = doc.value.elements[0];
   A.setTranslation(el.id, 1 / 3, 0);                                                   // T, T² are clones; T³ is the lattice
   A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.3), false); A.penClickEmpty(W(0.3, 0.3), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.3), NOGRID); A.penClickEmpty(W(0.3, 0.3), NOGRID); A.endPen();
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   expect(cloneMatrices.value.get(b.id)).toHaveLength(2);
   const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 2 };
   A.setTool('pen');
   penAt(apply(copyMatrix(clone), W(0.2, 0.3)), true);
-  A.penClickEmpty(W(0.8, 0.8), false); A.endPen();
+  A.penClickEmpty(W(0.8, 0.8), NOGRID); A.endPen();
   const pre = doc.value, before = P.nodeWorld(pre, pre.paths[1].start);
   expect(pre.paths[1].start.via).toEqual(clone);
   beginGesture();                                                                      // a translation-tip drag, as pointer.ts runs it
@@ -563,7 +564,7 @@ test('a gesture whose element edits remove a clone slot materialises the via nod
 
 test('pen: a plain click on X resumes a path X → via(X) from its plain end (the via end is not mistaken for X by pointId alone)', () => {
   fresh(); A.addElement('mirror'); A.setTool('pen');                                    // mirror x = 120: the clone of (60,72) is (180,72)
-  A.penClickEmpty(W(0.1, 0.3), false); A.penClickEmpty(W(0.4, 0.3), false); A.endPen();
+  A.penClickEmpty(W(0.1, 0.3), NOGRID); A.penClickEmpty(W(0.4, 0.3), NOGRID); A.endPen();
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 };
   A.setTool('pen');
@@ -586,7 +587,7 @@ test('pen: a plain click on X resumes a path X → via(X) from its plain end (th
 test('freehand: a stroke started on a via node whose point is a plain open end starts a new path instead of extending the host', () => {
   const { body, clone } = bodyWithHalfTurn();
   A.setTool('pen');
-  A.penClickEmpty(W(0.8, 0.8), false);
+  A.penClickEmpty(W(0.8, 0.8), NOGRID);
   penOn({ pointId: body.start.pointId, cell: body.start.cell, via: clone });  // tail ends on the clone anchor of the body's start
   A.endPen();
   const bodyBefore = doc.value.paths[0];
@@ -640,20 +641,22 @@ test('fish fixture: the tail drawn by Pen clicks on the body and on its clone in
   expect(computeFaces(doc.value)).toHaveLength(8);
 });
 
-test('drawSnap: a mirror axis attracts a Pen point; with snapping off only existing points do', () => {
+test('drawSnap: a mirror axis attracts a Pen point with the grid on or off; with targets off (⌘) nothing does but the grid', () => {
   fresh();
   A.addElement('mirror'); A.setTool('pen'); A.clearSel();      // a mirror along b through the tile centre: x = 120 (addElement selects it)
-  const s = A.drawSnap({ x: 116, y: 60 }, true, 1, null)!;
+  const s = A.drawSnap({ x: 116, y: 60 }, GRID, null)!;
   expect(s.cat).toBe('axis'); expect(s.at.x).toBeCloseTo(120, 6);
-  expect(A.drawSnap({ x: 116, y: 60 }, false, 1, null)).toBe(null);
-  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
-  expect(A.drawSnap({ x: 26, y: 26 }, false, 1, null)?.cat).toBe('node');
+  expect(A.drawSnap({ x: 116, y: 60 }, NOGRID, null)?.cat).toBe('axis');
+  A.penClickEmpty(W(0.1, 0.1), NOGRID); A.penClickEmpty(W(0.4, 0.1), NOGRID); A.endPen();
+  expect(A.drawSnap({ x: 26, y: 26 }, NOGRID, null)?.cat).toBe('node');
+  expect(A.drawSnap({ x: 26, y: 26 }, { ...NOGRID, targetsOn: false }, null)).toBe(null);
+  expect(A.drawSnap({ x: 26, y: 26 }, { ...GRID, targetsOn: false }, null)?.cat).toBe('grid');
 });
 
 test('hoverSnap publishes the hint and the held id; Esc semantics live in pointer.ts', () => {
   fresh();
   A.addElement('mirror'); A.setTool('freehand');
-  A.hoverSnap({ x: 117, y: 60 }, true, 1);
+  A.hoverSnap({ x: 117, y: 60 }, GRID);
   expect(UI.snapHint.value?.at.x).toBeCloseTo(120, 6);
   expect(UI.snapSticky.value).toBeTruthy();
   expect(snapTargets.value.lines.length).toBeGreaterThan(0);
@@ -662,7 +665,7 @@ test('hoverSnap publishes the hint and the held id; Esc semantics live in pointe
 test('setTool, setLayer, toggleSnap and undo each clear a stale snap hint left by hoverSnap', () => {
   fresh();
   A.addElement('mirror'); A.setTool('pen'); A.clearSel();
-  const arm = () => { A.hoverSnap({ x: 117, y: 60 }, true, 1); expect(UI.snapHint.value).not.toBe(null); };
+  const arm = () => { A.hoverSnap({ x: 117, y: 60 }, GRID); expect(UI.snapHint.value).not.toBe(null); };
 
   arm(); A.setTool('fill');
   expect(UI.snapHint.value).toBe(null); expect(UI.snapSticky.value).toBe(null);
@@ -672,10 +675,10 @@ test('setTool, setLayer, toggleSnap and undo each clear a stale snap hint left b
   expect(UI.snapHint.value).toBe(null); expect(UI.snapSticky.value).toBe(null);
 
   A.setLayer('drawing'); A.setTool('pen');
-  arm(); A.toggleSnap();
+  arm(); A.toggleGrid();
   expect(UI.snapHint.value).toBe(null); expect(UI.snapSticky.value).toBe(null);
 
-  UI.prefs.value = { ...UI.prefs.value, snap: true };
+  UI.prefs.value = { ...UI.prefs.value, grid: true };
   arm(); A.undo();
   expect(UI.snapHint.value).toBe(null); expect(UI.snapSticky.value).toBe(null);
 });
