@@ -128,3 +128,26 @@ test('a marquee picks points through a mirror clone; dragging moves them through
   drag({ kind: 'point', pointId: pid, cell: { c: 0, r: 0 }, via }, { x: 216, y: 24 }, { x: 226, y: 24 }, ctxOff);   // right on the clone
   expect(P.getPoint(doc.value, pid)!.u).toBeCloseTo(0.1 - 10 / 240, 9);                                            // left on the original
 });
+
+test('a grouped drag through a clone: grabbing the raw point of two marqueed points moves both sources, the cloned one in the mirrored direction', () => {
+  let pidA = '', pidB = '';
+  fresh((d) => {
+    const pa = line(d, [{ u: 0.05, v: 0.1 }, { u: 0.05, v: 0.5 }]);
+    pidA = pa.start.pointId;                                          // raw (12, 24), no binding
+    const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });   // x = 120
+    const pb = line(d, [{ u: 0.9, v: 0.1 }, { u: 0.9, v: 0.3 }]);
+    P.addBinding(d, pb.id, [[el.id]]);
+    pidB = pb.start.pointId;                                          // raw (216, 24); mirror image (24, 24)
+  });
+  S.onDown(null, { x: 0, y: 10 }, ev(), ctxOff);
+  const m = UI.drag.value!; m.moved = true;
+  S.onMove(m, { x: 40, y: 40 }, ev(), ctxOff);
+  UI.drag.value = null;
+  S.onUp(m, { x: 40, y: 40 }, ev(), ctxOff);                          // rect covers pidA raw and pidB's mirror image, not pidB raw
+  const s = UI.selection.value;
+  expect(s && s.kind === 'points' && [...s.ids].sort()).toEqual([pidA, pidB].sort());
+  expect(s && s.kind === 'points' && s.copies?.[pidB]?.bindingId).toBeTruthy();
+  drag({ kind: 'point', pointId: pidA, cell: { c: 0, r: 0 } }, { x: 12, y: 24 }, { x: 22, y: 24 }, ctxOff);   // grab the raw one, +10px x
+  expect(P.getPoint(doc.value, pidA)!.u).toBeCloseTo(0.05 + 10 / 240, 9);     // raw source: same direction
+  expect(P.getPoint(doc.value, pidB)!.u).toBeCloseTo(0.9 - 10 / 240, 9);      // mirrored source: opposite direction
+});

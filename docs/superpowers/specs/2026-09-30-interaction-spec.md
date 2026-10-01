@@ -202,7 +202,7 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 
 ### 6.6 Pinned movement (tracing)
 
-- **Trigger.** Explicit: only while `⌥` is held (decided 2026-09-30 after the playground showed that pinning on a line start made ordinary strokes follow lines). Without it the stroke always follows the pointer, and snapping applies only to the start and, on release, the end. Touch needs a chrome toggle in place of `⌥`. The playground keeps the other triggers to compare.
+- **Trigger.** Explicit: only while `⌥` is held (decided 2026-09-30 after the playground showed that pinning on a line start made ordinary strokes follow lines). Without it the stroke always follows the pointer, and snapping applies only to the start and, on release, the end. Touch needs a chrome toggle in place of `⌥`. Holding `⌥` is itself the request, so tracing works whether snapping is on or off (`G`, `⌘`/`Ctrl`). The playground keeps the other triggers to compare.
 - **Follow.** While pinned, stroke points are the pointer projected onto the line.
 - **Breakaway.** The pin releases when the pointer is more than the breakaway distance (default 24 px) from the line. The same line cannot re-pin until the pointer has been twice that distance away.
 - **Result.** One path. The followed stretch is an exact copy of that part of the line (D12), joined without a kink (D13). The line followed is never split or joined (it is a guide, on any layer).

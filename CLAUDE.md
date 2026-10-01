@@ -40,10 +40,13 @@ Everything in the document is in lattice `(u, v)` coordinates; world position is
 - `src/actions.ts` holds every user-level mutation as `mutate(draft => ...)`. Chrome and tools call these.
 - `src/interaction/pointer.ts` is one listener set on the SVG: hit-test geometrically (`src/engine/hit.ts`), dispatch to `src/interaction/tools/*` (`onDown/onMove/onUp`), two pointers = pan and pinch (a second finger reverts a drag), thresholds double for touch.
 - `src/components/Canvas.tsx` renders the base cell once into `<defs>` as one `<g id="cell-layer-<id>">` per layer (that layer's faces, then its source and clone strokes) and places one `<use>` per layer per visible cell; overlays are drawn at the selected copy. `src/components/Chrome.tsx` is the floating chrome (group clusters with `+ then`, layer picker with `+ layer`).
+- `src/engine/snap.ts` is pure snapping: `buildTargets` (tile corners and edges, mirror axes incl. those implied by stacked groups, rotation points, intersections, every node and line of every copy), `pickSnap` (one precedence list in `CONFIG.SNAP_PRECEDENCE`, points before lines, sticky holds), a stroke's own targets (`strokeCands`), a dragged node's own clones resolved to their axis or centre (`ownFixedCands`), body-drag meets (`snapBodyDelta`), scale fractions and handle guides. `snapTargets` in `derived.ts` caches the targets; drags take them at drag start.
+- `src/engine/joins.ts` turns a snap into a node on release: share, split, via, or a new point; joins only within a layer.
+- `src/strings.ts` holds every user-visible string.
 
 ## Shortcuts
 
-`Tab` layer · `V` `P` `F` `B` tools · `O` `M` `T` add elements · `[` `]` rotate a mirror · `G` snap · `Esc`/`Enter` end pen · `Space`+drag moves elements · `⌫` delete hovered point or selection · `⌘Z` / `⇧⌘Z` · `⌘0` fit · wheel pans, `⌘`+wheel zooms, two fingers pan and pinch. The `?` sheet in `Chrome.tsx` must stay in sync with `onKeyDown` in `pointer.ts`.
+`Tab` layer · `V` `P` `F` `B` tools · `O` `M` `T` add elements · `[` `]` rotate a mirror · `G` snap, hold `⌘`/`Ctrl` to invert · `⌥` while drawing traces a line · `Esc` cancels what is in progress, again clears and returns to Select · `Enter` end pen · `Space`+drag moves elements · `⌫` delete hovered point or selection · `⌘Z` / `⇧⌘Z` · `⌘0` fit · wheel pans, `⌘`+wheel zooms, two fingers pan and pinch. The `?` sheet in `Chrome.tsx` must stay in sync with `onKeyDown` in `pointer.ts`.
 
 ## Known limitations
 
@@ -52,3 +55,7 @@ Everything in the document is in lattice `(u, v)` coordinates; world position is
 - Only the base cell's copies are hit-tested for segments in the visible cells; points are hit in the 3×3 window.
 - Clone-body drags move the first element of the first group that contributes to the dragged copy (the first group with a nonzero power in the copy's clone index); with other non-translation groups contributing, the copy follows in the transformed frame.
 - Layer rename, reorder, hide and lock are not in this chrome (Project 2).
+- A traced stretch is fitted like the rest of the stroke, so on a curve it follows the line within the fitting tolerance rather than copying it exactly, and the fitted curve can kink where it peels off (spec D12, D13).
+- Regions still read every path on every layer, fills are still seeds, and existing documents may share points across layers; the layers, regions and fills plan changes these.
+- Touch has no toggle for tracing yet (⌥ only).
+- A via node on a path selected through a clone copy is not drawn or hit.
