@@ -2,15 +2,16 @@
 import { doc, draft, emptyDoc } from './state/doc';
 import { commit, undo as hUndo, redo as hRedo, gestureActive } from './state/history';
 import * as UI from './state/ui';
-import { copyMatrix, cloneMatrices, faces } from './state/derived';
+import { copyMatrix, cloneMatrices, faces, snapTargets } from './state/derived';
 import * as P from './engine/paths';
 import { toWorld, toUV, snapGrid, snapFraction } from './engine/lattice';
 import { apply, invert, mirrorAngle, mirrorDirFromAngle } from './engine/transform';
 import { snapWorld, projectOnSegment, seedOf, type Anchor } from './engine/hit';
 import { faceAt, seedFor, fillOfFace } from './engine/regions';
 import { strokeToPath } from './engine/freehand';
+import { pickSnap, gridResult, strokeCopies, strokeCands, NODE_ONLY } from './engine/snap';
 import { CONFIG } from './config';
-import type { Doc, XY, UV, Cell, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer } from './types';
+import type { Doc, XY, UV, Cell, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer, SnapResult } from './types';
 
 // Every mutation is bracketed by via repair, so a change that removes a binding or clone slot (element edits, lattice
 // edits, deletions) materialises the via nodes that depended on it where they were, whether or not `fn` remembered
@@ -34,6 +35,32 @@ export function snapDeltaUV(dw: XY, on: boolean): UV {
   const d = uvOf(dw);
   return on ? snapGrid(d, UI.prefs.value.gridDivisions) : d;
 }
+
+export function hintOf(s: SnapResult | null): UI.SnapHint | null { return s ? { at: s.at, label: s.label, line: s.line } : null; }
+
+// The snap for a drawing point (Pen click, stroke start or end, hover): every target, the stroke's own targets, the held
+// snap; the grid when nothing else is near. With snapping off only existing points attract.
+export function drawSnap(w: XY, on: boolean, hitScale: number, stroke: { pts: XY[]; groups: string[][][] } | null): SnapResult | null {
+  const thr = threshold(hitScale), d = doc.value;
+  const extra = on && stroke ? strokeCands(stroke.pts, stroke.groups.flatMap((g) => strokeCopies(d, g)), w, thr) : [];
+  const s = pickSnap(snapTargets.value, w, thr, { extra, sticky: UI.snapSticky.value, cats: on ? undefined : NODE_ONLY });
+  return s ?? (on ? gridResult(w, d.lattice, UI.prefs.value.gridDivisions) : null);
+}
+
+// The Pen path in progress as a stroke: its world nodes and its bindings' groups.
+export function penStroke(): { pts: XY[]; groups: string[][][] } | null {
+  const pn = UI.pen.value, p = pn && P.getPath(doc.value, pn.pathId);
+  if (!p) return null;
+  return { pts: P.pathWorld(doc.value, p), groups: doc.value.bindings.filter((b) => b.pathId === p.id).map((b) => b.groups) };
+}
+
+export function hoverSnap(w: XY, on: boolean, hitScale: number): void {
+  const s = drawSnap(w, on, hitScale, UI.tool.value === 'pen' ? penStroke() : null);
+  const shown = s && s.cat !== 'grid' ? s : null;           // the grid is not worth a hint
+  UI.snapHint.value = hintOf(shown);
+  UI.snapSticky.value = shown?.id ?? null;
+}
+
 const baseCopy: Copy = { cell: { c: 0, r: 0 }, bindingId: null, power: 0 };
 // After a binding's groups change, a selected clone's power can point past the end of (or at a deduped-null slot in)
 // the new cloneMatrices; fall back to the base copy rather than let the selection silently act on the source path.

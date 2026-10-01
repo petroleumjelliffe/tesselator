@@ -58,7 +58,7 @@ function ToolBar() {
     <Sep />
     <LayerPicker />
     <Sep />
-    <Btn on={p.snap} cls="small" kbd="G" title="Grid snapping (G); hold Shift to invert" onClick={() => A.toggleSnap()}>⌗ Snap</Btn>
+    <Btn on={p.snap} cls="small" kbd="G" title="Snapping (G); hold ⌘ or Ctrl to invert for one gesture" onClick={() => A.toggleSnap()}>⌗ Snap</Btn>
     {UI.pen.value && <><Sep /><Btn cls="small outline" kbd="↵" title="End the current path (Enter / Esc)" onClick={() => A.endPen()}>End path</Btn></>}
     {t === 'select' && <Btn cls="small" on={UI.addToSelection.value} title="Add to the selection while marquee-selecting (stands in for Shift)" onClick={() => A.toggleAddToSelection()}>Add</Btn>}
   </div>;
@@ -228,8 +228,8 @@ const K = ({ k }: { k: string }) => <span class="kbd">{k}</span>;
 function Help() {
   const p = UI.prefs.value;
   return <div class="help">
-    <span><K k="Tab" /> Drawing ↔ Construction · only the active layer responds to the pointer</span>
-    <span><K k="V" /> select · <K k="P" /> pen · <K k="F" /> freehand · <K k="B" /> fill · <K k="G" /> snap (hold <K k="⇧" /> to invert)</span>
+    <span><K k="Tab" /> Drawing ↔ Construction · only the active layer responds to the pointer · <K k="Esc" /> cancels what is in progress, again clears and returns to Select</span>
+    <span><K k="V" /> select · <K k="P" /> pen · <K k="F" /> freehand · <K k="B" /> fill · <K k="G" /> snap (hold <K k="⌘" /> or <K k="Ctrl" /> to invert)</span>
     <span><K k="O" /> rotation · <K k="M" /> mirror · <K k="T" /> translation — stacked as a new group on the selected path's binding, and given to new paths</span>
     <span class="violet">Elements: drag to move · mirror knob or <K k="[" /> <K k="]" /> rotates · translation diamond sets the vector · a group applies left to right (a mirror then a half translation is a glide) · a "then" group applies to the source and every clone so far</span>
     <span>Pen: click a point to start or resume · click a line to join it there (the line gets a shared node) · click empty space to add · click the last point, <K k="Esc" /> or <K k="↵" /> to end · <K k="Space" />+drag moves the elements</span>

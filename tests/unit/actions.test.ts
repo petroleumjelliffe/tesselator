@@ -6,7 +6,7 @@ import * as A from '../../src/actions';
 import * as P from '../../src/engine/paths';
 import { reset, canUndo, commit, beginGesture, endGesture, historyVersion } from '../../src/state/history';
 import { parseDoc, serializeDoc } from '../../src/engine/serialize';
-import { faces, copyMatrix, cloneMatrices, copies } from '../../src/state/derived';
+import { faces, copyMatrix, cloneMatrices, copies, snapTargets } from '../../src/state/derived';
 import { apply, invert } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import * as select from '../../src/interaction/tools/select';
@@ -618,4 +618,23 @@ test('fish fixture: the tail drawn by Pen clicks on the body and on its clone in
   expect(P.pathNodes(body2).some((n) => n.pointId === last.pointId)).toBe(true);
   expect(parseDoc(serializeDoc(doc.value))).toEqual(doc.value);
   expect(computeFaces(doc.value)).toHaveLength(8);
+});
+
+test('drawSnap: a mirror axis attracts a Pen point; with snapping off only existing points do', () => {
+  fresh();
+  A.addElement('mirror'); A.setTool('pen'); A.clearSel();      // a mirror along b through the tile centre: x = 120 (addElement selects it)
+  const s = A.drawSnap({ x: 116, y: 60 }, true, 1, null)!;
+  expect(s.cat).toBe('axis'); expect(s.at.x).toBeCloseTo(120, 6);
+  expect(A.drawSnap({ x: 116, y: 60 }, false, 1, null)).toBe(null);
+  A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
+  expect(A.drawSnap({ x: 26, y: 26 }, false, 1, null)?.cat).toBe('node');
+});
+
+test('hoverSnap publishes the hint and the held id; Esc semantics live in pointer.ts', () => {
+  fresh();
+  A.addElement('mirror'); A.setTool('freehand');
+  A.hoverSnap({ x: 117, y: 60 }, true, 1);
+  expect(UI.snapHint.value?.at.x).toBeCloseTo(120, 6);
+  expect(UI.snapSticky.value).toBeTruthy();
+  expect(snapTargets.value.lines.length).toBeGreaterThan(0);
 });

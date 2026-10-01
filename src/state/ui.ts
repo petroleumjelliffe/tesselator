@@ -24,12 +24,17 @@ export const viewRestored = signal(false);            // true when the initial v
 export const freeScale = signal(false);        // touch stand-in for Shift while scaling
 export const addToSelection = signal(false);   // touch stand-in for Shift while marquee-selecting
 
+export type SnapHint = { at: XY; label?: string; line?: XY[] };
+export const snapHint = signal<SnapHint | null>(null);       // what the current gesture or hover would snap to, for the canvas
+export const snapSticky = signal<string | null>(null);       // id of the held snap (spec SN4, H6): hover hands it to the press
+
 export function resetUi(): void {
   layer.value = 'drawing'; tool.value = 'pen'; pen.value = null; selection.value = null;
   hover.value = null; drag.value = null; cursor.value = null; view.value = { pan: { x: 0, y: 0 }, zoom: 1 }; space.value = false;
   showHelp.value = false; exportOpen.value = false; fillPreview.value = null;
   freeScale.value = false; addToSelection.value = false;
   activeLayerId.value = null; pendingGroup.value = null;
+  snapHint.value = null; snapSticky.value = null;
 }
 
 export function clearSelection(): void { selection.value = null; }

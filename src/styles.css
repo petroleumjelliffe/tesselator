@@ -57,6 +57,9 @@ body { background: var(--bg); color: var(--ink); font-family: ui-sans-serif, sys
 .stroke { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .halo { fill: none; stroke: var(--accent); stroke-linecap: round; }
 .guide { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.7; vector-effect: non-scaling-stroke; }
+.snap-ring { fill: none; stroke: #e8590c; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.snap-line { fill: none; stroke: #e8590c; stroke-width: 3; opacity: 0.45; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.snap-label { fill: #e8590c; font-weight: 600; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; pointer-events: none; }
 .rubber { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
 .marquee { fill: rgba(59, 111, 209, 0.08); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .bbox { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }

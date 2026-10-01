@@ -3,7 +3,7 @@ import { useRef, useEffect } from 'preact/hooks';
 import { CONFIG } from '../config';
 import { attachPointer } from '../interaction/pointer';
 import { doc } from '../state/doc';
-import { layer, tool, selection, hover, drag, pen, cursor, view, prefs, space, fillPreview } from '../state/ui';
+import { layer, tool, selection, hover, drag, pen, cursor, view, prefs, space, fillPreview, snapHint } from '../state/ui';
 import { cloneMatrices, visibleCells, copies, copyMatrix, faces } from '../state/derived';
 import { toWorld, nodeUV, windowOffsets, cellPolygon } from '../engine/lattice';
 import { IDENTITY, apply, toSvg } from '../engine/transform';
@@ -244,6 +244,17 @@ function LatticeHandles() {
     <text class="lat-label" x={x + 10 / z} y={y - 8 / z} font-size={11 / z}>{w}</text></g>)}</g>;
 }
 
+function SnapMark() {
+  const h = snapHint.value;
+  if (!h) return null;
+  const z = view.value.zoom;
+  return <g class="snap-mark">
+    {h.line && <polyline class="snap-line" points={h.line.map((p) => `${p.x},${p.y}`).join(' ')} />}
+    <circle class="snap-ring" cx={h.at.x} cy={h.at.y} r={7 / z} />
+    {h.label && <text class="snap-label" x={h.at.x + 10 / z} y={h.at.y - 10 / z} font-size={12 / z}>{h.label}</text>}
+  </g>;
+}
+
 function cursorFor(): string {
   const h = hover.value, t = tool.value;
   if (space.value && pen.value) return 'grab';
@@ -266,7 +277,7 @@ export function Canvas() {
       <g transform={`translate(${v.pan.x} ${v.pan.y}) scale(${v.zoom})`}>
         <Grid /><Frames /><ElementGhosts />
         <g class={drawing ? undefined : 'inactive-layer'}>{doc.value.layers.map((l) => <Uses key={l.id} id={`cell-layer-${l.id}`} />)}</g>
-        <Highlights /><Guides /><FreehandPreview /><Marquee /><Rubber /><BBox /><Diamonds /><Points /><CloneAnchors /><Elements /><LatticeHandles />
+        <Highlights /><Guides /><FreehandPreview /><Marquee /><Rubber /><BBox /><Diamonds /><Points /><CloneAnchors /><Elements /><LatticeHandles /><SnapMark />
       </g>
     </svg>
   );

@@ -6,6 +6,7 @@ import { visibleOffsets } from '../engine/lattice';
 import { cellMatrix, compose, orbit, ownClones } from '../engine/transform';
 import { anchorsWorld } from '../engine/hit';
 import { computeFaces } from '../engine/regions';
+import { buildTargets } from '../engine/snap';
 import type { Matrix, Cell, Copy, CopyInfo, Doc, Face } from '../types';
 
 export const cloneMatrices = computed(() => {
@@ -46,6 +47,9 @@ export const copies = computed<CopyInfo[]>(() => {
 });
 
 export const anchors = computed(() => anchorsWorld(doc.value));
+
+// Snap targets for the current document (recomputed on commit; drags take them once at drag start).
+export const snapTargets = computed(() => buildTargets(doc.value));
 
 // Faces are recomputed on the next frame after a commit, never while a drag is in progress.
 export const faces = signal<Face[]>([]);
