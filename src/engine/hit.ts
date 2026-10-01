@@ -3,8 +3,8 @@ import { CONFIG } from '../config';
 import { toWorld, toUV, cellOf, nodeUV, windowOffsets, snapGrid } from './lattice';
 import { apply, cellMatrix, compose, orbit } from './transform';
 import { getPath, pathNodes, pathWorld, pathCpsWorld, boundsWorld, getElement, nodeWorld } from './paths';
-import { faceAt, fillOfFace, collectSegments } from './regions';
-import type { Doc, XY, Lattice, Matrix, Copy, CopyInfo, Cell, Face, HitTarget, Layer, Tool, Selection, Box, BoxHandle, Path } from '../types';
+import { faceAt, fillOfFace } from './regions';
+import type { Doc, XY, Lattice, Matrix, Copy, CopyInfo, Cell, Face, HitTarget, Layer, Tool, Selection, Box, BoxHandle, Path, LineTarget } from '../types';
 
 export type HitContext = {
   layer: Layer; tool: Tool; selection: Selection; pen: { pathId: string } | null;
@@ -47,13 +47,14 @@ export function visiblePointIds(doc: Doc, ctx: HitContext): Set<string> | null {
 }
 
 // H8: paths with an instance (original, repeat or clone) within `radius` world units of `w`, so Pen/Freehand can draw
-// a path's nodes only when it is worth looking at. One distance pass over the window's segments; a path drops out as
-// soon as one of its instances is near enough, so most paths cost one segment check.
-export function pathsNear(doc: Doc, w: XY, radius: number): Set<string> {
+// a path's nodes only when it is worth looking at. Reads the already-built target lines (the cached `snapTargets`,
+// which carry every copy's line as a `LineTarget` with `source.pathId`) rather than rebuilding geometry, so this is
+// just a distance pass, cheap enough to run on every cursor move. A path drops out as soon as one line is near enough.
+export function pathsNear(lines: readonly LineTarget[], w: XY, radius: number): Set<string> {
   const out = new Set<string>();
-  for (const s of collectSegments(doc)) {
-    if (out.has(s.source.pathId)) continue;
-    if (segmentDistance(s.a, s.b, s.cp, w) <= radius) out.add(s.source.pathId);
+  for (const t of lines) {
+    if (!t.source || out.has(t.source.pathId)) continue;
+    if (segmentDistance(t.a, t.b, t.cp, w) <= radius) out.add(t.source.pathId);
   }
   return out;
 }
