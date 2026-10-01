@@ -1,0 +1,27 @@
+// Every user-visible string lives here (spec V1), so a word can be renamed in one place as the vocabulary settles.
+export const STR = {
+  snap: {
+    corner: 'tile corner',
+    edge: 'tile edge',
+    axis: 'mirror axis',
+    impliedAxis: 'mirror axis (stacked groups)',
+    centre: (n: number) => `rotation point (1/${n})`,
+    cross: (a: string, b: string) => `${a} × ${b}`,
+    node: 'node',
+    cloneNode: 'node of a clone',
+    line: 'line',
+    cloneLine: 'line of a clone',
+    ownLine: 'this line',
+    ownStart: 'this line\'s start',
+    cloneStart: 'its clone\'s start',
+    repeatStart: 'its repeat\'s start',
+    ownCloneLine: 'its clone',
+    ownRepeatLine: 'its repeat',
+    meetsMirror: 'meets its mirror clone',
+    meetsRotated: 'meets its rotated clone',
+    meetsOwn: 'meets its own copy',
+    grid: 'grid',
+    scale: (f: string) => `scale ${f}`,
+    guide: 'guide',
+  },
+} as const;

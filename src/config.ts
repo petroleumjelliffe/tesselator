@@ -14,6 +14,15 @@ export const CONFIG = {
   MAX_HISTORY: 50,
   ORBIT_CAP: 12,
   CLONE_CAP: 48,         // clones per binding across all groups
+
+  // Snapping (spec 2026-09-30 §6): one precedence list, points before lines; a held snap lets go at 1.5× the threshold
+  // and yields to a same-class rival only when that rival is nearer by half the threshold.
+  SNAP_PRECEDENCE: {
+    point: ['intersection', 'node', 'ownStart', 'ownFixed', 'ownClone', 'ownRepeat', 'centre', 'corner', 'grid'],
+    line: ['ownFixed', 'axis', 'edge', 'line', 'ownLine', 'ownClone', 'ownRepeat'],
+  } as const,
+  SNAP_STICKY_RELEASE: 1.5,
+  SNAP_STICKY_MARGIN: 0.5,
   MIN_LATTICE_DET: 400,
   VISIBLE_CELL_RADIUS: 3,
   DEFAULT_GRID_DIVISIONS: 8,

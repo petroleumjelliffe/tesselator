@@ -54,6 +54,24 @@ export type Piece = { seg: WorldSeg; t0: number; t1: number; reversed: boolean }
 export type Loop = { poly: XY[]; area: number; pieces: Piece[] };
 export type Face = { outer: Loop; holes: Loop[]; area: number; centroid: XY };
 
+// Snapping (spec 2026-09-30 §6)
+export type SnapCat = 'intersection' | 'node' | 'ownStart' | 'ownFixed' | 'ownClone' | 'ownRepeat' | 'centre' | 'corner' | 'grid'
+  | 'axis' | 'edge' | 'line' | 'ownLine';
+export type SnapHit =
+  | { kind: 'place' }                                                     // location only
+  | { kind: 'own' }                                                       // a body drag meets its own rotated or mirrored copy
+  | { kind: 'node'; pointId: string; cell: Cell; copy: Copy }             // cell: where the point is seen (raw), or its own cell (clone, with copy = the clone)
+  | { kind: 'curve'; pathId: string; j: number; t: number; copy: Copy }   // a point on another path's segment j, seen through copy
+  | { kind: 'ownStart' }                                                  // the stroke's own start (close)
+  | { kind: 'ownRepeat'; cell: Cell }                                     // the stroke's own start, repeated in `cell` (edge wrap)
+  | { kind: 'ownLine' }                                                   // the stroke's own line (loop and tail)
+  | { kind: 'ownCopy'; M: Matrix };                                       // a line of the stroke's own clone or repeat M (location; re-snapped to the fitted copy)
+export type SnapResult = { at: XY; cls: 'point' | 'line'; cat: SnapCat; id: string; label: string; hit: SnapHit; d: number; line?: XY[] };
+export type PointTarget = { at: XY; cat: SnapCat; id: string; label: string; hit: SnapHit; pointIds?: string[]; pathIds?: string[] };
+export type LineTarget = { a: XY; b: XY; cp: XY | null; cat: SnapCat; id: string; label: string; source?: { pathId: string; copy: Copy; j: number }; ends?: string[] };
+export type TargetSet = { points: PointTarget[]; lines: LineTarget[] };
+export type StrokeCopy = { M: Matrix; kind: 'clone' | 'repeat'; cell: Cell };
+
 export type BoxHandle = { x: number; y: number; ax: number; ay: number; cursor: string };
 export type Box = { x0: number; y0: number; x1: number; y1: number };
 
