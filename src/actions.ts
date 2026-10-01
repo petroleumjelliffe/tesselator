@@ -79,6 +79,7 @@ export function setTool(t: Tool): boolean {
   UI.tool.value = t;
   if (t === 'freehand' || t === 'fill') UI.selection.value = null;
   UI.fillPreview.value = null;
+  UI.snapHint.value = null; UI.snapSticky.value = null;
   return true;
 }
 export function setLayer(l: Layer): boolean {
@@ -87,9 +88,10 @@ export function setLayer(l: Layer): boolean {
   UI.layer.value = l;
   const s = UI.selection.value;
   if (s && (l === 'construction') !== (s.kind === 'element')) UI.selection.value = null;
+  UI.snapHint.value = null; UI.snapSticky.value = null;
   return true;
 }
-export function toggleSnap(): boolean { UI.prefs.value = { ...UI.prefs.value, snap: !UI.prefs.value.snap }; return true; }
+export function toggleSnap(): boolean { UI.prefs.value = { ...UI.prefs.value, snap: !UI.prefs.value.snap }; UI.snapHint.value = null; UI.snapSticky.value = null; return true; }
 export function toggleFreeScale(): boolean { UI.freeScale.value = !UI.freeScale.value; return true; }
 export function toggleAddToSelection(): boolean { UI.addToSelection.value = !UI.addToSelection.value; return true; }
 export function toggleHelp(): boolean { UI.showHelp.value = !UI.showHelp.value; return true; }
@@ -205,6 +207,7 @@ export function mergeDroppedPoint(fromId: string, fromCell: Cell, toId: string, 
 }
 
 export function endPen(): boolean {
+  UI.snapHint.value = null; UI.snapSticky.value = null;
   const penNow = UI.pen.value;
   if (!penNow) return false;
   UI.pen.value = null;

@@ -2,7 +2,7 @@
 import { signal } from '@preact/signals';
 import { CONFIG } from '../config';
 import { doc, draft } from './doc';
-import { selection, pen, hover, drag, pendingGroup } from './ui';
+import { selection, pen, hover, drag, pendingGroup, snapHint, snapSticky } from './ui';
 import { viaSnapshot, repairVia, pathNodes, viaLive } from '../engine/paths';
 import type { Doc, XY } from '../types';
 
@@ -14,7 +14,10 @@ let gestureSnap: Map<string, XY> | null = null;   // every via node's world posi
 export const historyVersion = signal(0);
 
 function trim() { while (past.length > CONFIG.MAX_HISTORY) past.shift(); }
-function clearTransient() { selection.value = null; pen.value = null; hover.value = null; drag.value = null; pendingGroup.value = null; }
+function clearTransient() {
+  selection.value = null; pen.value = null; hover.value = null; drag.value = null; pendingGroup.value = null;
+  snapHint.value = null; snapSticky.value = null;
+}
 
 export function commit(next: Doc): void {
   if (inGesture) {

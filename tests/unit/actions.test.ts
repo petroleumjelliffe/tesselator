@@ -638,3 +638,24 @@ test('hoverSnap publishes the hint and the held id; Esc semantics live in pointe
   expect(UI.snapSticky.value).toBeTruthy();
   expect(snapTargets.value.lines.length).toBeGreaterThan(0);
 });
+
+test('setTool, setLayer, toggleSnap and undo each clear a stale snap hint left by hoverSnap', () => {
+  fresh();
+  A.addElement('mirror'); A.setTool('pen'); A.clearSel();
+  const arm = () => { A.hoverSnap({ x: 117, y: 60 }, true, 1); expect(UI.snapHint.value).not.toBe(null); };
+
+  arm(); A.setTool('fill');
+  expect(UI.snapHint.value).toBe(null); expect(UI.snapSticky.value).toBe(null);
+
+  A.setTool('pen');
+  arm(); A.setLayer('construction');
+  expect(UI.snapHint.value).toBe(null); expect(UI.snapSticky.value).toBe(null);
+
+  A.setLayer('drawing'); A.setTool('pen');
+  arm(); A.toggleSnap();
+  expect(UI.snapHint.value).toBe(null); expect(UI.snapSticky.value).toBe(null);
+
+  UI.prefs.value = { ...UI.prefs.value, snap: true };
+  arm(); A.undo();
+  expect(UI.snapHint.value).toBe(null); expect(UI.snapSticky.value).toBe(null);
+});
