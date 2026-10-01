@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import { toWorld, toUV, cellOf, nodeUV, windowOffsets, snapGrid } from './lattice';
 import { apply, cellMatrix, compose, orbit } from './transform';
 import { getPath, pathNodes, pathWorld, pathCpsWorld, boundsWorld, getElement, nodeWorld } from './paths';
-import { faceAt, fillOfFace } from './regions';
+import { faceAt, fillOfFace, collectSegments } from './regions';
 import type { Doc, XY, Lattice, Matrix, Copy, CopyInfo, Cell, Face, HitTarget, Layer, Tool, Selection, Box, BoxHandle, Path } from '../types';
 
 export type HitContext = {
@@ -44,6 +44,18 @@ export function visiblePointIds(doc: Doc, ctx: HitContext): Set<string> | null {
   const s = ctx.selection, set = new Set<string>();
   if (s && s.kind === 'points') for (const id of s.ids) if (!s.copies?.[id]) set.add(id);
   return set;
+}
+
+// H8: paths with an instance (original, repeat or clone) within `radius` world units of `w`, so Pen/Freehand can draw
+// a path's nodes only when it is worth looking at. One distance pass over the window's segments; a path drops out as
+// soon as one of its instances is near enough, so most paths cost one segment check.
+export function pathsNear(doc: Doc, w: XY, radius: number): Set<string> {
+  const out = new Set<string>();
+  for (const s of collectSegments(doc)) {
+    if (out.has(s.source.pathId)) continue;
+    if (segmentDistance(s.a, s.b, s.cp, w) <= radius) out.add(s.source.pathId);
+  }
+  return out;
 }
 
 // World point mapped into the base cell (for fills and faces).

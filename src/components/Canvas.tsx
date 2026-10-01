@@ -8,7 +8,7 @@ import { cloneMatrices, visibleCells, copies, copyMatrix, faces } from '../state
 import { toWorld, nodeUV, windowOffsets, cellPolygon } from '../engine/lattice';
 import { IDENTITY, apply, toSvg } from '../engine/transform';
 import { getPath, getElement, pathNodes, pathWorld, pathCpsWorld, boundsWorld, nodeWorld, sameNode } from '../engine/paths';
-import { bboxHandles, seedOf } from '../engine/hit';
+import { bboxHandles, seedOf, pathsNear } from '../engine/hit';
 import { faceAt, facePathData, fillFace } from '../engine/regions';
 import { segD, pathD } from '../engine/svgpath';
 import type { XY, Path, Matrix, Cell, HitTarget } from '../types';
@@ -168,11 +168,16 @@ function Points() {
   if (sel && sel.kind === 'points') for (const id of sel.ids) if (!sel.copies?.[id]) show.add(id);
   const penPath = pn ? getPath(d, pn.pathId) : null, selPath = sel && sel.kind === 'path' ? getPath(d, sel.id) : null;
   if (penPath) for (const n of pathNodes(penPath)) show.add(n.pointId);
+  // H8: while drawing, don't show every path's nodes — only those of paths with an instance near the cursor.
+  if (showAll && cursor.value) {
+    const near = pathsNear(d, cursor.value, CONFIG.NODE_REVEAL_PX / z);
+    for (const p of d.paths) if (near.has(p.id)) for (const n of pathNodes(p)) show.add(n.pointId);
+  }
   const penLast = penPath ? pathNodes(penPath).at(-1)! : null;
   const selPts = new Set(sel && sel.kind === 'points' ? sel.ids.filter((id) => !sel.copies?.[id]) : []);
   const out = [];
   for (const o of windowOffsets()) for (const pt of d.points) {
-    if (!showAll && !show.has(pt.id)) continue;
+    if (!show.has(pt.id)) continue;
     const w = toWorld(nodeUV(pt, o), d.lattice);
     const isLast = !!penLast && sameNode(penLast, { pointId: pt.id, cell: o });   // a via pen end does not light the source copy
     const isHover = !!h && h.kind === 'point' && !h.via && h.pointId === pt.id && h.cell.c === o.c && h.cell.r === o.r;   // a hovered via node lights its own circle below, not the raw point

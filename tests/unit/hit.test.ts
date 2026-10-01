@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
-import { hitTest, anchorsWorld, snapWorld, pointsInRect, projectOnSegment, bboxHandles, scaleFor, scaleMatrix, seedOf, type HitContext } from '../../src/engine/hit';
+import { hitTest, anchorsWorld, snapWorld, pointsInRect, projectOnSegment, bboxHandles, scaleFor, scaleMatrix, seedOf, pathsNear, type HitContext } from '../../src/engine/hit';
 import { orbit, apply, cellMatrix, compose } from '../../src/engine/transform';
 import { windowOffsets } from '../../src/engine/lattice';
 import { computeFaces } from '../../src/engine/regions';
@@ -168,4 +168,19 @@ test('the clone image of a via node is neither an anchor nor a canchor hit; the 
   const pen = ctxFor(d, { tool: 'pen' });
   expect(hitTest(d, pen, { x: 24, y: 216 })?.kind).not.toBe('canchor');
   expect(hitTest(d, pen, { x: 24, y: 120 })).toMatchObject({ kind: 'canchor', pathId: tail.id, pointId: end.pointId, copy: { bindingId: tb.id, power: 1 } });
+});
+
+test('H8: pathsNear finds paths with an instance within radius, straight line', () => {
+  const d = makeDoc();
+  const a = P.addPoint(d, { u: 0, v: 0 }), b = P.addPoint(d, { u: 1, v: 0 });   // (0,0)-(240,0)
+  const path = P.startPath(d, a, { color: '#000', weight: 2 }, 'L1');
+  P.appendNode(d, path.id, b);
+  expect(pathsNear(d, { x: 100, y: 30 }, 48)).toEqual(new Set([path.id]));     // 30 px away: included
+  expect(pathsNear(d, { x: 100, y: 100 }, 48)).toEqual(new Set());            // 100 px away: excluded
+});
+
+test('H8: pathsNear includes a path when only one of its clone instances is near', () => {
+  const { d, path } = scene();   // original segment (24,24)-(96,24); its 180°-about-(120,120) clone is (216,216)-(144,216)
+  expect(pathsNear(d, { x: 180, y: 300 }, 48)).toEqual(new Set());                 // far from both the original and the clone
+  expect(pathsNear(d, { x: 180, y: 246 }, 48)).toEqual(new Set([path.id]));        // 30 px from the clone, far from the original
 });
