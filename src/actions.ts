@@ -214,15 +214,13 @@ export function joinDroppedPoint(pointId: string, cell: Cell, hit: SnapHit): boo
   return true;
 }
 
-// Give the path its own point for one of its nodes (a plain node on `pointId`, or its via node through `via`), so a drag
-// moves only this path. Null when nothing was shared.
-export function unlinkNode(pathId: string, pointId: string, via?: Copy): Node | null {
+// Give the path its own point for one of its nodes (a plain node on `pointId` in `cell`, or its via node through `via`),
+// so a drag moves only this path. Null when nothing was shared.
+export function unlinkNode(pathId: string, pointId: string, cell: Cell, via?: Copy): Node | null {
   let out: Node | null = null;
   mutate((d) => {
     const path = P.getPath(d, pathId);
-    const node = path && P.pathNodes(path).find((n) => n.pointId === pointId && (via
-      ? !!n.via && n.via.bindingId === via.bindingId && n.via.power === via.power && n.via.cell.c === via.cell.c && n.via.cell.r === via.cell.r
-      : !n.via));
+    const node = path && P.pathNodes(path).find((n) => n.pointId === pointId && P.sameCell(n.cell, cell) && P.sameVia(n.via, via));
     out = node ? P.detachFromPath(d, pathId, node) : null;
     return out ? undefined : false;
   });

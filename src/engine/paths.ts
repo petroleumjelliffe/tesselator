@@ -11,8 +11,8 @@ export const getElement = (doc: Doc, id: string) => doc.elements.find((e) => e.i
 export const getBinding = (doc: Doc, id: string) => doc.bindings.find((b) => b.id === id) ?? null;
 export const getFill = (doc: Doc, id: string) => doc.fills.find((f) => f.id === id) ?? null;
 
-const sameCell = (a: Cell, b: Cell) => a.c === b.c && a.r === b.r;
-const sameVia = (a?: Copy, b?: Copy) => (!a && !b) || (!!a && !!b && sameCell(a.cell, b.cell) && a.bindingId === b.bindingId && a.power === b.power);
+export const sameCell = (a: Cell, b: Cell) => a.c === b.c && a.r === b.r;
+export const sameVia = (a?: Copy, b?: Copy) => (!a && !b) || (!!a && !!b && sameCell(a.cell, b.cell) && a.bindingId === b.bindingId && a.power === b.power);
 export function sameNode(a: Node, b: Node): boolean { return a.pointId === b.pointId && sameCell(a.cell, b.cell) && sameVia(a.via, b.via); }
 const cloneNode = (n: Node): Node => ({ pointId: n.pointId, cell: { c: n.cell.c, r: n.cell.r }, ...(n.via ? { via: { cell: { ...n.via.cell }, bindingId: n.via.bindingId, power: n.via.power } } : {}) });
 

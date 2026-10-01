@@ -12,7 +12,7 @@ import { pickSnap, gridResult, pointCopyMatrices, ownFixedCands, NODE_ONLY, body
 import { CONFIG } from '../../config';
 import { STR } from '../../strings';
 import { startDrag, cloneBodyMove, type ToolModule, type ToolCtx } from './common';
-import type { HitTarget, XY, Drag, Copy, Matrix, TargetSet, SnapResult, Node } from '../../types';
+import type { HitTarget, XY, Drag, Copy, Cell, Matrix, TargetSet, SnapResult, Node } from '../../types';
 
 const sameCopy = (a: Copy, b: Copy) => a.cell.c === b.cell.c && a.cell.r === b.cell.r && a.bindingId === b.bindingId && a.power === b.power;
 
@@ -25,10 +25,10 @@ function nodeSnap(targets: TargetSet, pointId: string, S: Matrix, w: XY, ctx: To
 }
 
 // Select tool with a path selected: the first move of a drag on one of its nodes unlinks it from other paths first.
-function unlinkForDrag(pointId: string, via?: Copy): Node | null {
+function unlinkForDrag(pointId: string, cell: Cell, via?: Copy): Node | null {
   const s = UI.selection.value;
   if (UI.tool.value !== 'select' || !s || s.kind !== 'path') return null;
-  return A.unlinkNode(s.id, pointId, via);
+  return A.unlinkNode(s.id, pointId, cell, via);
 }
 
 export function pointDown(t: Extract<HitTarget, { kind: 'point' }>, w: XY, e: PointerEvent, hitScale: number): void {
@@ -74,7 +74,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
       if (!d.moved) return;
       if (!d.unlinked) {
         d.unlinked = true;
-        const n = unlinkForDrag(d.pointId, d.via);
+        const n = unlinkForDrag(d.pointId, d.cell, d.via);
         if (n) { if (d.via) d.cell = n.cell; d.pointId = n.pointId; d.via = undefined; }
       }
       const S = d.via ? compose(P.viaMatrix(doc.value, d.via), cellMatrix(d.cell, doc.value.lattice)) : cellMatrix(d.cell, doc.value.lattice);
@@ -107,7 +107,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
     }
     case 'canchor': {
       if (!d.moved) return;
-      if (!d.unlinked) { d.unlinked = true; const n = unlinkForDrag(d.pointId); if (n) d.pointId = n.pointId; }
+      if (!d.unlinked) { d.unlinked = true; const n = unlinkForDrag(d.pointId, d.cell); if (n) d.pointId = n.pointId; }
       const M = copyMatrix(d.copy), S = compose(M, cellMatrix(d.cell, doc.value.lattice));
       const s = nodeSnap(d.targets, d.pointId, S, w, ctx);
       d.snap = s; UI.snapSticky.value = s?.id ?? null; UI.snapHint.value = A.hintOf(s && s.cat !== 'grid' ? s : null);

@@ -204,7 +204,7 @@ function hintText(): string {
   switch (UI.tool.value) {
     case 'select':
       if (s && s.kind === 'points') return `${s.ids.length} point${s.ids.length > 1 ? 's' : ''} selected · drag to move together · ⇧-click adds · ⌫ deletes`;
-      if (s && s.kind === 'path' && s.copy.bindingId) return 'Clone: drag its body to move the first element of its first group · drag its anchors to edit the shared shape';
+      if (s && s.kind === 'path' && s.copy.bindingId) return 'Clone: drag its body to move the first element of its first group · drag its anchors to edit the shared shape · drag an anchor on a shared point to pull it off';
       if (s && s.kind === 'path') return 'Path: click a line to insert a point · drag ◇ to bend · double-click ◇ to straighten · box handles scale and rotate · any copy is editable · Layer chips move it · drag a node to pull it off a shared point';
       return 'Select: click a point, line, copy or fill · drag a line to move the path · drag empty space to marquee points';
     case 'freehand': return 'Freehand: press and drag · release to fit curves · start on a point to continue its path';
