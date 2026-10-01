@@ -53,6 +53,7 @@ Everything in the document is in lattice `(u, v)` coordinates; world position is
 - Clones are not composed across bindings (no group closure).
 - Collinear overlapping edges that are not identical are not split against each other.
 - Only the base cell's copies are hit-tested for segments in the visible cells; points are hit in the 3×3 window.
+- Body drags apply grid steps to the original's movement, so under a rotation that doesn't line up with the lattice (e.g. 1/6 turn on a square lattice), the grabbed copy moves on a rotated grid.
 - Layer rename, reorder, hide and lock are not in this chrome (Project 2).
 - A traced stretch is fitted like the rest of the stroke, so on a curve it follows the line within the fitting tolerance rather than copying it exactly, and the fitted curve can kink where it peels off (spec D12, D13).
 - Regions still read every path on every layer, fills are still seeds, and existing documents may share points across layers; the layers, regions and fills plan changes these.

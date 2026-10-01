@@ -5,6 +5,12 @@ export const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 
 export function translation(dx: number, dy: number): Matrix { return [1, 0, 0, 1, dx, dy]; }
 
+// The linear part is the identity: a pure translation (the identity included).
+export function isTranslation(M: Matrix, eps = 1e-9): boolean {
+  return Math.abs(M[0] - 1) + Math.abs(M[1]) + Math.abs(M[2]) + Math.abs(M[3] - 1) <= eps;
+}
+export function isIdentity(M: Matrix, eps = 1e-9): boolean { return isTranslation(M, eps) && Math.abs(M[4]) + Math.abs(M[5]) <= eps; }
+
 export function rotation(theta: number, cx = 0, cy = 0): Matrix {
   const c = Math.cos(theta), s = Math.sin(theta);
   return [c, s, -s, c, cx - c * cx + s * cy, cy - s * cx - c * cy];

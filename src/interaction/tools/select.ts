@@ -7,7 +7,7 @@ import { commit } from '../../state/history';
 import { copyMatrix, snapTargets } from '../../state/derived';
 import { pointsInRectAll, bboxHandles, scaleFor, scaleMatrix } from '../../engine/hit';
 import { toUV } from '../../engine/lattice';
-import { apply, invert, compose, rotation, cellMatrix } from '../../engine/transform';
+import { apply, invert, compose, rotation, cellMatrix, isIdentity } from '../../engine/transform';
 import { pickSnap, gridResult, pointCopyMatrices, ownFixedCands, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines } from '../../engine/snap';
 import { CONFIG } from '../../config';
 import { STR } from '../../strings';
@@ -41,15 +41,22 @@ function joinThrough(M: Matrix, pointId: string, cell: Cell, s: SnapResult, also
   if (r && (r.hit.kind === 'node' || r.hit.kind === 'curve')) A.joinDroppedPoint(pointId, cell, r.hit);
 }
 
-// A body drag's grabbed copy, in the base cell: its clone matrix, or identity for the original or a repeat (E5a).
-const bodyFrame = (copy: Copy): Matrix => copyMatrix({ ...copy, cell: { c: 0, r: 0 } });
+// E5a: a body drag's frame, fixed at the press. G places the grabbed copy for snapping: its clone matrix, or the identity
+// for the original or a repeat. A clone's G is reduced by the lattice cell k holding G·(the path's start), so the copy is
+// measured in the base cell, where the 3×3 target window covers it, however far its translation reaches. `cell` (the
+// copy's own cell plus k) puts the hint back where the copy is shown.
+function bodyFrame(pathId: string, copy: Copy): { G: Matrix; cell: Cell } {
+  const d = doc.value, path = P.getPath(d, pathId), G0 = copyMatrix({ ...copy, cell: { c: 0, r: 0 } });
+  if (!copy.bindingId || !path) return { G: G0, cell: copy.cell };
+  const uv = toUV(apply(G0, P.pathWorld(d, path)[0]), d.lattice), k = { c: Math.floor(uv.u), r: Math.floor(uv.v) };
+  return { G: compose(cellMatrix({ c: -k.c, r: -k.r }, d.lattice), G0), cell: { c: copy.cell.c + k.c, r: copy.cell.r + k.r } };
+}
 
 // §6.4 for a body drag: the snap was measured at the grabbed copy G, but the join happens in the original's frame, so a
 // node or line target joins what lies at its pre-image G⁻¹(at), as joinThrough does; otherwise location only.
 function joinBody(pathId: string, G: Matrix, s: BodySnap, ids: string[]): void {
   if (s.res.hit.kind !== 'node' && s.res.hit.kind !== 'curve') return;
-  const id = Math.abs(G[0] - 1) + Math.abs(G[1]) + Math.abs(G[2]) + Math.abs(G[3] - 1) + Math.abs(G[4]) + Math.abs(G[5]) < 1e-9;
-  if (id) { A.joinDroppedNode(pathId, s.nodeIndex, s.res.hit); return; }
+  if (isIdentity(G)) { A.joinDroppedNode(pathId, s.nodeIndex, s.res.hit); return; }
   const src = apply(invert(G), s.res.at), d = doc.value, path = P.getPath(d, pathId);
   if (!path) return;
   const r = pickSnap(snapTargets.value, src, 1e-6 * (1 + Math.hypot(src.x, src.y)), { excludePoints: new Set(ids), excludePaths: new Set([pathId]), cats: JOINABLE, prefer: A.joinsOn(d, path.layerId) });
@@ -100,7 +107,7 @@ export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
     case 'segment': {
       const path = P.getPath(doc.value, t.pathId); if (!path) return;
       const ids = [...new Set(P.pathNodes(path).map((n) => n.pointId))];
-      return startDrag(e, t, w, ctx.hitScale, { kind: 'body', pathId: t.pathId, copy: t.copy, ids, startPos: P.snapshotPositions(doc.value, ids), targets: null, snap: null });
+      return startDrag(e, t, w, ctx.hitScale, { kind: 'body', pathId: t.pathId, copy: t.copy, ids, startPos: P.snapshotPositions(doc.value, ids), frame: bodyFrame(t.pathId, t.copy), targets: null, snap: null });
     }
     case 'canchor': return startDrag(e, t, w, ctx.hitScale, { kind: 'canchor', pathId: t.pathId, pointId: t.pointId, cell: t.cell, copy: t.copy, targets: snapTargets.value, snap: null });
     case 'diamond': return startDrag(e, t, w, ctx.hitScale, { kind: 'cp', pathId: t.pathId, j: t.j, copy: t.copy, lines: cpLines(doc.value, t.pathId, t.j, t.copy) });
@@ -162,16 +169,15 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
     case 'body': {
       if (!d.moved) return;
       // E5a: a body drag on any copy moves the original so the grabbed copy follows the pointer; elements never move.
-      // The snap is measured at the grabbed copy, placed in the base cell by G (its clone matrix; identity for the
-      // original or a repeat), and the world delta maps back to the source through G's linear part. The hint is shown
-      // at the grabbed copy itself, its cell offset added back.
-      const G = bodyFrame(d.copy), Gl = invert([G[0], G[1], G[2], G[3], 0, 0]);
+      // The snap is measured at the grabbed copy, placed near the base cell by G (bodyFrame), and the world delta maps
+      // back to the source through G's linear part. The hint is shown at the grabbed copy itself, its cell added back.
+      const { G, cell } = d.frame, Gl = invert([G[0], G[1], G[2], G[3], 0, 0]);
       if (!d.targets) d.targets = bodyTargets(doc.value, snapTargets.value, d.pathId, G);
       const raw = { x: w.x - d.start.x, y: w.y - d.start.y };
       const sn = ctx.targetsOn && d.targets ? snapBodyDelta(d.targets, raw, ctx.threshold, UI.snapSticky.value) : null;
       d.snap = sn; UI.snapSticky.value = sn?.res.id ?? null;
       const dv = sn ? A.uvOf(apply(Gl, sn.delta)) : A.snapDeltaUV(apply(Gl, raw), ctx.gridOn);
-      const off = A.worldOf({ u: d.copy.cell.c, v: d.copy.cell.r }), sh = (p: XY): XY => ({ x: p.x + off.x, y: p.y + off.y });
+      const off = A.worldOf({ u: cell.c, v: cell.r }), sh = (p: XY): XY => ({ x: p.x + off.x, y: p.y + off.y });
       UI.snapHint.value = sn ? { at: sh(sn.res.at), label: sn.res.label, line: sn.res.line?.map(sh) } : null;
       A.mutate((dd) => { P.movePointsBy(dd, d.ids, d.startPos, dv.u, dv.v); });
       return;
@@ -243,7 +249,7 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
     else if (d.snap.hit.kind === 'node' || d.snap.hit.kind === 'curve') A.joinDroppedPoint(g.pointId, g.cell, d.snap.hit);
     return;
   }
-  if (d.kind === 'body' && d.moved && d.snap) { joinBody(d.pathId, bodyFrame(d.copy), d.snap, d.ids); return; }
+  if (d.kind === 'body' && d.moved && d.snap) { joinBody(d.pathId, d.frame.G, d.snap, d.ids); return; }
   if (d.moved || !d.target) return;
   const t = d.target, s = UI.selection.value;
   switch (t.kind) {

@@ -4,7 +4,7 @@
 import { CONFIG } from '../config';
 import { STR } from '../strings';
 import { toWorld, toUV, snapGrid, windowOffsets } from './lattice';
-import { apply, compose, invert, cellMatrix, classify, orbit } from './transform';
+import { apply, compose, invert, cellMatrix, classify, orbit, isTranslation } from './transform';
 import { getPath, pathNodes, cloneMatrices, pathWorld, isClosed, viaMatrix } from './paths';
 import { collectSegments } from './regions';
 import { anchorsWorld } from './hit';
@@ -349,9 +349,11 @@ export function bodyTargets(doc: Doc, set: TargetSet, pathId: string, G: Matrix 
   const nodes = pathNodes(path), Pw = pathWorld(doc, path);
   const idx = isClosed(path) ? nodes.slice(0, -1).map((_, i) => i) : [0, nodes.length - 1];
   const moving = idx.filter((i) => !nodes[i].via).map((i) => ({ index: i, p: apply(G, Pw[i]) }));
-  const Gi = invert(G), linear = Math.abs(G[0] - 1) + Math.abs(G[1]) + Math.abs(G[2]) + Math.abs(G[3] - 1) > 1e-9;
+  // Raw copies (the original and its repeats) are translations of each other, so they add nothing unless the grabbed
+  // copy is turned or reflected relative to them (a non-translation clone). Then they are labelled neutrally (a "copy").
+  const Gi = invert(G), linear = !isTranslation(G);
   const own: BodyTargets['own'] = [];
-  for (const { copy, M } of windowCopies(doc, pathId)) if (copy.bindingId || linear) for (const m of moving) own.push({ K: compose(M, Gi), p: m.p, index: m.index });
+  for (const { copy, M } of windowCopies(doc, pathId)) if (copy.bindingId || linear) for (const m of moving) own.push({ K: compose(M, Gi), p: m.p, index: m.index, ...(copy.bindingId ? {} : { neutral: true }) });
   return { pathId, moving, own, exclude: new Set(nodes.map((n) => n.pointId)), set };
 }
 
@@ -373,11 +375,11 @@ export function snapBodyDelta(T: BodyTargets, raw: XY, threshold: number, sticky
       if (r?.kind === 'point') {
         const at = add(m.p, r.delta), d = dist(at, e0);
         const id = cross ? `own:p:${m.index}>${o.index}:${ptKey(at)}` : `own:p:${ptKey(at)}`;
-        if (d <= reach) extra.push({ at, cls: 'point', cat: 'ownFixed', id, label: cross ? STR.snap.meetsCloneEnd : STR.snap.meetsOwn, hit: { kind: 'own' }, d });
+        if (d <= reach) extra.push({ at, cls: 'point', cat: 'ownFixed', id, label: o.neutral ? (cross ? STR.snap.meetsCopyEnd : STR.snap.meetsRotatedCopy) : cross ? STR.snap.meetsCloneEnd : STR.snap.meetsOwn, hit: { kind: 'own' }, d });
       } else if (r?.kind === 'line') {
         const delta = add(r.base, mul(r.dir, dot(sub(raw, r.base), r.dir))), at = add(m.p, delta), d = dist(at, e0);
         const id = cross ? `own:l:${m.index}>${o.index}:${ptKey(add(m.p, r.base))}:${r.dir.x.toFixed(4)}` : `own:l:${ptKey(add(m.p, r.base))}:${r.dir.x.toFixed(4)}`;
-        if (d <= reach) extra.push({ at, cls: 'line', cat: 'ownFixed', id, label: cross ? STR.snap.meetsCloneEndLine : STR.snap.meetsMirror, hit: { kind: 'own' }, d, line: [add(at, mul(r.dir, -1e4)), add(at, mul(r.dir, 1e4))] });
+        if (d <= reach) extra.push({ at, cls: 'line', cat: 'ownFixed', id, label: o.neutral ? (cross ? STR.snap.meetsCopyEnd : STR.snap.meetsMirrorCopy) : cross ? STR.snap.meetsCloneEndLine : STR.snap.meetsMirror, hit: { kind: 'own' }, d, line: [add(at, mul(r.dir, -1e4)), add(at, mul(r.dir, 1e4))] });
       }
     }
     const res = pickSnap(T.set, e0, threshold, { extra, sticky, excludePoints: T.exclude, excludePaths: exPaths });

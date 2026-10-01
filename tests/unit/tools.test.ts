@@ -13,7 +13,8 @@ import { CONFIG } from '../../src/config';
 import { restore } from '../../src/state/persist';
 import { hoverAt } from '../../src/interaction/pointer';
 import { reset, beginGesture, endGesture, abortGesture, undo } from '../../src/state/history';
-import { copies, cloneMatrices } from '../../src/state/derived';
+import { copies, cloneMatrices, copyMatrix } from '../../src/state/derived';
+import { apply } from '../../src/engine/transform';
 import { hitTest, type HitContext } from '../../src/engine/hit';
 import type { ToolModule, ToolCtx } from '../../src/interaction/tools/common';
 import type { Doc, XY, UV } from '../../src/types';
@@ -620,4 +621,90 @@ test('E5a: a clone body dropped with its end on a same-layer clone node joins th
   const end = P.getPath(doc.value, aId)!.segments[0].to;
   expect(end.pointId).toBe(x);                                                       // A's source end is Q's start (60,180)
   expect(end.via).toBeUndefined();
+});
+
+// --- B fix round 1: a 1/4-turn clone grabbed in cell {1,0}, a clone reaching outside the 3×3 window, neutral labels
+
+// A: (48,48) → (72,48), one quarter turn about (120,120). The +90° clone runs (192,48) → (192,72); in cell {1,0}, (432,48) → (432,72).
+function quarterScene() {
+  let id = '';
+  fresh('freehand', (d) => {
+    const el = P.addElement(d, { kind: 'rotate', u: 0.5, v: 0.5, n: 4 });
+    id = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.3, v: 0.2 }]).id; P.addBinding(d, id, [[el.id]]);
+  });
+  UI.tool.value = 'select'; UI.selection.value = null;
+  const t = hit({ x: 432, y: 60 });
+  if (t?.kind !== 'segment') throw new Error(`expected a segment, got ${t?.kind}`);
+  const shown = () => apply(copyMatrix(t.copy), P.nodeWorld(doc.value, P.getPath(doc.value, id)!.start));
+  return { t, shown };
+}
+
+test('E5a: a quarter-turn clone grabbed in cell {1,0} follows the pointer exactly', () => {
+  const { t, shown } = quarterScene();
+  expect(t.copy.bindingId).toBeTruthy(); expect(t.copy.cell).toEqual({ c: 1, r: 0 });
+  const s0 = shown();
+  expect(s0.x).toBeCloseTo(432, 6); expect(s0.y).toBeCloseTo(48, 6);
+  selectDrag([{ x: 432, y: 60 }, { x: 442, y: 66 }, { x: 452, y: 72 }], noGrid);
+  const s1 = shown();
+  expect(s1.x - s0.x).toBeCloseTo(20, 6); expect(s1.y - s0.y).toBeCloseTo(12, 6);
+});
+
+test('E5a: a quarter-turn clone in cell {1,0} dragged 3.5 px from a tile corner lands on it; the hint is there too', () => {
+  const { shown } = quarterScene();
+  const pts = [{ x: 432, y: 60 }, { x: 460, y: 30 }, { x: 477.5, y: 14.5 }];          // the clone's start to (477.5, 2.5)
+  select.onDown(hit(pts[0]), pts[0], ev(), noGrid);
+  const d = UI.drag.value!;
+  d.moved = true; beginGesture();
+  for (const p of pts.slice(1)) select.onMove(d, p, ev(), noGrid);
+  const hint = UI.snapHint.value;
+  UI.drag.value = null;
+  select.onUp(d, pts[2], ev(), noGrid); endGesture();
+  expect(hint?.at.x).toBeCloseTo(480, 6); expect(hint?.at.y).toBeCloseTo(0, 6);
+  const s = shown();
+  expect(s.x).toBeCloseTo(480, 6); expect(s.y).toBeCloseTo(0, 6);
+});
+
+test('E5a: a translate (5/2, 0) clone, far outside the 3×3 window, still snaps to a tile corner', () => {
+  let id = '';
+  fresh('freehand', (d) => {
+    const el = P.addElement(d, { kind: 'translate', u: 2.5, v: 0 });
+    id = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.3, v: 0.3 }]).id; P.addBinding(d, id, [[el.id]]);
+  });
+  UI.tool.value = 'select'; UI.selection.value = null;
+  UI.viewport.value = { width: 1000, height: 400 };                                   // cells up to c = 3 are visible
+  try {
+    const t = hit({ x: 660, y: 60 });                                                 // the clone (648,48) → (672,72), shown in cell {0,0}
+    expect(t?.kind === 'segment' && t.copy.bindingId ? t.copy.cell : null).toEqual({ c: 0, r: 0 });
+    const pts = [{ x: 660, y: 60 }, { x: 700, y: 30 }, { x: 729.6, y: 15.2 }];        // its start to (717.6, 3.2), 4 px from (720, 0)
+    select.onDown(t, pts[0], ev(), noGrid);
+    const d = UI.drag.value!;
+    d.moved = true; beginGesture();
+    for (const p of pts.slice(1)) select.onMove(d, p, ev(), noGrid);
+    const hint = UI.snapHint.value;
+    UI.drag.value = null;
+    select.onUp(d, pts[2], ev(), noGrid); endGesture();
+    expect(hint?.at.x).toBeCloseTo(720, 6); expect(hint?.at.y).toBeCloseTo(0, 6);
+    const s = P.nodeWorld(doc.value, P.getPath(doc.value, id)!.start);
+    expect(s.x).toBeCloseTo(120, 6); expect(s.y).toBeCloseTo(0, 6);                 // the original's start: its clone is at (720, 0)
+  } finally { UI.viewport.value = { width: 0, height: 0 }; }
+});
+
+test('E5a: a mirror clone grabbed and meeting the original is labelled neutrally; the original keeps "mirror clone"', () => {
+  // A: (60,60) → (60,100), mirror x = 120: its clone runs down x = 180. Dragging either until it meets the axis.
+  const drag = (from: XY, to: XY) => {
+    fresh('freehand', (d) => {
+      const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+      const p = line(d, [{ u: 0.25, v: 0.25 }, { u: 0.25, v: 0.4167 }]); P.addBinding(d, p.id, [[el.id]]);
+    });
+    UI.tool.value = 'select'; UI.selection.value = null;
+    select.onDown(hit(from), from, ev(), noGrid);
+    const d = UI.drag.value!;
+    d.moved = true; beginGesture();
+    select.onMove(d, to, ev(), noGrid);
+    const label = UI.snapHint.value?.label;
+    UI.drag.value = null; abortGesture();
+    return label;
+  };
+  expect(drag({ x: 180, y: 80 }, { x: 122, y: 80 })).toBe(STR.snap.meetsMirrorCopy);
+  expect(drag({ x: 60, y: 80 }, { x: 118, y: 80 })).toBe(STR.snap.meetsMirror);
 });

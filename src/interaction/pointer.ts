@@ -163,7 +163,14 @@ export function attachPointer(svg: SVGSVGElement): () => void {
       default:
     }
   }
-  function onKeyUp(e: KeyboardEvent) { if (e.code === 'Space') UI.space.value = false; rehover(e); }
+  function onKeyUp(e: KeyboardEvent) {
+    if (e.code === 'Space') UI.space.value = false;   // always: a Space released over an input must not leave Space held
+    const tag = (e.target as HTMLElement | null)?.tagName ?? '';
+    if (/input|textarea|select/i.test(tag)) return;
+    rehover(e);
+  }
+  // The pointer left the canvas: forget where it was, so ⌘ / Ctrl cannot re-hover (and show a hint) at a stale spot.
+  function onLeave() { if (UI.drag.value) return; UI.cursor.value = null; UI.hover.value = null; UI.clearSnap(); }
   const swallow = (e: Event) => e.preventDefault();
   const blur = () => onCancel();
 
@@ -171,6 +178,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
   svg.addEventListener('pointermove', onMove);
   svg.addEventListener('pointerup', onUp);
   svg.addEventListener('pointercancel', onCancel);
+  svg.addEventListener('pointerleave', onLeave);
   svg.addEventListener('dblclick', onDblClick);
   svg.addEventListener('wheel', onWheel, { passive: false });
   svg.addEventListener('contextmenu', swallow);
@@ -181,7 +189,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
   for (const g of ['pointerup', 'pointercancel', 'lostpointercapture']) window.addEventListener(g, onWindowUp as EventListener);
   return () => {
     svg.removeEventListener('pointerdown', onDown); svg.removeEventListener('pointermove', onMove); svg.removeEventListener('pointerup', onUp);
-    svg.removeEventListener('pointercancel', onCancel); svg.removeEventListener('dblclick', onDblClick); svg.removeEventListener('wheel', onWheel);
+    svg.removeEventListener('pointercancel', onCancel); svg.removeEventListener('pointerleave', onLeave); svg.removeEventListener('dblclick', onDblClick); svg.removeEventListener('wheel', onWheel);
     svg.removeEventListener('contextmenu', swallow); for (const g of ['gesturestart', 'gesturechange', 'gestureend']) svg.removeEventListener(g, swallow);
     window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', blur);
     for (const g of ['pointerup', 'pointercancel', 'lostpointercapture']) window.removeEventListener(g, onWindowUp as EventListener);
