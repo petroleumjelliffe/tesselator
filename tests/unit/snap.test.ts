@@ -242,6 +242,23 @@ test('snapBodyDelta: ends not lined up along a mirror axis can never meet, so no
   expect(sawSnap).toBe(true);                                          // the sweep isn't vacuously empty
 });
 
+test('snapBodyDelta: a tied delta still prefers a point over a line, even from a higher moving index (round 2 regression)', () => {
+  const d = makeDoc();                                                  // no elements/bindings: the tie is built directly from ordinary targets
+  // start (index 0) at (-120, 240): a raw of (240, 0) lands it at (120, 240), exactly on the grid edge y = 240.
+  // end (index 1) at (0, 0): the same raw lands it exactly on the grid corner (240, 0).
+  // Both therefore resolve to the identical body delta (240, 0) -- a tie where the lower index (start) is a line and
+  // the higher index (end) is a point. The point must win regardless of index.
+  const stub = line(d, [{ u: -0.5, v: 1 }, { u: 0, v: 0 }]);
+  const T = bodyTargets(d, buildTargets(d), stub.id)!;
+  const s = snapBodyDelta(T, { x: 240, y: 0 }, 12, null)!;
+  expect(s).toBeTruthy();
+  near(s.delta, { x: 240, y: 0 });
+  expect(s.nodeIndex).toBe(1);
+  expect(s.res.cls).toBe('point');
+  expect(s.res.cat).toBe('corner');
+  near(s.res.at, { x: 240, y: 0 });
+});
+
 const lat = { ...CONFIG.LATTICE_PRESETS.Square }, F = [1, 1 / 2, 1 / 3];
 
 test('snapScale: an edge lands on a half and a third of the lattice span; a flat axis is not snapped', () => {

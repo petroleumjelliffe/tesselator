@@ -370,7 +370,9 @@ export function snapBodyDelta(T: BodyTargets, raw: XY, threshold: number, sticky
     if (!best) best = cand;
     else if (sameEvent(cand.delta, best.delta)) {
       if (cand.res.id === sticky) best = cand;
-      else if (best.res.id !== sticky && cand.nodeIndex < best.nodeIndex) best = cand;
+      else if (best.res.id === sticky) { /* keep best */ }
+      else if (cand.res.cls !== best.res.cls) { if (cand.res.cls === 'point') best = cand; }
+      else if (cand.nodeIndex < best.nodeIndex) best = cand;
     } else if (better(res, best.res)) best = cand;
   }
   return best;
