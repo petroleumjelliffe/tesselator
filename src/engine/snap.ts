@@ -169,7 +169,8 @@ export function choose(cands: SnapResult[], threshold: number, sticky: string | 
   if (prev) {
     if (!pick) pick = prev;
     else if (pick.id !== prev.id) {
-      const earlier = precedence(pick) < precedence(prev) && pick.cat !== prev.cat;
+      // SN2/SN4: a point within the threshold outranks any line, so a held line yields to it whatever the category.
+      const earlier = (pick.cls === 'point' && prev.cls === 'line') || (precedence(pick) < precedence(prev) && pick.cat !== prev.cat);
       const nearer = pick.cls === prev.cls && pick.d < prev.d - CONFIG.SNAP_STICKY_MARGIN * threshold;
       if (!earlier && !nearer) pick = prev;
     }
@@ -226,9 +227,17 @@ export function strokeCopies(doc: Doc, groups: string[][]): StrokeCopy[] {
 }
 
 function polyLength(pts: XY[]): number { let n = 0; for (let i = 1; i < pts.length; i++) n += dist(pts[i - 1], pts[i]); return n; }
+// The polyline minus its last `len` of length, cut exactly at that distance (a long last segment keeps its far part).
 function trimTail(pts: XY[], len: number): XY[] {
   let acc = 0;
-  for (let i = pts.length - 1; i > 0; i--) { acc += dist(pts[i], pts[i - 1]); if (acc >= len) return pts.slice(0, i); }
+  for (let i = pts.length - 1; i > 0; i--) {
+    const L = dist(pts[i], pts[i - 1]);
+    if (acc + L >= len) {
+      const t = (len - acc) / (L || 1);
+      return t >= 1 - 1e-9 ? pts.slice(0, i) : [...pts.slice(0, i), add(pts[i], mul(sub(pts[i - 1], pts[i]), t))];
+    }
+    acc += L;
+  }
   return [];
 }
 function nearestOnPoly(pl: XY[], p: XY): { q: XY; d: number } | null {

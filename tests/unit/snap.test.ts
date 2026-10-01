@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
-import { buildTargets, pickSnap, precedence, strokeCopies, strokeCands, pointCopyMatrices, ownFixedCands, nearestOnSeg, gridResult, NODE_ONLY, solveCopyMeet, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines, windowCopies } from '../../src/engine/snap';
+import { buildTargets, pickSnap, precedence, choose, strokeCopies, strokeCands, pointCopyMatrices, ownFixedCands, nearestOnSeg, gridResult, NODE_ONLY, solveCopyMeet, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines, windowCopies } from '../../src/engine/snap';
 import { cellMatrix, apply, rotation, IDENTITY } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import { STR } from '../../src/strings';
@@ -296,4 +296,12 @@ test('cpLines: a node on the path\'s own mirror line offers the mirror normal; l
   expect(L.some((l) => Math.hypot(l.p.x - 96, l.p.y - 96) < 1e-6 && Math.abs(l.dir.x + l.dir.y) < 1e-9)).toBe(true);
   const L2 = cpLines(d, p.id, 0, { cell: { c: 2, r: 0 }, bindingId: null, power: 0 });
   expect(L2.some((l) => Math.hypot(l.p.x - 576, l.p.y - 96) < 1e-6 && Math.abs(l.dir.x + l.dir.y) < 1e-9)).toBe(true);
+});
+
+test('SN4: a held line yields to any point within the threshold, even of the same category', () => {
+  const held: SnapResult = { at: { x: 0, y: 0 }, cls: 'line', cat: 'ownClone', id: 'own:cl:0', label: 'its clone', hit: { kind: 'place' }, d: 2 };
+  const pt: SnapResult = { at: { x: 5, y: 5 }, cls: 'point', cat: 'ownClone', id: 'own:cs:0', label: 'its clone\'s start', hit: { kind: 'place' }, d: 8 };
+  expect(choose([held, pt], 12, 'own:cl:0')?.id).toBe('own:cs:0');
+  const far = { ...pt, d: 14 };                                                    // beyond the threshold: the line holds
+  expect(choose([held, far], 12, 'own:cl:0')?.id).toBe('own:cl:0');
 });

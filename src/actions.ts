@@ -192,7 +192,7 @@ export function penClickEmpty(w: XY, on: boolean, hitScale = 1): boolean {
   const ok = mutate((d) => {
     const penPath = penNow ? P.getPath(d, penNow.pathId) : null;
     const layerId = penPath ? penPath.layerId : activeLayerId(d);
-    const own = penPath && s ? ownEndNode(d, penPath, s.hit, s.at, penPath.segments.length - 1) : null;   // the segment at the tip is not its own line
+    const own = penPath && s ? ownEndNode(d, penPath, s.hit, s.at, penPath.segments.length) : null;   // any segment: the own line already leaves out the tail at the tip
     if (penPath && own) { P.appendNode(d, penPath.id, own); ended = true; return; }
     if (!penPath) {
       const ext = extendTarget(d, s, layerId);
@@ -226,7 +226,11 @@ export function joinDroppedPoint(pointId: string, cell: Cell, hit: SnapHit): boo
   });
   if (!ok) return false;
   const s = UI.selection.value;
-  if (s && s.kind === 'points' && toId) UI.selection.value = { kind: 'points', ids: [...new Set(s.ids.map((id) => (id === pointId ? toId! : id)))] };
+  if (s && s.kind === 'points' && toId) {   // the joined point becomes the target; the others keep the copies they were picked through
+    const copies = { ...(s.copies ?? {}) };
+    delete copies[pointId];
+    UI.selection.value = { kind: 'points', ids: [...new Set(s.ids.map((id) => (id === pointId ? toId! : id)))], ...(Object.keys(copies).length ? { copies } : {}) };
+  }
   else if (s && s.kind === 'path' && !P.getPath(doc.value, s.id)) UI.selection.value = null;
   if (UI.pen.value && !P.getPath(doc.value, UI.pen.value.pathId)) UI.pen.value = null;
   return true;

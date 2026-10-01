@@ -135,7 +135,7 @@ test('Freehand: extending a path, an end on that path\'s own mirror clone start 
     P.addBinding(d, p.id, [[el.id]]);
     id = p.id;
   });
-  gesture(freehand, [...along({ x: 61, y: 181 }, { x: 100, y: 220 }), ...along({ x: 100, y: 220 }, { x: 130, y: 61 }).slice(1), ...along({ x: 130, y: 61 }, { x: 178, y: 61 }).slice(1)]);
+  gesture(freehand, [...along({ x: 61, y: 181 }, { x: 100, y: 220 }), ...along({ x: 100, y: 220 }, { x: 178, y: 62 }).slice(1)]);   // along the clone's line: its held snap yields to the start (SN4)
   expect(doc.value.paths).toHaveLength(1);
   const nodes = P.pathNodes(P.getPath(doc.value, id)!), last = nodes[nodes.length - 1];
   expect(nodes.length).toBeGreaterThan(2);
@@ -318,4 +318,50 @@ test('N3: a point placed on another layer\'s point stays a target; clicking it a
   expect(UI.pen.value?.pathId).toBe(id);                                     // resumed (D5), not a new unconnected path
   expect(doc.value.paths).toHaveLength(2);
   expect(JSON.stringify(P.getPath(doc.value, l2))).toBe(l2Before);
+});
+
+test('N1: a several-point drag that joins on release keeps the other points\' clone copies', () => {
+  let a = '', b = '', x = '';
+  fresh('freehand', (d) => {
+    a = line(d, [{ u: 0.05, v: 0.1 }, { u: 0.05, v: 0.5 }]).start.pointId;                        // raw (12, 24)
+    const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+    const pb = line(d, [{ u: 0.9, v: 0.1 }, { u: 0.9, v: 0.3 }]); P.addBinding(d, pb.id, [[el.id]]);
+    b = pb.start.pointId;                                                                          // image (24, 24)
+    x = line(d, [{ u: 0.2, v: 0.1 }, { u: 0.2, v: 0.3 }]).start.pointId;                           // a node at (48, 24)
+  });
+  UI.tool.value = 'select';
+  select.onDown(null, { x: 0, y: 10 }, ev(), ctx);
+  const m = UI.drag.value!; m.moved = true;
+  select.onMove(m, { x: 40, y: 40 }, ev(), ctx);
+  UI.drag.value = null; select.onUp(m, { x: 40, y: 40 }, ev(), ctx);
+  const s0 = UI.selection.value;
+  expect(s0 && s0.kind === 'points' && s0.copies?.[b]?.bindingId).toBeTruthy();
+  selectDrag([{ x: 12, y: 24 }, { x: 40, y: 25 }, { x: 46, y: 25 }]);                              // grab the raw one onto X
+  expect(doc.value.points.some((q) => q.id === a)).toBe(false);
+  const s = UI.selection.value;
+  expect(s && s.kind === 'points' && [...s.ids].sort()).toEqual([b, x].sort());
+  expect(s && s.kind === 'points' && s.copies?.[b]?.bindingId).toBeTruthy();
+});
+
+test('N2: the own-line hint covers a long tip segment up to 3× the threshold from the tip, and the click splits there', () => {
+  fresh('pen');
+  click({ x: 60, y: 60 }); click({ x: 60, y: 90 }); click({ x: 210, y: 90 });   // a 150 px tip segment
+  const id = UI.pen.value!.pathId;
+  hoverAt({ x: 120, y: 93 }, hit({ x: 120, y: 93 }), ctx);
+  expect(UI.snapHint.value?.label).toBe(STR.snap.ownLine);
+  hoverAt({ x: 200, y: 93 }, hit({ x: 200, y: 93 }), ctx);                   // 10 px from the tip: inside the 36 px tail, beyond the sticky reach
+  expect(UI.snapHint.value?.label).not.toBe(STR.snap.ownLine);
+  click({ x: 120, y: 93 });
+  const nodes = P.pathNodes(P.getPath(doc.value, id)!), last = nodes[nodes.length - 1];
+  expect(nodes.slice(1, -1).some((n) => n.pointId === last.pointId)).toBe(true);
+  expect(P.nodeWorld(doc.value, last).x).toBeCloseTo(120, 6);              // where the hint showed, on the tip segment
+  expect(P.nodeWorld(doc.value, last).y).toBeCloseTo(90, 6);
+  expect(UI.pen.value).toBe(null);
+});
+
+test('N2: a one-segment Pen path offers its own line', () => {
+  fresh('pen');
+  click({ x: 60, y: 60 }); click({ x: 210, y: 60 });
+  hoverAt({ x: 100, y: 63 }, hit({ x: 100, y: 63 }), ctx);
+  expect(UI.snapHint.value?.label).toBe(STR.snap.ownLine);
 });
