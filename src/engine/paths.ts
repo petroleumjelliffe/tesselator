@@ -220,7 +220,7 @@ export function shiftControlPoints(doc: Doc, ids: string[], du: number, dv: numb
     p.segments.forEach((s, j) => {
       if (!s.cp) return;
       const n = (set.has(prevNode(p, j).pointId) ? 1 : 0) + (set.has(s.to.pointId) ? 1 : 0);
-      if (n) s.cp = { u: s.cp.u + (du * n) / 2, v: s.cp.v + (dv * n) / 2 };
+      if (n) s.cp = { u: s.cp.u + du, v: s.cp.v + dv };   // rigid: a moved end carries the handle by the full delta, once
     });
   }
 }

@@ -114,19 +114,20 @@ test('openEndAt / reversePath / orientToEnd keep control points on the right sid
   expect(P.cpAbs(path, 1)!.v).toBeCloseTo(-0.1, 9);
 });
 
-test('movePoint and movePointsBy shift adjacent control points by half per moved endpoint', () => {
+test('movePoint carries both neighbouring control points rigidly; movePointsBy moves a shared one once', () => {
   const doc = makeDoc();
   const path = polyline(doc, [{ u: 0, v: 0 }, { u: 0.4, v: 0 }, { u: 0.8, v: 0 }]);
   P.setControlPointAbs(doc, path.id, 0, { u: 0.2, v: 0.2 });
   P.setControlPointAbs(doc, path.id, 1, { u: 0.6, v: 0.2 });
   const [n0, n1] = P.pathNodes(path);
-  P.movePoint(doc, n1.pointId, 0.4, 0.1);
-  expect(P.cpAbs(path, 0)!.v).toBeCloseTo(0.25, 9);
-  expect(P.cpAbs(path, 1)!.v).toBeCloseTo(0.25, 9);
-  const ids = [n0.pointId, n1.pointId];
-  P.movePointsBy(doc, ids, P.snapshotPositions(doc, ids), 0, 0.1);
-  expect(P.cpAbs(path, 0)!.v).toBeCloseTo(0.35, 9);
+  P.movePoint(doc, n1.pointId, 0.4, 0.1);                   // the middle node moves by (0, 0.1)
+  expect(P.cpAbs(path, 0)!.v).toBeCloseTo(0.3, 9);
   expect(P.cpAbs(path, 1)!.v).toBeCloseTo(0.3, 9);
+  expect(P.cpAbs(path, 0)!.u).toBeCloseTo(0.2, 9);
+  const ids = [n0.pointId, n1.pointId];
+  P.movePointsBy(doc, ids, P.snapshotPositions(doc, ids), 0, 0.1);   // both ends of segment 0, one end of segment 1
+  expect(P.cpAbs(path, 0)!.v).toBeCloseTo(0.4, 9);
+  expect(P.cpAbs(path, 1)!.v).toBeCloseTo(0.4, 9);
 });
 
 test('transformPath applies a world matrix to points and control points and maps back to lattice coords', () => {
