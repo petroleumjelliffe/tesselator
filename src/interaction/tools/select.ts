@@ -25,13 +25,16 @@ function nodeSnap(targets: TargetSet, pointId: string, S: Matrix, w: XY, ctx: To
 }
 
 // Select tool with a path selected: the first move of a drag on one of its nodes unlinks it from other paths first.
+// S2: a selected raw instance's nodes are hit with the instance's copy.cell folded into whichever field carries the node's
+// own position (via.cell for a via node, cell otherwise); unshift it before matching, since the stored node — and the
+// detached node unlinkNode hands back — is always in the document frame, not the selected instance's. A clone instance's
+// cell/anchor (canchor) is never shifted this way, so it passes through unchanged.
 function unlinkForDrag(pointId: string, cell: Cell, via?: Copy): Node | null {
   const s = UI.selection.value;
   if (UI.tool.value !== 'select' || !s || s.kind !== 'path') return null;
-  // The hit's via.cell is shifted by the selected raw instance's copy.cell (S2); the stored node's via.cell is not, so unshift it to match.
-  const k = s.copy.cell;
-  const stored = via ? { ...via, cell: { c: via.cell.c - k.c, r: via.cell.r - k.r } } : via;
-  return A.unlinkNode(s.id, pointId, cell, stored);
+  if (s.copy.bindingId) return A.unlinkNode(s.id, pointId, cell, via);
+  const k = s.copy.cell, unshift = (c: Cell): Cell => ({ c: c.c - k.c, r: c.r - k.r });
+  return via ? A.unlinkNode(s.id, pointId, cell, { ...via, cell: unshift(via.cell) }) : A.unlinkNode(s.id, pointId, unshift(cell), via);
 }
 
 export function pointDown(t: Extract<HitTarget, { kind: 'point' }>, w: XY, e: PointerEvent, hitScale: number): void {
@@ -79,11 +82,9 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
         d.unlinked = true;
         const n = unlinkForDrag(d.pointId, d.cell, d.via);
         if (n) {
-          if (d.via) {
-            // The detached node's cell comes back in the document frame; re-add the selected instance's cell to stay in its frame.
-            const s = UI.selection.value, k = s && s.kind === 'path' ? s.copy.cell : { c: 0, r: 0 };
-            d.cell = { c: n.cell.c + k.c, r: n.cell.r + k.r };
-          }
+          // The detached node's cell comes back in the document frame; re-add the selected raw instance's cell (S2) to stay in its frame.
+          const s = UI.selection.value, k = s && s.kind === 'path' && !s.copy.bindingId ? s.copy.cell : { c: 0, r: 0 };
+          d.cell = { c: n.cell.c + k.c, r: n.cell.r + k.r };
           d.pointId = n.pointId; d.via = undefined;
         }
       }

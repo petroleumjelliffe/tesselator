@@ -51,6 +51,31 @@ test('with its path selected, dragging a shared node moves only that path; one u
   expect(endOf(aId).pointId).toBe(shared);
 });
 
+test('S2/S6 fix round 2: dragging a shared plain node of a path selected at a non-origin raw instance detaches it without moving the other path; one undo relinks', () => {
+  const { aId, bId, shared } = scene();
+  const copy: Copy = { cell: { c: 1, r: 0 }, bindingId: null, power: 0 };   // a raw repeat instance, not the base cell
+  UI.selection.value = { kind: 'path', id: aId, copy };
+  const bPointBefore = { ...P.getPoint(doc.value, shared)! };
+  // As hit.ts reports this raw instance's plain node (S2): cell is the node's own cell shifted by copy.cell.
+  const nodeCell = endOf(aId).cell;
+  const t: HitTarget = { kind: 'point', pointId: shared, cell: { c: nodeCell.c + copy.cell.c, r: nodeCell.r + copy.cell.r } };
+  const before = apply(copyMatrix(copy), P.nodeWorld(doc.value, endOf(aId)));
+
+  drag(t, before, { x: before.x + 30, y: before.y });
+
+  expect(endOf(aId).pointId).not.toBe(shared);
+  const detachedAtInstance = apply(copyMatrix(copy), P.nodeWorld(doc.value, endOf(aId)));
+  expect(detachedAtInstance.x).toBeCloseTo(before.x + 30, 6);
+  expect(detachedAtInstance.y).toBeCloseTo(before.y, 6);
+  expect(startOf(bId).pointId).toBe(shared);
+  const bPointAfter = P.getPoint(doc.value, shared)!;
+  expect(bPointAfter.u).toBeCloseTo(bPointBefore.u, 9);
+  expect(bPointAfter.v).toBeCloseTo(bPointBefore.v, 9);
+
+  A.undo();
+  expect(endOf(aId).pointId).toBe(shared);
+});
+
 test('dropping the unlinked node back on the old point merges them again (points attract with snapping off)', () => {
   const { aId, shared } = scene();
   UI.selection.value = { kind: 'path', id: aId, copy: base };
