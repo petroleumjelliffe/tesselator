@@ -83,7 +83,7 @@ Rotation centres that a pattern implies without an element (the extra 2-fold cen
 | Layer mode | Drawing · Construction (`Tab`) | built |
 | Tool | Select `V` · Pen `P` · Freehand `F` · Fill `B` | built |
 | Grid snap | on · off (`G`); silent, never hinted | built; decided 2026-10-01 |
-| Target snap | always on; hold `⌘` / `Ctrl` to turn it off for one gesture | decided 2026-10-01 (was: `G` turned targets off) |
+| Target snap | always on; hold `⌘` / `Ctrl` to turn it off for one gesture | built 2026-10-01 (was: `G` turned targets off) |
 
 Pen, Freehand and (later) Shape tools share one rule set for nodes, snapping and commit (§5, §6).
 
@@ -258,8 +258,8 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 | H3 | A short label names the target ("tile corner", "meets its mirror clone"). | new |
 | H4 | While pinned, the followed line stays highlighted. | new |
 | H5 | Hints update every pointer move, and while dragging or scaling they show at the selection's endpoints. | new |
-| H6 | What you see is what you get: if a hint is showing when the pointer goes down or up, that is the snap used, including a sticky hold beyond the plain threshold (SN4). | new |
-| H7 | No hint, no snap (decided 2026-10-01): a target snap happens only if its hint is visible at that moment; otherwise the point lands where the pointer is, or on the grid while `G` is on. A commit never re-picks a snap that was not shown. | new |
+| H6 | What you see is what you get: if a hint is showing when the pointer goes down or up, that is the snap used, including a sticky hold beyond the plain threshold (SN4). | built for Pen, Freehand and Select drags |
+| H7 | No hint, no snap (decided 2026-10-01): a target snap happens only if its hint is visible at that moment; otherwise the point lands where the pointer is, or on the grid while `G` is on. A commit never re-picks a snap that was not shown. | built for Pen, Freehand and Select drags |
 | H8 | While Pen or Freehand is selected, nodes are shown only for paths near the cursor (within a few thresholds of any of their instances), not for every path (decided 2026-10-01). | new |
 
 ---
