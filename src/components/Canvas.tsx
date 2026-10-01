@@ -184,10 +184,12 @@ function Points() {
   }
   // S2: the selected instance's nodes, drawn only there (a clone instance's are drawn by CloneAnchors).
   if (layer.value === 'drawing' && sel && sel.kind === 'path' && selPath && !sel.copy.bindingId && !showAll) {
-    const M = copyMatrix(sel.copy);
+    const M = copyMatrix(sel.copy), k = sel.copy.cell;
     pathNodes(selPath).forEach((n, i) => {
       const w = apply(M, nodeWorld(d, n));
-      const isHover = !!h && h.kind === 'point' && h.pointId === n.pointId;
+      const isHover = !!h && h.kind === 'point' && h.pointId === n.pointId && (n.via
+        ? !!h.via && h.via.bindingId === n.via.bindingId && h.via.power === n.via.power && h.via.cell.c === n.via.cell.c + k.c && h.via.cell.r === n.via.cell.r + k.r
+        : !h.via && h.cell.c === n.cell.c + k.c && h.cell.r === n.cell.r + k.r);
       out.push(<circle key={`sel:${i}`} class={['pt', isHover && 'hover'].filter(Boolean).join(' ')} cx={w.x} cy={w.y} r={CONFIG.HANDLE_PX / z} />);
     });
   }

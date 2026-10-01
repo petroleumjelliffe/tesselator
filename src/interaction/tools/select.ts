@@ -28,7 +28,10 @@ function nodeSnap(targets: TargetSet, pointId: string, S: Matrix, w: XY, ctx: To
 function unlinkForDrag(pointId: string, cell: Cell, via?: Copy): Node | null {
   const s = UI.selection.value;
   if (UI.tool.value !== 'select' || !s || s.kind !== 'path') return null;
-  return A.unlinkNode(s.id, pointId, cell, via);
+  // The hit's via.cell is shifted by the selected raw instance's copy.cell (S2); the stored node's via.cell is not, so unshift it to match.
+  const k = s.copy.cell;
+  const stored = via ? { ...via, cell: { c: via.cell.c - k.c, r: via.cell.r - k.r } } : via;
+  return A.unlinkNode(s.id, pointId, cell, stored);
 }
 
 export function pointDown(t: Extract<HitTarget, { kind: 'point' }>, w: XY, e: PointerEvent, hitScale: number): void {
@@ -75,7 +78,14 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
       if (!d.unlinked) {
         d.unlinked = true;
         const n = unlinkForDrag(d.pointId, d.cell, d.via);
-        if (n) { if (d.via) d.cell = n.cell; d.pointId = n.pointId; d.via = undefined; }
+        if (n) {
+          if (d.via) {
+            // The detached node's cell comes back in the document frame; re-add the selected instance's cell to stay in its frame.
+            const s = UI.selection.value, k = s && s.kind === 'path' ? s.copy.cell : { c: 0, r: 0 };
+            d.cell = { c: n.cell.c + k.c, r: n.cell.r + k.r };
+          }
+          d.pointId = n.pointId; d.via = undefined;
+        }
       }
       const S = d.via ? compose(P.viaMatrix(doc.value, d.via), cellMatrix(d.cell, doc.value.lattice)) : cellMatrix(d.cell, doc.value.lattice);
       const s = nodeSnap(d.targets, d.pointId, S, w, ctx);

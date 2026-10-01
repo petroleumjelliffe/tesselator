@@ -105,6 +105,44 @@ test('dragging a via end of the selected path detaches it into a plain node at t
   expect(restored.pointId).toBe(body.start.pointId);
 });
 
+test('S2/S6 fix: the via start of a path selected at a non-origin raw instance detaches without moving the shared point; one undo restores it', () => {
+  reset(); UI.resetUi(); UI.tool.value = 'select'; UI.view.value = { pan: { x: 0, y: 0 }, zoom: 1 };
+  const d = emptyDoc();
+  const bodyA = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.3, v: 0.1 }]);
+  const el = P.addElement(d, { kind: 'rotate', u: 0.5, v: 0.5, n: 2 });
+  const bind = P.addBinding(d, bodyA.id, [[el.id]]);
+  const via: Copy = { cell: { c: 0, r: 0 }, bindingId: bind.id, power: 1 };
+  const pathB = P.startPath(d, { pointId: bodyA.start.pointId, cell: { c: 0, r: 0 }, via }, { color: '#000', weight: 2 }, d.layers[0].id);
+  P.appendNode(d, pathB.id, P.addPoint(d, { u: 0.9, v: 0.6 }));
+  doc.value = d;
+  const copy: Copy = { cell: { c: 1, r: 0 }, bindingId: null, power: 0 };   // a raw repeat instance, not the base cell
+  UI.selection.value = { kind: 'path', id: pathB.id, copy };
+
+  const aPointBefore = { ...P.getPoint(doc.value, bodyA.start.pointId)! };
+  // As hit.ts reports the via start of this raw instance (S2): cell unshifted, via.cell shifted by copy.cell.
+  const shiftedVia: Copy = { ...via, cell: { c: via.cell.c + copy.cell.c, r: via.cell.r + copy.cell.r } };
+  const t: HitTarget = { kind: 'point', pointId: bodyA.start.pointId, cell: { c: 0, r: 0 }, via: shiftedVia };
+  const before = apply(copyMatrix(copy), P.nodeWorld(doc.value, pathB.start));
+
+  drag(t, before, { x: before.x + 30, y: before.y });
+
+  const detached = P.getPath(doc.value, pathB.id)!.start;
+  expect(detached.via).toBeUndefined();
+  expect(detached.pointId).not.toBe(bodyA.start.pointId);
+  const detachedAtInstance = apply(copyMatrix(copy), P.nodeWorld(doc.value, detached));
+  expect(detachedAtInstance.x).toBeCloseTo(before.x + 30, 6);
+  expect(detachedAtInstance.y).toBeCloseTo(before.y, 6);
+
+  const aPointAfter = P.getPoint(doc.value, bodyA.start.pointId)!;
+  expect(aPointAfter.u).toBeCloseTo(aPointBefore.u, 9);
+  expect(aPointAfter.v).toBeCloseTo(aPointBefore.v, 9);
+
+  A.undo();
+  const restored = P.getPath(doc.value, pathB.id)!.start;
+  expect(restored.via).toEqual(via);
+  expect(restored.pointId).toBe(bodyA.start.pointId);
+});
+
 test('canchor: dragging a clone\'s shared anchor off a point shared with another path leaves that path in place', () => {
   reset(); UI.resetUi(); UI.tool.value = 'select'; UI.view.value = { pan: { x: 0, y: 0 }, zoom: 1 };
   const d = emptyDoc();
