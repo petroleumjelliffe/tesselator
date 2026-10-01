@@ -252,3 +252,52 @@ test('Select: a clone-anchor drop whose pre-image is no node is location only', 
   const at = P.nodeWorld(doc.value, end);
   expect(at.x).toBeCloseTo(60, 6); expect(at.y).toBeCloseTo(180, 6);
 });
+
+// --- E / I5: box-scale endpoint hints come from the targets at the press, without the path's own nodes
+
+test('Select: scaling a path with nothing else near shows no endpoint hint', () => {
+  let id = '';
+  fresh('freehand', (d) => { id = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.5, v: 0.5 }]).id; });   // (48,48) → (120,120)
+  UI.tool.value = 'select'; UI.selection.value = { kind: 'path', id, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } };
+  expect(hit({ x: 120, y: 84 })?.kind).toBe('bbox');                                        // the right edge handle
+  select.onDown(hit({ x: 120, y: 84 }), { x: 120, y: 84 }, ev(), ctx);
+  const d = UI.drag.value!;
+  d.moved = true; beginGesture();
+  select.onMove(d, { x: 148.8, y: 84 }, ev(), ctx);                                         // × 1.4: no lattice fraction near
+  const hint = UI.snapHint.value;
+  UI.drag.value = null; select.onUp(d, { x: 148.8, y: 84 }, ev(), ctx); endGesture();
+  expect(P.nodeWorld(doc.value, P.getPath(doc.value, id)!.segments[0].to).x).toBeCloseTo(148.8, 6);
+  expect(hint).toBe(null);
+});
+
+// --- E / M1: point clicks keep the frame points were picked through
+
+test('Select: ⇧-click trimming a marquee picked through a clone keeps the clone frame of the rest', () => {
+  let a = '', b = '';
+  fresh('freehand', (d) => {
+    const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+    const p = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.15, v: 0.15 }, { u: 0.4, v: 0.6 }]);            // (24,24), (36,36), (96,144)
+    P.addBinding(d, p.id, [[el.id]]);
+    a = p.start.pointId; b = p.segments[0].to.pointId;                                           // mirror images (216,24), (204,36)
+  });
+  UI.tool.value = 'select';
+  select.onDown(null, { x: 195, y: 10 }, ev(), ctx);
+  const m = UI.drag.value!; m.moved = true;
+  select.onMove(m, { x: 230, y: 45 }, ev(), ctx);
+  UI.drag.value = null; select.onUp(m, { x: 230, y: 45 }, ev(), ctx);
+  const s0 = UI.selection.value;
+  expect(s0 && s0.kind === 'points' && [...s0.ids].sort()).toEqual([a, b].sort());
+  const t = hit({ x: 216, y: 24 });
+  expect(t).toMatchObject({ kind: 'point', pointId: a });
+  const shift = ev({ shiftKey: true });
+  select.onDown(t, { x: 216, y: 24 }, shift, ctx);
+  const c = UI.drag.value!; UI.drag.value = null; select.onUp(c, { x: 216, y: 24 }, shift, ctx);
+  const s = UI.selection.value;
+  expect(s && s.kind === 'points' && s.ids).toEqual([b]);
+  expect(s && s.kind === 'points' && s.copies?.[b]?.bindingId).toBeTruthy();
+  select.onDown(t, { x: 216, y: 24 }, shift, ctx);                                               // ⇧-click it back: through the clone again
+  const c2 = UI.drag.value!; UI.drag.value = null; select.onUp(c2, { x: 216, y: 24 }, shift, ctx);
+  const s2 = UI.selection.value;
+  expect(s2 && s2.kind === 'points' && s2.copies?.[a]?.bindingId).toBeTruthy();
+  expect(s2 && s2.kind === 'points' && s2.copies?.[b]?.bindingId).toBeTruthy();
+});

@@ -72,7 +72,8 @@ function startBBox(t: HitTarget, w: XY, e: PointerEvent, hitScale: number): void
   const M = copyMatrix(s.copy), box = P.boundsWorld(doc.value, path, M);
   const cx = (box.x0 + box.x1) / 2, cy = (box.y0 + box.y1) / 2;
   const h = t.kind === 'bboxrot' ? { x: cx, y: box.y0 - CONFIG.BBOX_ROT_OFFSET / UI.view.value.zoom, ax: cx, ay: cy, cursor: 'grab' } : bboxHandles(box)[(t as Extract<HitTarget, { kind: 'bbox' }>).h];
-  startDrag(e, t, w, hitScale, { kind: 'bbox', mode: t.kind === 'bboxrot' ? 'rot' : 'scale', h, box, cx, cy, pathId: s.id, copy: s.copy, startDoc: doc.value, M: null, nodes: P.pathWorld(doc.value, path).map((q) => apply(M, q)) });
+  startDrag(e, t, w, hitScale, { kind: 'bbox', mode: t.kind === 'bboxrot' ? 'rot' : 'scale', h, box, cx, cy, pathId: s.id, copy: s.copy, startDoc: doc.value, M: null, nodes: P.pathWorld(doc.value, path).map((q) => apply(M, q)),
+    targets: snapTargets.value, own: new Set(P.pathNodes(path).map((n) => n.pointId)) });   // I5: the targets at the press; the path's own nodes move with it
 }
 
 export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
@@ -197,7 +198,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
       d.M = T;
       if (!UI.snapHint.value && UI.prefs.value.snap) {
         const ends = d.nodes.length ? [apply(T, d.nodes[0]), apply(T, d.nodes[d.nodes.length - 1])] : [];
-        for (const q of ends) { const s = pickSnap(snapTargets.value, q, ctx.threshold, { pointsOnly: true, excludePaths: new Set([d.pathId]) }); if (s && s.d < 1) { UI.snapHint.value = A.hintOf(s); break; } }
+        for (const q of ends) { const s = pickSnap(d.targets, q, ctx.threshold, { pointsOnly: true, excludePaths: new Set([d.pathId]), excludePoints: d.own }); if (s && s.d < 1) { UI.snapHint.value = A.hintOf(s); break; } }
       }
       return;
     }
@@ -226,7 +227,7 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
   if (d.moved || !d.target) return;
   const t = d.target, s = UI.selection.value;
   switch (t.kind) {
-    case 'point': if (e.shiftKey || UI.addToSelection.value) A.togglePointSelection(t.pointId); else A.selectPoints([t.pointId]); return;
+    case 'point': if (e.shiftKey || UI.addToSelection.value) A.togglePointSelection(t.pointId, t.via); else A.selectPoints([t.pointId], t.via ? { [t.pointId]: t.via } : undefined); return;
     case 'segment':
       if (e.shiftKey || UI.addToSelection.value) { A.toggleInstance(t.pathId, t.copy); return; }
       if (s && s.kind === 'path' && s.id === t.pathId && sameCopy(s.copy, t.copy)) A.insertNodeOnSegment(t.pathId, t.j, w, t.copy, ctx.snapOn);

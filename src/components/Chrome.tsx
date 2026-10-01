@@ -237,6 +237,7 @@ function Help() {
     <span><K k="O" />{STR.help.elRotation}<K k="M" />{STR.help.elMirror}<K k="T" />{STR.help.elTranslation}</span>
     <span class="violet">{STR.help.elementsIntro}<K k="[" />{STR.help.elementsBetween}<K k="]" />{STR.help.elementsRest}</span>
     <span>{STR.help.penIntro}<K k="Esc" />{STR.help.penOr}<K k="↵" />{STR.help.penToEnd}<K k="Space" />{STR.help.penSpace}</span>
+    <span>{STR.help.freehandIntro}<K k="⌥" />{STR.help.freehandTrace}</span>
     <span>{STR.help.selectIntro}<K k="⇧" />{STR.help.selectShift}</span>
     <span>{STR.help.clone}</span>
     <span>{STR.help.fill}</span>
