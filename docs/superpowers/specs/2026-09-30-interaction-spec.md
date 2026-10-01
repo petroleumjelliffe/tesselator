@@ -164,6 +164,7 @@ Hidden paths and paths on hidden layers are never targets.
 - **SN1.** Candidates are the targets within the threshold, `SNAP_PX × hitScale / zoom` (doubled for touch), measured from the **raw** pointer, never from a previously snapped position.
 - **SN2. Precedence** is one ordered list in config, easy to reorder. Default: intersection → endpoint or node → the stroke's own start → rotation point → tile corner → any line → grid. A point within range beats a line within range; within a class the nearest wins, ties by the list.
 - **SN3. Own clones are solved, not chased.** During a node or body drag, the dragged node's own clones move with it, so they are not targets as positions. Instead, each own clone whose relative transform has a fixed set becomes that set: a mirror clone becomes its axis ("meets its mirror clone"), a rotated clone its centre ("meets its rotated clone"). Translations and glides have no fixed set and add nothing. This stops the clone and the axis from competing, and stops the snap from chasing a target that moves with it. (Drawing is unaffected: the stroke's own clones' starts are fixed once the stroke starts.)
+  - **SN3a. Ends meet each other's clones.** In a body drag, the other ends' clones move with the path too, so they are solved the same way. Each moving end is paired with every clone of every other moving end ("meets its clone's end"). A rotated clone gives one spot. A mirror gives a line of spots, but only when the two ends already line up along the axis; a glide only when their offset along the axis equals the glide's. Otherwise moving the path can never make them meet, so no hint appears. Translations add nothing. In a node drag the other ends stay still, so their clones are ordinary node targets (T6).
 - **SN4. Stickiness.** A snap that holds stays until the pointer is 1.5× the threshold from it, or until a candidate earlier in the precedence list comes within the threshold, or until a same-class candidate is nearer by more than half the threshold.
 - **SN5.** Duplicate candidates at the same spot are reported once, with the highest-precedence label.
 
@@ -287,6 +288,7 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 | UC-E7 | Grab an endpoint that sits on a box corner. | S6 |
 | UC-E8 | Cancel a drag with `Esc`. | K1 |
 | UC-E9 | Drag a node toward a mirror axis without the snap flickering between the axis and the node's own clone. | SN3, SN4 |
+| UC-E10 | Drag a whole path until its start meets its clone's end (or its end meets its clone's start). | SN3a |
 | UC-F1 | Fill a region bounded by paths on lower layers, then add details above it. | R1, R4 |
 | UC-F2 | Edit or hide the paths below a fill; the fill stays. | R5 |
 | UC-F3 | Click inside an unfilled region; it does nothing. | R7 |

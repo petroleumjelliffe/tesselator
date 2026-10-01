@@ -20,6 +20,8 @@ export const STR = {
     meetsMirror: 'meets its mirror clone',
     meetsRotated: 'meets its rotated clone',
     meetsOwn: 'meets its own copy',
+    meetsCloneEnd: "meets its clone's end",
+    meetsCloneEndLine: "meets its clone's end",
     grid: 'grid',
     scale: (f: string) => `scale ${f}`,
     guide: 'guide',

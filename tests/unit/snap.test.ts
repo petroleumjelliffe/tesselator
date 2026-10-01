@@ -1,8 +1,9 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
-import { buildTargets, pickSnap, precedence, strokeCopies, strokeCands, pointCopyMatrices, ownFixedCands, nearestOnSeg, gridResult, NODE_ONLY, solveCopyMeet, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines } from '../../src/engine/snap';
+import { buildTargets, pickSnap, precedence, strokeCopies, strokeCands, pointCopyMatrices, ownFixedCands, nearestOnSeg, gridResult, NODE_ONLY, solveCopyMeet, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines, windowCopies } from '../../src/engine/snap';
 import { cellMatrix, apply, rotation, IDENTITY } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
+import { STR } from '../../src/strings';
 import { makeDoc, line } from './fixtures';
 import type { Doc, XY, SnapResult } from '../../src/types';
 
@@ -151,6 +152,64 @@ test('snapBodyDelta: an end meets its own quarter-turn clone', () => {
   const s = snapBodyDelta(bodyTargets(d, buildTargets(d), stub.id)!, addXY(sol.delta, { x: 1, y: 1 }), 12, null)!;
   expect(s.res.hit).toEqual({ kind: 'own' });
   near(s.delta, sol.delta);
+});
+
+test('snapBodyDelta: the start meets the clone of the end (rotation, SN3a)', () => {
+  const d = makeDoc();
+  const stub = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.4, v: 0.1 }]);       // open two-node path
+  const el = P.addElement(d, { kind: 'rotate', u: 0.5, v: 0.5, n: 4 });
+  const b = P.addBinding(d, stub.id, [[el.id]]);
+  const Pw = P.pathWorld(d, stub);
+  const wc = windowCopies(d, stub.id).find((c) => c.copy.bindingId === b.id && c.copy.cell.c === 0 && c.copy.cell.r === 0)!;
+  const sol = solveCopyMeet(IDENTITY, wc.M, Pw[0], Pw[1]);              // start (pi) meets the clone of the end (pj)
+  expect(sol?.kind).toBe('point');
+  if (sol?.kind !== 'point') return;
+  const s = snapBodyDelta(bodyTargets(d, buildTargets(d), stub.id)!, addXY(sol.delta, { x: 1, y: 1 }), 12, null)!;
+  near(s.delta, sol.delta);                                             // the body moves by exactly the solved delta
+  near(apply(wc.M, addXY(Pw[1], s.delta)), addXY(Pw[0], s.delta));      // the end's clone now sits on the moved start
+  expect(s.res.cls).toBe('point');
+  expect(s.res.cat).toBe('ownFixed');
+  expect(s.res.label).toBe(STR.snap.meetsCloneEnd);
+});
+
+function mirrorAxisDoc(): { d: Doc; elId: string } {                   // square 240, vertical mirror axis through u = 0.5 (x = 120)
+  const d = makeDoc();
+  const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+  return { d, elId: el.id };
+}
+
+test('snapBodyDelta: ends lined up along a mirror axis offer a clone-end line hint', () => {
+  const { d, elId } = mirrorAxisDoc();
+  const stub = line(d, [{ u: 0.2, v: 0.3 }, { u: 0.4, v: 0.3 }]);       // same v: lined up along the (vertical) axis
+  const b = P.addBinding(d, stub.id, [[elId]]);
+  const Pw = P.pathWorld(d, stub);
+  const wc = windowCopies(d, stub.id).find((c) => c.copy.bindingId === b.id && c.copy.cell.c === 0 && c.copy.cell.r === 0)!;
+  const sol = solveCopyMeet(IDENTITY, wc.M, Pw[0], Pw[1]);
+  expect(sol?.kind).toBe('line');
+  if (sol?.kind !== 'line') return;
+  const delta = addXY(sol.base, { x: 1, y: 1 });                       // near the solved line, slightly off it
+  const s = snapBodyDelta(bodyTargets(d, buildTargets(d), stub.id)!, delta, 12, null);
+  expect(s?.res.cls).toBe('line');
+  expect(s?.res.cat).toBe('ownFixed');
+  expect(s?.res.label).toBe(STR.snap.meetsCloneEndLine);
+});
+
+test('snapBodyDelta: ends not lined up along a mirror axis can never meet, so no clone-end hint appears', () => {
+  const { d, elId } = mirrorAxisDoc();
+  const stub = line(d, [{ u: 0.2, v: 0.3 }, { u: 0.4, v: 0.6 }]);       // different v: never lines up
+  const b = P.addBinding(d, stub.id, [[elId]]);
+  const Pw = P.pathWorld(d, stub);
+  const wc = windowCopies(d, stub.id).find((c) => c.copy.bindingId === b.id && c.copy.cell.c === 0 && c.copy.cell.r === 0)!;
+  expect(solveCopyMeet(IDENTITY, wc.M, Pw[0], Pw[1])).toBe(null);       // confirms they can never meet
+  const T = bodyTargets(d, buildTargets(d), stub.id)!;
+  let sawSnap = false;
+  for (let dx = -20; dx <= 20; dx += 5) for (let dy = -20; dy <= 20; dy += 5) {
+    const s = snapBodyDelta(T, { x: dx, y: dy }, 12, null);
+    if (s) sawSnap = true;
+    expect(s?.res.label).not.toBe(STR.snap.meetsCloneEnd);
+    expect(s?.res.label).not.toBe(STR.snap.meetsCloneEndLine);
+  }
+  expect(sawSnap).toBe(true);                                          // the sweep isn't vacuously empty
 });
 
 const lat = { ...CONFIG.LATTICE_PRESETS.Square }, F = [1, 1 / 2, 1 / 3];

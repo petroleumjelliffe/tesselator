@@ -335,7 +335,7 @@ export function bodyTargets(doc: Doc, set: TargetSet, pathId: string): BodyTarge
   const idx = isClosed(path) ? nodes.slice(0, -1).map((_, i) => i) : [0, nodes.length - 1];
   const moving = idx.filter((i) => !nodes[i].via).map((i) => ({ index: i, p: Pw[i] }));
   const own: BodyTargets['own'] = [];
-  for (const { copy, M } of windowCopies(doc, pathId)) if (copy.bindingId) for (const m of moving) own.push({ K: M, p: m.p });
+  for (const { copy, M } of windowCopies(doc, pathId)) if (copy.bindingId) for (const m of moving) own.push({ K: M, p: m.p, index: m.index });
   return { pathId, moving, own, exclude: new Set(nodes.map((n) => n.pointId)), set };
 }
 
@@ -349,13 +349,15 @@ export function snapBodyDelta(T: BodyTargets, raw: XY, threshold: number, sticky
   for (const m of T.moving) {
     const e0 = add(m.p, raw), extra: SnapResult[] = [];
     for (const o of T.own) {
-      const r = solveCopyMeet([1, 0, 0, 1, 0, 0], o.K, m.p, o.p);
+      const r = solveCopyMeet([1, 0, 0, 1, 0, 0], o.K, m.p, o.p), cross = o.index !== m.index;
       if (r?.kind === 'point') {
         const at = add(m.p, r.delta), d = dist(at, e0);
-        if (d <= reach) extra.push({ at, cls: 'point', cat: 'ownFixed', id: `own:p:${ptKey(at)}`, label: STR.snap.meetsOwn, hit: { kind: 'own' }, d });
+        const id = cross ? `own:p:${m.index}>${o.index}:${ptKey(at)}` : `own:p:${ptKey(at)}`;
+        if (d <= reach) extra.push({ at, cls: 'point', cat: 'ownFixed', id, label: cross ? STR.snap.meetsCloneEnd : STR.snap.meetsOwn, hit: { kind: 'own' }, d });
       } else if (r?.kind === 'line') {
         const delta = add(r.base, mul(r.dir, dot(sub(raw, r.base), r.dir))), at = add(m.p, delta), d = dist(at, e0);
-        if (d <= reach) extra.push({ at, cls: 'line', cat: 'ownFixed', id: `own:l:${ptKey(add(m.p, r.base))}:${r.dir.x.toFixed(4)}`, label: STR.snap.meetsMirror, hit: { kind: 'own' }, d, line: [add(at, mul(r.dir, -1e4)), add(at, mul(r.dir, 1e4))] });
+        const id = cross ? `own:l:${m.index}>${o.index}:${ptKey(add(m.p, r.base))}:${r.dir.x.toFixed(4)}` : `own:l:${ptKey(add(m.p, r.base))}:${r.dir.x.toFixed(4)}`;
+        if (d <= reach) extra.push({ at, cls: 'line', cat: 'ownFixed', id, label: cross ? STR.snap.meetsCloneEndLine : STR.snap.meetsMirror, hit: { kind: 'own' }, d, line: [add(at, mul(r.dir, -1e4)), add(at, mul(r.dir, 1e4))] });
       }
     }
     const res = pickSnap(T.set, e0, threshold, { extra, sticky, excludePoints: T.exclude, excludePaths: exPaths });
