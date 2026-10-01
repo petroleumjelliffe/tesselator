@@ -200,6 +200,7 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 
 - **Grid** (decided 2026-10-01): `G` turns grid snapping on and off. The grid is the fallback when no target is near, and it is never hinted.
 - **Targets** (decided 2026-10-01): snapping to every target in §6.1 (T1–T10, T12–T13) is always on. Holding `⌘` / `Ctrl` turns it off for that gesture, existing points included, for a fully free placement. The grid still applies while `G` is on. There is no target toggle for now. The canvas suppresses the context menu so `Ctrl`-click works on a Mac.
+- Silent step quantisation (15° rotation steps, twelfths of the lattice, lattice handle steps) counts as grid: it follows `G`, and `⌘` / `Ctrl` does not free it (recorded 2026-10-01).
 - `⇧` keeps its meanings: free scale, add to selection.
 
 ### 6.6 Pinned movement (tracing)
@@ -258,8 +259,8 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 | H3 | A short label names the target ("tile corner", "meets its mirror clone"). | new |
 | H4 | While pinned, the followed line stays highlighted. | new |
 | H5 | Hints update every pointer move, and while dragging or scaling they show at the selection's endpoints. | new |
-| H6 | What you see is what you get: if a hint is showing when the pointer goes down or up, that is the snap used, including a sticky hold beyond the plain threshold (SN4). | built for Pen, Freehand and Select drags |
-| H7 | No hint, no snap (decided 2026-10-01): a target snap happens only if its hint is visible at that moment; otherwise the point lands where the pointer is, or on the grid while `G` is on. A commit never re-picks a snap that was not shown. | built for Pen, Freehand and Select drags |
+| H6 | What you see is what you get: if a hint is showing when the pointer goes down or up, that is the snap used, including a sticky hold beyond the plain threshold (SN4). | built for Pen, Freehand and Select drags, except clone-body drags until E5a |
+| H7 | No hint, no snap (decided 2026-10-01): a target snap happens only if its hint is visible at that moment; otherwise the point lands where the pointer is, or on the grid while `G` is on. A commit never re-picks a snap that was not shown. | built for Pen, Freehand and Select drags, except clone-body drags until E5a |
 | H8 | While Pen or Freehand is selected, nodes are shown only for paths near the cursor (within a few thresholds of any of their instances), not for every path (decided 2026-10-01). | new |
 
 ---

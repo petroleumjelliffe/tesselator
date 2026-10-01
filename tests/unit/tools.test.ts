@@ -191,13 +191,13 @@ test('Freehand: Alt-tracing a line and releasing 16 px off it ends on the line; 
 
 // --- D / I4: clone-anchor and several-point drags behave as node drags
 
-function selectDrag(pts: XY[], c = ctx) {
+function selectDrag(pts: XY[], c = ctx, release = pts[pts.length - 1]) {
   select.onDown(hit(pts[0]), pts[0], ev(), c);
   const d = UI.drag.value!;
   d.moved = true; beginGesture();
   for (const p of pts.slice(1)) select.onMove(d, p, ev(), c);
   UI.drag.value = null;
-  select.onUp(d, pts[pts.length - 1], ev(), c); endGesture();
+  select.onUp(d, release, ev(), c); endGesture();
 }
 
 test('Select: dragging several points with nothing near snaps the grabbed one to the grid', () => {
@@ -439,6 +439,11 @@ test('Select, grid off: a node dragged 5 px from another path\'s line, then from
   sel(); expect(hit({ x: 24, y: 24 })?.kind).toBe('point');
   selectDrag([{ x: 24, y: 24 }, { x: 60, y: 180 }, { x: 70, y: 235 }], noGrid);
   expect(start().x).toBeCloseTo(70, 6); expect(start().y).toBeCloseTo(240, 6);
+  // H7: released 3 px from B's line after a last move 20 px off it (no hint): the drop stays where the last move put it.
+  const bSegs = doc.value.paths.find((q) => q.id !== id)!.segments.length;
+  sel(); selectDrag([{ x: 70, y: 240 }, { x: 150, y: 140 }, { x: 200, y: 100 }], noGrid, { x: 200, y: 117 });
+  expect(start().x).toBeCloseTo(200, 6); expect(start().y).toBeCloseTo(100, 6);
+  expect(doc.value.paths.find((q) => q.id !== id)!.segments).toHaveLength(bSegs);
 });
 
 test('Pen with ⌘ held next to a node: grid off lands raw and joins nothing; grid on lands on the grid', () => {
@@ -472,5 +477,53 @@ test('G toggles prefs.grid; a stored { snap: false } loads as grid: false', () =
     restore();
     expect(UI.prefs.value.grid).toBe(false);
     expect('snap' in UI.prefs.value).toBe(false);
+    const load = (extra: object) => {
+      UI.prefs.value = { ...UI.prefs.value, grid: true };
+      store.set(CONFIG.STORAGE_PREFS_KEY, JSON.stringify({ prefs: { ...rest, ...extra }, tool: 'pen', activeLayerId: null, view: { zoom: 1, pan: { x: 0, y: 0 } } }));
+      restore();
+      return UI.prefs.value.grid;
+    };
+    expect(load({ grid: false })).toBe(false);
+    expect(load({})).toBe(true);
+    UI.prefs.value = { ...UI.prefs.value, grid: false };
+    store.set(CONFIG.STORAGE_PREFS_KEY, JSON.stringify({ prefs: rest, tool: 'pen', activeLayerId: null, view: { zoom: 1, pan: { x: 0, y: 0 } } }));
+    restore();
+    expect(UI.prefs.value.grid).toBe(true);    // neither field: the default
   } finally { g.localStorage = had; }
+});
+
+// --- Fix round 1: a hover record is reused only for the same mode and document
+
+test('Pen: hover next to an open end, then ⌘-click at the same point (no pointer move): lands raw, joins nothing', () => {
+  let id = '', end = '';
+  fresh('pen', (d) => { const p = line(d, [{ u: 0.2, v: 0.5 }, { u: 0.5, v: 0.5 }]); id = p.id; end = p.segments[0].to.pointId; });   // open end at (120, 120)
+  const w = { x: 123, y: 122 }, cmd = ev({ metaKey: true });
+  hoverAt(w, hit(w), noGrid);
+  expect(UI.snapHint.value?.label).toBe(STR.snap.node);
+  pen.onDown(hit(w), w, cmd, free(noGrid));
+  const d = UI.drag.value; UI.drag.value = null;
+  if (d) pen.onUp(d, w, cmd, free(noGrid));
+  expect(P.getPath(doc.value, id)!.segments).toHaveLength(1);
+  const p = UI.pen.value && P.getPath(doc.value, UI.pen.value.pathId);
+  expect(p && p.id).not.toBe(id);
+  expect(p!.start.pointId).not.toBe(end);
+  const at = P.nodeWorld(doc.value, p!.start);
+  expect(at.x).toBeCloseTo(123, 6); expect(at.y).toBeCloseTo(122, 6);
+});
+
+test('Freehand: hover next to an open end, then a ⌘ stroke from the same point starts raw and extends nothing', () => {
+  let id = '';
+  fresh('freehand', (d) => { id = line(d, [{ u: 0.2, v: 0.5 }, { u: 0.5, v: 0.5 }]).id; });   // open end at (120, 120)
+  const pts = along({ x: 123, y: 122 }, { x: 130, y: 220 }), c = free(noGrid);
+  hoverAt(pts[0], hit(pts[0]), noGrid);
+  expect(UI.snapHint.value?.label).toBe(STR.snap.node);
+  const cmd = ev({ metaKey: true });
+  freehand.onDown(hit(pts[0]), pts[0], cmd, c);
+  const d = UI.drag.value!; d.moved = true; beginGesture();
+  for (const p of pts.slice(1)) freehand.onMove(d, p, cmd, c);
+  UI.drag.value = null; freehand.onUp(d, pts[pts.length - 1], cmd, c); endGesture();
+  expect(doc.value.paths).toHaveLength(2);
+  expect(P.getPath(doc.value, id)!.segments).toHaveLength(1);
+  const at = P.nodeWorld(doc.value, newest().start);
+  expect(at.x).toBeCloseTo(123, 6); expect(at.y).toBeCloseTo(122, 6);
 });

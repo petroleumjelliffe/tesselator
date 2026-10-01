@@ -21,7 +21,7 @@ export function rejectStoredDoc(): void {
 export function migratePrefs(base: Prefs, stored: Partial<Prefs> & { snap?: unknown }): Prefs {
   const { snap, ...rest } = stored;
   const out: Prefs = { ...base, ...rest };
-  if (typeof rest.grid !== 'boolean') out.grid = typeof snap === 'boolean' ? snap : base.grid;
+  if (typeof rest.grid !== 'boolean') out.grid = typeof snap === 'boolean' ? snap : true;   // neither: the default
   return out;
 }
 

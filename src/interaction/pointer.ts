@@ -40,6 +40,13 @@ export function attachPointer(svg: SVGSVGElement): () => void {
   const scaleOf = (e: PointerEvent) => (e.pointerType === 'touch' ? CONFIG.TOUCH_HIT_SCALE : 1);
   const ctxOf = (e: PointerEvent): ToolCtx => ({ targetsOn: !(e.metaKey || e.ctrlKey), gridOn: UI.prefs.value.grid, hitScale: scaleOf(e), threshold: A.threshold(scaleOf(e)) });
   const hitCtx = (hitScale: number): HitContext => ({ layer: UI.layer.value, tool: UI.tool.value, selection: UI.selection.value, pen: UI.pen.value, zoom: UI.view.value.zoom, hitScale, copies: copies.value, cloneMatrices: cloneMatrices.value, faces: faces.value });
+  // ⌘ / Ctrl changes the snap mode without a pointer move: redo the hover so the hint (and the press, H7) follow at once.
+  const rehover = (e: KeyboardEvent) => {
+    const w = UI.cursor.value;
+    if (!w || UI.drag.value || (e.key !== 'Meta' && e.key !== 'Control')) return;
+    const hs = UI.lastPointerType.value === 'touch' ? CONFIG.TOUCH_HIT_SCALE : 1;
+    hoverAt(w, hitTest(doc.value, hitCtx(hs), w), { targetsOn: !(e.metaKey || e.ctrlKey), gridOn: UI.prefs.value.grid, hitScale: hs, threshold: A.threshold(hs) });
+  };
   const activeTool = (): ToolModule => (UI.layer.value === 'construction' ? construct : TOOLS[UI.tool.value]);
 
   function onDown(e: PointerEvent) {
@@ -124,6 +131,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
   function onKeyDown(e: KeyboardEvent) {
     const tag = (e.target as HTMLElement | null)?.tagName ?? '';
     if (/input|textarea|select/i.test(tag)) return;
+    rehover(e);
     const meta = e.metaKey || e.ctrlKey, k = e.key;
     if (e.code === 'Space') { e.preventDefault(); UI.space.value = true; return; }
     if (k === 'Tab') { e.preventDefault(); A.setLayer(UI.layer.value === 'drawing' ? 'construction' : 'drawing'); return; }
@@ -155,7 +163,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
       default:
     }
   }
-  function onKeyUp(e: KeyboardEvent) { if (e.code === 'Space') UI.space.value = false; }
+  function onKeyUp(e: KeyboardEvent) { if (e.code === 'Space') UI.space.value = false; rehover(e); }
   const swallow = (e: Event) => e.preventDefault();
   const blur = () => onCancel();
 

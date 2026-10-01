@@ -1,6 +1,6 @@
 import { signal } from '@preact/signals';
 import { CONFIG } from '../config';
-import type { Layer, Tool, Selection, HitTarget, Drag, XY, View, Prefs, PointerKind, Copy, Lattice, SnapResult } from '../types';
+import type { Layer, Tool, Selection, HitTarget, Drag, XY, View, Prefs, PointerKind, Copy, Lattice, SnapResult, Doc } from '../types';
 
 export const layer = signal<Layer>('drawing');
 export const tool = signal<Tool>('pen');
@@ -27,9 +27,10 @@ export const addToSelection = signal(false);   // touch stand-in for Shift while
 export type SnapHint = { at: XY; label?: string; line?: XY[] };
 export const snapHint = signal<SnapHint | null>(null);       // what the current gesture or hover would snap to, for the canvas
 export const snapSticky = signal<string | null>(null);       // id of the held snap (spec SN4, H6): hover hands it to the press
-// H7: the target snap behind the hover hint and the pointer position it was shown for (s null: no hint showed there). A
-// press at that position uses exactly this; cleared with the hint.
-export const snapShown = signal<{ w: XY; s: SnapResult | null } | null>(null);
+// H7: the target snap behind the hover hint (s null: no hint showed), with what it was computed for: the pointer
+// position, the snap mode (⌘ / Ctrl, `G`) and the document. A press uses it only when all of them still match.
+export type SnapShown = { w: XY; s: SnapResult | null; targetsOn: boolean; gridOn: boolean; doc: Doc };
+export const snapShown = signal<SnapShown | null>(null);
 export function clearSnap(): void { snapHint.value = null; snapSticky.value = null; snapShown.value = null; }
 
 export function resetUi(): void {

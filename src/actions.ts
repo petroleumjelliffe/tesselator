@@ -99,22 +99,23 @@ export function extendTarget(d: Doc, s: SnapResult | null, layerId: string = act
 // `snapShown` records what was shown at which pointer position, so the press uses exactly that.
 export function hoverSnap(w: XY, m: SnapMode): void {
   const s = drawSnap(w, m, UI.tool.value === 'pen' ? penStroke() : null);
-  showSnap(w, s && s.cat !== 'grid' ? s : null);
+  showSnap(w, m, s && s.cat !== 'grid' ? s : null);
 }
-function showSnap(w: XY, shown: SnapResult | null): void {
+function showSnap(w: XY, m: SnapMode, shown: SnapResult | null): void {
   UI.snapHint.value = hintOf(shown);
   UI.snapSticky.value = shown?.id ?? null;
-  UI.snapShown.value = { w: { x: w.x, y: w.y }, s: shown };
+  UI.snapShown.value = { w: { x: w.x, y: w.y }, s: shown, targetsOn: m.targetsOn, gridOn: m.gridOn, doc: doc.value };
 }
 
 // H7, no hint, no snap: a press uses the target hinted at that pointer position, never a re-pick. A press away from the
-// last hover (or after the hover was consumed or cleared) computes once here and shows that. With no target shown, the
+// last hover, with a different snap mode (⌘ pressed or released, `G`), on a changed document, or after the hover was
+// consumed or cleared, computes once here and shows that. With no target shown, the
 // press lands on the grid while `G` is on, else at the pointer. The record is consumed, so a second press recomputes.
 export function pressSnap(w: XY, m: SnapMode, stroke: DrawStroke | null): SnapResult | null {
   const rec = UI.snapShown.value;
   let shown: SnapResult | null;
-  if (rec && rec.w.x === w.x && rec.w.y === w.y) shown = rec.s;
-  else { const s = drawSnap(w, m, stroke); shown = s && s.cat !== 'grid' ? s : null; showSnap(w, shown); }
+  if (rec && rec.w.x === w.x && rec.w.y === w.y && rec.targetsOn === m.targetsOn && rec.gridOn === m.gridOn && rec.doc === doc.value) shown = rec.s;
+  else { const s = drawSnap(w, m, stroke); shown = s && s.cat !== 'grid' ? s : null; showSnap(w, m, shown); }
   UI.snapShown.value = null;
   return shown ?? (m.gridOn ? gridResult(w, doc.value.lattice, UI.prefs.value.gridDivisions) : null);
 }
