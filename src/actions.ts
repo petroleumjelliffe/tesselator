@@ -10,8 +10,9 @@ import { snapWorld, projectOnSegment, seedOf, type Anchor } from './engine/hit';
 import { faceAt, seedFor, fillOfFace } from './engine/regions';
 import { strokeToPath } from './engine/freehand';
 import { pickSnap, gridResult, strokeCopies, strokeCands, NODE_ONLY } from './engine/snap';
+import { joinPointToHit } from './engine/joins';
 import { CONFIG } from './config';
-import type { Doc, XY, UV, Cell, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer, SnapResult } from './types';
+import type { Doc, XY, UV, Cell, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer, SnapResult, SnapHit } from './types';
 
 // Every mutation is bracketed by via repair, so a change that removes a binding or clone slot (element edits, lattice
 // edits, deletions) materialises the via nodes that depended on it where they were, whether or not `fn` remembered
@@ -194,16 +195,34 @@ export function penClickSegment(pathId: string, j: number, copy: Copy, w: XY, on
   return ok;
 }
 
-// A point drag released on another raw point copy makes them one point.
-export function mergeDroppedPoint(fromId: string, fromCell: Cell, toId: string, toCell: Cell): boolean {
-  if (fromId === toId) return false;
-  const ok = mutate((d) => { if (!P.getPoint(d, fromId) || !P.getPoint(d, toId)) return false; P.mergePoints(d, fromId, fromCell, toId, toCell); });
+// A point drag released on a snap joins the point to what it landed on (same layer only; see engine/joins.ts).
+export function joinDroppedPoint(pointId: string, cell: Cell, hit: SnapHit): boolean {
+  const layerOf = (d: Doc) => d.paths.find((p) => P.pathNodes(p).some((n) => n.pointId === pointId))?.layerId ?? activeLayerId(d);
+  let toId: string | null = null;
+  const ok = mutate((d) => {
+    if (!P.getPoint(d, pointId)) return false;
+    const before = new Set(d.points.map((q) => q.id));
+    if (!joinPointToHit(d, pointId, cell, hit, layerOf(d))) return false;
+    const users = d.paths.flatMap((p) => P.pathNodes(p)).map((n) => n.pointId);
+    toId = hit.kind === 'node' ? hit.pointId : users.find((id) => !before.has(id)) ?? null;
+  });
   if (!ok) return false;
   const s = UI.selection.value;
-  if (s && s.kind === 'points') UI.selection.value = { kind: 'points', ids: [...new Set(s.ids.map((id) => (id === fromId ? toId : id)))] };
-  else if (s && s.kind === 'path' && !P.getPath(doc.value, s.id)) UI.selection.value = null;                 // the merge collapsed it
-  if (UI.pen.value && !P.getPath(doc.value, UI.pen.value.pathId)) UI.pen.value = null;                      // a just-started (zero-segment) pen path goes with the merge
+  if (s && s.kind === 'points' && toId) UI.selection.value = { kind: 'points', ids: [...new Set(s.ids.map((id) => (id === pointId ? toId! : id)))] };
+  else if (s && s.kind === 'path' && !P.getPath(doc.value, s.id)) UI.selection.value = null;
+  if (UI.pen.value && !P.getPath(doc.value, UI.pen.value.pathId)) UI.pen.value = null;
   return true;
+}
+
+// A body drag released on a snap joins the snapped end (same layer only). Corners, axes and the path's own copies join nothing.
+export function joinDroppedNode(pathId: string, nodeIndex: number, hit: SnapHit): boolean {
+  if (hit.kind !== 'node' && hit.kind !== 'curve') return false;
+  return mutate((d) => {
+    const path = P.getPath(d, pathId);
+    const from = path && P.pathNodes(path)[nodeIndex];
+    if (!path || !from || from.via) return false;
+    return joinPointToHit(d, from.pointId, from.cell, hit, path.layerId) ? undefined : false;
+  });
 }
 
 export function endPen(): boolean {

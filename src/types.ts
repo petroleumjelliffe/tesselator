@@ -98,12 +98,12 @@ export type DragBase = { target: HitTarget | null; start: XY; moved: boolean; po
 export type Drag = DragBase & (
   | { kind: 'click' }
   | { kind: 'marquee'; cur: XY; add: boolean }
-  | { kind: 'pt'; pointId: string; cell: Cell; via?: Copy; snapTo: { pointId: string; cell: Cell } | null }
+  | { kind: 'pt'; pointId: string; cell: Cell; via?: Copy; targets: TargetSet; snap: SnapResult | null; unlinked?: boolean }
   | { kind: 'pts'; ids: string[]; startPos: Record<string, UV> }
-  | { kind: 'body'; pathId: string; copy: Copy; ids: string[]; startPos: Record<string, UV>; startEls: Element[] }
-  | { kind: 'canchor'; pathId: string; pointId: string; cell: Cell; copy: Copy }
-  | { kind: 'cp'; pathId: string; j: number; copy: Copy }
-  | { kind: 'bbox'; mode: 'scale' | 'rot'; h: BoxHandle; box: Box; cx: number; cy: number; pathId: string; copy: Copy; startDoc: Doc; M: Matrix | null }
+  | { kind: 'body'; pathId: string; copy: Copy; ids: string[]; startPos: Record<string, UV>; startEls: Element[]; targets: BodyTargets | null; snap: BodySnap | null }
+  | { kind: 'canchor'; pathId: string; pointId: string; cell: Cell; copy: Copy; targets: TargetSet; snap: SnapResult | null; unlinked?: boolean }
+  | { kind: 'cp'; pathId: string; j: number; copy: Copy; lines: Line[] }
+  | { kind: 'bbox'; mode: 'scale' | 'rot'; h: BoxHandle; box: Box; cx: number; cy: number; pathId: string; copy: Copy; startDoc: Doc; M: Matrix | null; nodes: XY[] }
   | { kind: 'free'; raw: XY[]; startNode: Node | null; cloneMatrices: Matrix[] }
   | { kind: 'fillpress' }
   | { kind: 'elc'; id: string; u0: number; v0: number }

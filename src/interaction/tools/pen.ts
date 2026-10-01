@@ -13,7 +13,7 @@ export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
 export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => { select.onMove(d, w, e, ctx); };
 
 export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
-  if (d.kind === 'pt' && d.moved && d.snapTo) { A.mergeDroppedPoint(d.pointId, d.cell, d.snapTo.pointId, d.snapTo.cell); UI.cursor.value = null; return; }
+  if (d.kind === 'pt' && d.moved && d.snap && !d.via) { A.joinDroppedPoint(d.pointId, d.cell, d.snap.hit); UI.cursor.value = null; return; }
   if (d.moved || !d.target) return;
   if (d.target.kind === 'point') A.penClickNode({ pointId: d.target.pointId, cell: d.target.cell, ...(d.target.via ? { via: d.target.via } : {}) });
   else if (d.target.kind === 'canchor') A.penClickNode({ pointId: d.target.pointId, cell: d.target.cell, via: { cell: { ...d.target.copy.cell }, bindingId: d.target.copy.bindingId!, power: d.target.copy.power } });   // clone anchors only exist for clone copies

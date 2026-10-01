@@ -343,7 +343,7 @@ test('pen: clicking a clone segment splits the source and starts a via node at t
   A.penClickEmpty(W(0.8, 0.9), false); A.endPen();
   // merge: drag the tail's free end onto the body's start (re-read the tail: each commit is a fresh draft)
   const end = doc.value.paths[1].segments[0].to, target = body.start;
-  expect(A.mergeDroppedPoint(end.pointId, end.cell, target.pointId, target.cell)).toBe(true);
+  expect(A.joinDroppedPoint(end.pointId, end.cell, { kind: 'node', pointId: target.pointId, cell: target.cell, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } })).toBe(true);
   expect(doc.value.points.some((p) => p.id === end.pointId)).toBe(false);
   expect(doc.value.paths[1].segments[0].to).toEqual({ pointId: target.pointId, cell: target.cell });
   expect(parseDoc(serializeDoc(doc.value))).toEqual(doc.value);
@@ -375,19 +375,19 @@ test('dragging a via node follows the pointer each move (it never snaps to its o
   A.setTool('select');
   const ctx = { snapOn: false, hitScale: 1, threshold: 12 }, ev = {} as PointerEvent;
   const n = doc.value.paths[1].start, w0 = P.nodeWorld(doc.value, n);
-  const d: Drag = { kind: 'pt', pointId: n.pointId, cell: n.cell, via: n.via, snapTo: null, target: null, start: w0, moved: true, pointerId: 1, hitScale: 1 };
+  const d: Drag = { kind: 'pt', pointId: n.pointId, cell: n.cell, via: n.via, targets: snapTargets.value, snap: null, target: null, start: w0, moved: true, pointerId: 1, hitScale: 1 };
   for (let i = 1; i <= 4; i++) {
     select.onMove(d, { x: w0.x + 3 * i, y: w0.y + 2 * i }, ev, ctx);
     const w = P.nodeWorld(doc.value, doc.value.paths[1].start);
     expect(w.x).toBeCloseTo(w0.x + 3 * i, 6); expect(w.y).toBeCloseTo(w0.y + 2 * i, 6);
   }
-  expect(d.snapTo).toBe(null);                                                                   // a via node never merges
+  expect(d.snap).toBe(null);                                                                   // a via node never merges
   expect(doc.value.paths[1].start.via).toEqual(n.via);
-  // the tail's free end dragged onto the body's start: snapTo is set on the move, the release merges
+  // the tail's free end dragged onto the body's start: the snap is set on the move, the release joins
   const end = doc.value.paths[1].segments[0].to, target = P.nodeWorld(doc.value, body.start);
-  const dp: Drag = { kind: 'pt', pointId: end.pointId, cell: end.cell, snapTo: null, target: null, start: P.nodeWorld(doc.value, end), moved: true, pointerId: 1, hitScale: 1 };
+  const dp: Drag = { kind: 'pt', pointId: end.pointId, cell: end.cell, targets: snapTargets.value, snap: null, target: null, start: P.nodeWorld(doc.value, end), moved: true, pointerId: 1, hitScale: 1 };
   select.onMove(dp, { x: target.x + 4, y: target.y - 3 }, ev, ctx);
-  expect(dp.snapTo).toEqual({ pointId: body.start.pointId, cell: body.start.cell });
+  expect(dp.snap?.hit).toEqual({ kind: 'node', pointId: body.start.pointId, cell: body.start.cell, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } });
   select.onUp(dp, { x: target.x + 4, y: target.y - 3 }, ev, ctx);
   expect(doc.value.points.some((p) => p.id === end.pointId)).toBe(false);
   expect(doc.value.paths[1].segments[0].to).toEqual({ pointId: body.start.pointId, cell: body.start.cell });
@@ -402,7 +402,7 @@ test('a merge on release is part of the drag gesture: one undo restores the docu
   beginGesture();                                                                                // as pointer.ts does once the drag has moved
   A.mutate((d) => { P.movePoint(d, from.pointId, 0.45, 0.12); });
   A.mutate((d) => { P.movePoint(d, from.pointId, 0.41, 0.1); });
-  expect(A.mergeDroppedPoint(from.pointId, from.cell, to.pointId, to.cell)).toBe(true);
+  expect(A.joinDroppedPoint(from.pointId, from.cell, { kind: 'node', pointId: to.pointId, cell: to.cell, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } })).toBe(true);
   endGesture();
   expect(doc.value.paths[1].start).toEqual(to);
   A.undo();
