@@ -84,6 +84,11 @@ function Highlights() {
   if (sel && sel.kind === 'path') {
     const p = getPath(d, sel.id);
     if (p) for (const ci of copies.value) if (ci.pathId === p.id) out.push(haloFor(p, ci.M, sameCopy(ci.copy, sel.copy) ? 0.3 : 0.15, `sel:${cellKey(ci.copy.cell)}:${ci.copy.bindingId}:${ci.copy.power}`));
+  } else if (sel && sel.kind === 'paths') {
+    for (const item of sel.items) {
+      const p = getPath(d, item.id);
+      if (p) for (const ci of copies.value) if (ci.pathId === p.id) out.push(haloFor(p, ci.M, sameCopy(ci.copy, item.copy) ? 0.3 : 0.15, `sel:${item.id}:${cellKey(ci.copy.cell)}:${ci.copy.bindingId}:${ci.copy.power}`));
+    }
   } else if (sel && sel.kind === 'element') {
     for (const ci of copies.value) { const b = ci.copy.bindingId && d.bindings.find((x) => x.id === ci.copy.bindingId); const p = b && b.groups.some((g) => g.includes(sel.id)) ? getPath(d, ci.pathId) : null; if (p) out.push(haloFor(p, ci.M, 0.15, `el:${cellKey(ci.copy.cell)}:${ci.copy.bindingId}:${ci.copy.power}`)); }
   }
@@ -160,11 +165,11 @@ function Points() {
   const d = doc.value, z = view.value.zoom, sel = selection.value, h = hover.value, pn = pen.value;
   const showAll = layer.value === 'drawing' && (!!pn || tool.value === 'pen' || tool.value === 'freehand');
   const show = new Set<string>();
-  if (sel && sel.kind === 'points') for (const id of sel.ids) show.add(id);
+  if (sel && sel.kind === 'points') for (const id of sel.ids) if (!sel.copies?.[id]) show.add(id);
   const penPath = pn ? getPath(d, pn.pathId) : null, selPath = sel && sel.kind === 'path' ? getPath(d, sel.id) : null;
   if (penPath) for (const n of pathNodes(penPath)) show.add(n.pointId);
   const penLast = penPath ? pathNodes(penPath).at(-1)! : null;
-  const selPts = new Set(sel && sel.kind === 'points' ? sel.ids : []);
+  const selPts = new Set(sel && sel.kind === 'points' ? sel.ids.filter((id) => !sel.copies?.[id]) : []);
   const out = [];
   for (const o of windowOffsets()) for (const pt of d.points) {
     if (!showAll && !show.has(pt.id)) continue;
@@ -181,6 +186,12 @@ function Points() {
     const isLast = !!penLast && sameNode(penLast, n);
     const isHover = !!h && h.kind === 'point' && !!h.via && h.pointId === n.pointId && h.via.bindingId === n.via.bindingId && h.via.power === n.via.power && h.via.cell.c === n.via.cell.c && h.via.cell.r === n.via.cell.r;
     out.push(<circle key={`via:${p.id}:${i}`} class={['pt', isLast && 'sel', isHover && 'hover'].filter(Boolean).join(' ')} cx={w.x} cy={w.y} r={CONFIG.HANDLE_PX / z} />);
+  }
+  // A point picked through a clone (marquee across instances): drawn at its clone position, not raw.
+  if (sel && sel.kind === 'points' && sel.copies) for (const [id, copy] of Object.entries(sel.copies)) {
+    const pt = d.points.find((q) => q.id === id); if (!pt) continue;
+    const w = apply(copyMatrix(copy), toWorld(pt, d.lattice));
+    out.push(<circle key={`cp:${id}`} class="pt sel" cx={w.x} cy={w.y} r={CONFIG.HANDLE_PX / z} />);
   }
   // S2: the selected instance's nodes, drawn only there (a clone instance's are drawn by CloneAnchors).
   if (layer.value === 'drawing' && sel && sel.kind === 'path' && selPath && !sel.copy.bindingId && !showAll) {

@@ -94,3 +94,37 @@ test('a control-point drag snaps to the horizontal through its anchor', () => {
   const cp = P.cpWorld(doc.value, P.getPath(doc.value, pid)!, 0)!;
   expect(cp.y).toBeCloseTo(48, 6); expect(cp.x).toBeCloseTo(100, 6);
 });
+
+test('⇧-click toggles instances, including a clone; Delete removes their paths', () => {
+  let a = '', b = '';
+  fresh((d) => { a = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.4, v: 0.1 }]).id; b = line(d, [{ u: 0.1, v: 0.7 }, { u: 0.4, v: 0.7 }]).id; });
+  A.selectPathAt(a);
+  A.toggleInstance(b, { cell: { c: 1, r: 0 }, bindingId: null, power: 0 });
+  expect(UI.selection.value).toEqual({ kind: 'paths', items: [{ id: a, copy: base }, { id: b, copy: { cell: { c: 1, r: 0 }, bindingId: null, power: 0 } }] });
+  A.toggleInstance(a, base);
+  expect(UI.selection.value).toEqual({ kind: 'path', id: b, copy: { cell: { c: 1, r: 0 }, bindingId: null, power: 0 } });
+  A.toggleInstance(a, base);
+  A.deleteSelection();
+  expect(doc.value.paths).toHaveLength(0);
+});
+
+test('a marquee picks points through a mirror clone; dragging moves them through that clone', () => {
+  let pid = '';
+  fresh((d) => {
+    const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+    const p = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.2, v: 0.4 }]);
+    P.addBinding(d, p.id, [[el.id]]);
+    pid = p.start.pointId;                                       // (24, 24); its mirror image is (216, 24)
+  });
+  S.onDown(null, { x: 200, y: 10 }, ev(), ctxOff);
+  const m = UI.drag.value!; m.moved = true;
+  S.onMove(m, { x: 230, y: 40 }, ev(), ctxOff);
+  UI.drag.value = null;
+  S.onUp(m, { x: 230, y: 40 }, ev(), ctxOff);
+  const s = UI.selection.value;
+  expect(s && s.kind === 'points' && s.ids).toEqual([pid]);
+  expect(s && s.kind === 'points' && s.copies?.[pid]?.bindingId).toBeTruthy();
+  const via = (s as { copies: Record<string, Copy> }).copies[pid];
+  drag({ kind: 'point', pointId: pid, cell: { c: 0, r: 0 }, via }, { x: 216, y: 24 }, { x: 226, y: 24 }, ctxOff);   // right on the clone
+  expect(P.getPoint(doc.value, pid)!.u).toBeCloseTo(0.1 - 10 / 240, 9);                                            // left on the original
+});

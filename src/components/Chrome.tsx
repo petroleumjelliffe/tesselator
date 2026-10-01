@@ -161,6 +161,8 @@ function SelectionBar() {
       {el.kind === 'translate' && <><Label>({fmtFrac(el.u)}, {fmtFrac(el.v)})</Label>{([['½ a', 0.5, 0], ['⅓ a', 1 / 3, 0], ['½ b', 0, 0.5], ['½ a+b', 0.5, 0.5]] as const).map(([t, u, v]) => <Btn key={t} cls="small outline" on={Math.abs(el.u - u) < 1e-9 && Math.abs(el.v - v) < 1e-9} title="Set the translation vector" onClick={() => A.setTranslation(el.id, u, v)}>{t}</Btn>)}</>}
       <Label>{bound ? `· in ${bound} binding${bound > 1 ? 's' : ''}` : '· no paths yet'}</Label>
     </>;
+  } else if (s.kind === 'paths') {
+    inner = <Label>{s.items.length} instances · Delete removes their paths</Label>;
   } else if (s.kind === 'fill') {
     const fill = getFill(d, s.id); if (!fill) return null;
     inner = <><Label>Fill · pick a colour in the palette</Label><Sep /><Label>Layer:</Label>{d.layers.map((l) => <Btn key={l.id} cls="small" on={l.id === fill.layerId} title={`Move this fill to ${l.name}`} onClick={() => A.setFillLayer(fill.id, l.id)}>{l.name}</Btn>)}</>;

@@ -63,6 +63,7 @@ export function hoverSnap(w: XY, on: boolean, hitScale: number): void {
 }
 
 const baseCopy: Copy = { cell: { c: 0, r: 0 }, bindingId: null, power: 0 };
+const sameCopy = (a: Copy, b: Copy) => a.cell.c === b.cell.c && a.cell.r === b.cell.r && a.bindingId === b.bindingId && a.power === b.power;
 // After a binding's groups change, a selected clone's power can point past the end of (or at a deduped-null slot in)
 // the new cloneMatrices; fall back to the base copy rather than let the selection silently act on the source path.
 function resetCloneSelectionIfGone(bindingId: string): void {
@@ -264,11 +265,22 @@ export function endPen(): boolean {
 // --- selection
 
 export function selectPathAt(pathId: string, copy: Copy = baseCopy): boolean { UI.selection.value = { kind: 'path', id: pathId, copy }; UI.pendingGroup.value = null; return true; }
-export function selectPoints(ids: string[]): boolean { const u = [...new Set(ids)]; UI.selection.value = u.length ? { kind: 'points', ids: u } : null; UI.pendingGroup.value = null; return true; }
+export function selectPoints(ids: string[], copies?: Record<string, Copy>): boolean { const u = [...new Set(ids)]; UI.selection.value = u.length ? { kind: 'points', ids: u, ...(copies ? { copies } : {}) } : null; UI.pendingGroup.value = null; return true; }
 export function togglePointSelection(id: string): boolean { const cur = UI.selectedPointIds(); return selectPoints(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]); }
 export function selectElement(id: string): boolean { UI.selection.value = { kind: 'element', id }; UI.pendingGroup.value = null; return true; }
 export function selectFill(id: string): boolean { UI.selection.value = { kind: 'fill', id }; UI.pendingGroup.value = null; return true; }
 export function clearSel(): boolean { UI.selection.value = null; UI.pendingGroup.value = null; return true; }
+
+// ⇧-click on a line (spec S4): toggle that instance in the selection. One instance is a plain path selection.
+export function toggleInstance(pathId: string, copy: Copy): boolean {
+  const s = UI.selection.value, same = (x: { id: string; copy: Copy }) => x.id === pathId && sameCopy(x.copy, copy);
+  const items = s && s.kind === 'paths' ? s.items.slice() : s && s.kind === 'path' ? [{ id: s.id, copy: s.copy }] : [];
+  const i = items.findIndex(same);
+  if (i >= 0) items.splice(i, 1); else items.push({ id: pathId, copy });
+  UI.selection.value = items.length === 0 ? null : items.length === 1 ? { kind: 'path', id: items[0].id, copy: items[0].copy } : { kind: 'paths', items };
+  UI.pendingGroup.value = null;
+  return true;
+}
 
 // --- segments
 
@@ -304,6 +316,12 @@ export function straightenPath(pathId: string): boolean {
 export function deleteSelection(): boolean {
   const s = UI.selection.value;
   if (!s) return false;
+  if (s.kind === 'paths') {
+    const ids = new Set(s.items.map((x) => x.id));
+    const ok = mutate((d) => { for (const id of ids) P.deletePath(d, id); });
+    UI.selection.value = null;
+    return ok;
+  }
   const ok = mutate((d) => {
     if (s.kind === 'points') P.deletePoints(d, s.ids);
     else if (s.kind === 'path') { if (s.copy.bindingId) P.removeBinding(d, s.copy.bindingId); else P.deletePath(d, s.id); }

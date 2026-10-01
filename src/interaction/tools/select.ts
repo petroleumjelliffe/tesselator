@@ -5,7 +5,7 @@ import * as A from '../../actions';
 import * as P from '../../engine/paths';
 import { commit } from '../../state/history';
 import { copyMatrix, snapTargets } from '../../state/derived';
-import { pointsInRect, bboxHandles, scaleFor, scaleMatrix } from '../../engine/hit';
+import { pointsInRectAll, bboxHandles, scaleFor, scaleMatrix } from '../../engine/hit';
 import { toUV } from '../../engine/lattice';
 import { apply, invert, compose, rotation, cellMatrix } from '../../engine/transform';
 import { pickSnap, gridResult, pointCopyMatrices, ownFixedCands, NODE_ONLY, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines } from '../../engine/snap';
@@ -40,7 +40,10 @@ function unlinkForDrag(pointId: string, cell: Cell, via?: Copy): Node | null {
 export function pointDown(t: Extract<HitTarget, { kind: 'point' }>, w: XY, e: PointerEvent, hitScale: number): void {
   const selPts = UI.selectedPointIds();
   if (UI.tool.value === 'select' && selPts.includes(t.pointId) && selPts.length > 1) {
-    startDrag(e, t, w, hitScale, { kind: 'pts', ids: selPts.slice(), startPos: P.snapshotPositions(doc.value, selPts) });
+    const s = UI.selection.value, copies = s && s.kind === 'points' ? s.copies ?? {} : {};
+    const pt = P.getPoint(doc.value, t.pointId)!, rawAt = A.worldOf({ u: pt.u + t.cell.c, v: pt.v + t.cell.r });
+    const at = t.via ? apply(P.viaMatrix(doc.value, t.via), rawAt) : rawAt;
+    startDrag(e, t, w, hitScale, { kind: 'pts', ids: selPts.slice(), startPos: P.snapshotPositions(doc.value, selPts), copies, targets: snapTargets.value, grab: { pointId: t.pointId, at } });
     return;
   }
   startDrag(e, t, w, hitScale, { kind: 'pt', pointId: t.pointId, cell: t.cell, via: t.via, targets: snapTargets.value, snap: null });
@@ -98,8 +101,27 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
     }
     case 'pts': {
       if (!d.moved) return;
-      const dv = A.snapDeltaUV({ x: w.x - d.start.x, y: w.y - d.start.y }, ctx.snapOn);
-      A.mutate((dd) => { P.movePointsBy(dd, d.ids, d.startPos, dv.u, dv.v); });
+      let delta = { x: w.x - d.start.x, y: w.y - d.start.y };
+      if (d.grab) {
+        const raw = { x: d.grab.at.x + delta.x, y: d.grab.at.y + delta.y };
+        const s = pickSnap(d.targets, raw, ctx.threshold, { sticky: UI.snapSticky.value, excludePoints: new Set(d.ids), cats: ctx.snapOn ? undefined : NODE_ONLY });
+        UI.snapSticky.value = s?.id ?? null; UI.snapHint.value = A.hintOf(s);
+        if (s) delta = { x: s.at.x - d.grab.at.x, y: s.at.y - d.grab.at.y };
+      }
+      const groups = new Map<string, { ids: string[]; M: Matrix | null }>();
+      for (const id of d.ids) {
+        const c = d.copies[id], k = c ? `${c.cell.c},${c.cell.r},${c.bindingId},${c.power}` : 'raw';
+        if (!groups.has(k)) groups.set(k, { ids: [], M: c ? P.viaMatrix(doc.value, c) : null });
+        groups.get(k)!.ids.push(id);
+      }
+      A.mutate((dd) => {
+        for (const g of groups.values()) {
+          // A point picked through a clone moves through that clone's inverse (its linear part: a delta has no offset).
+          const lin = g.M ? apply(invert([g.M[0], g.M[1], g.M[2], g.M[3], 0, 0]), delta) : delta;
+          const dv = A.uvOf(lin);
+          P.movePointsBy(dd, g.ids, d.startPos, dv.u, dv.v);
+        }
+      });
       return;
     }
     case 'body': {
@@ -170,7 +192,9 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
   if (d.kind === 'marquee') {
     if (!d.moved) return;
     const r = { x0: Math.min(d.start.x, d.cur.x), x1: Math.max(d.start.x, d.cur.x), y0: Math.min(d.start.y, d.cur.y), y1: Math.max(d.start.y, d.cur.y) };
-    A.selectPoints([...(d.add ? UI.selectedPointIds() : []), ...pointsInRect(doc.value, r)]);
+    const got = pointsInRectAll(doc.value, r), prev = UI.selection.value;
+    const prevCopies = d.add && prev && prev.kind === 'points' ? prev.copies ?? {} : {};
+    A.selectPoints([...(d.add ? UI.selectedPointIds() : []), ...got.ids], { ...prevCopies, ...got.copies });
     return;
   }
   if (d.kind === 'pt' && d.moved && d.snap && !d.via) { A.joinDroppedPoint(d.pointId, d.cell, d.snap.hit); return; }
@@ -180,6 +204,7 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
   switch (t.kind) {
     case 'point': if (e.shiftKey || UI.addToSelection.value) A.togglePointSelection(t.pointId); else A.selectPoints([t.pointId]); return;
     case 'segment':
+      if (e.shiftKey || UI.addToSelection.value) { A.toggleInstance(t.pathId, t.copy); return; }
       if (s && s.kind === 'path' && s.id === t.pathId && sameCopy(s.copy, t.copy)) A.insertNodeOnSegment(t.pathId, t.j, w, t.copy, ctx.snapOn);
       else A.selectPathAt(t.pathId, t.copy);
       return;

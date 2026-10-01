@@ -42,7 +42,7 @@ function segmentDistance(a: XY, b: XY, cp: XY | null, p: XY): number {
 export function visiblePointIds(doc: Doc, ctx: HitContext): Set<string> | null {
   if (ctx.pen || ctx.tool === 'freehand' || ctx.tool === 'pen') return null;
   const s = ctx.selection, set = new Set<string>();
-  if (s && s.kind === 'points') for (const id of s.ids) set.add(id);
+  if (s && s.kind === 'points') for (const id of s.ids) if (!s.copies?.[id]) set.add(id);
   return set;
 }
 
@@ -118,6 +118,12 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
       if (vis && !vis.has(pt.id)) continue;
       const d = dist(w, toWorld(nodeUV(pt, cell), lat));
       if (d < bd) { bd = d; best = { kind: 'point', pointId: pt.id, cell }; }
+    }
+    if (sel && sel.kind === 'points' && sel.copies) for (const [id, copy] of Object.entries(sel.copies)) {
+      const pt = doc.points.find((q) => q.id === id);
+      if (!pt) continue;
+      const M = copyMatrixOf(copy, lat, ctx.cloneMatrices), at = apply(M, toWorld(pt, lat)), dd = dist(w, at);
+      if (dd < bd) { bd = dd; best = { kind: 'point', pointId: id, cell: { c: 0, r: 0 }, via: copy }; }
     }
     // Via nodes of the pen path and the selected path sit on a clone; hit them as points with their via.
     const penPath = ctx.pen ? getPath(doc, ctx.pen.pathId) : null;
@@ -200,6 +206,16 @@ export function pointsInRect(doc: Doc, r: Box): string[] {
     if (windowOffsets().some((cell) => { const w = toWorld(nodeUV(pt, cell), doc.lattice); return w.x >= r.x0 && w.x <= r.x1 && w.y >= r.y0 && w.y <= r.y1; })) ids.push(pt.id);
   }
   return ids;
+}
+
+// Points inside a rectangle (spec S5): raw copies in any window cell, and clone images, recording the clone each was picked through.
+export function pointsInRectAll(doc: Doc, r: Box): { ids: string[]; copies: Record<string, Copy> } {
+  const ids = new Set(pointsInRect(doc, r)), copies: Record<string, Copy> = {};
+  for (const a of anchorsWorld(doc)) {
+    if (!a.bindingId || !a.via || ids.has(a.pointId)) continue;
+    if (a.x >= r.x0 && a.x <= r.x1 && a.y >= r.y0 && a.y <= r.y1) { ids.add(a.pointId); copies[a.pointId] = { cell: { ...a.via.cell }, bindingId: a.via.bindingId, power: a.via.power }; }
+  }
+  return { ids: [...ids], copies };
 }
 
 export function projectOnSegment(A: XY, B: XY, p: XY, tMin = 0.05, tMax = 0.95): XY {
