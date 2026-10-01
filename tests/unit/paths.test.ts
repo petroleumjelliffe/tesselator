@@ -449,3 +449,32 @@ test('a closed path that starts and ends on the same via node stays closed when 
   closeXY(P.nodeWorld(doc, tail.start), before.x, before.y);
   expect(doc.points).toHaveLength(5);                                                // body 2 + tail 2 free + one materialised
 });
+
+test('mergeIntoNode onto a clone rewrites every reference as a via node with shifted via cells', () => {
+  const doc = makeDoc();
+  const body = polyline(doc, [{ u: 0.1, v: 0.1 }, { u: 0.3, v: 0.1 }]);
+  const el = P.addElement(doc, { kind: 'rotate', u: 0.5, v: 0.5, n: 2 });
+  const b = P.addBinding(doc, body.id, [[el.id]]);
+  const tail = polyline(doc, [{ u: 0.5, v: 0.6 }, { u: 0.85, v: 0.85 }]);
+  const fromId = tail.segments[0].to.pointId;
+  const other = P.startPath(doc, { pointId: tail.start.pointId, cell: { c: 1, r: 0 } }, { color: '#000', weight: 2 }, 'L1');
+  P.appendNode(doc, other.id, { pointId: fromId, cell: { c: 1, r: 0 } });            // the same point seen in cell (1, 0)
+  const target = { pointId: body.start.pointId, cell: { c: 0, r: 0 }, via: { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 } };
+  const at = P.nodeWorld(doc, target);
+  P.mergeIntoNode(doc, fromId, { c: 0, r: 0 }, target);
+  expect(tail.segments[0].to).toEqual(target);
+  expect(other.segments[0].to).toEqual({ ...target, via: { ...target.via, cell: { c: 1, r: 0 } } });
+  closeXY(P.nodeWorld(doc, tail.segments[0].to), at.x, at.y);
+  closeXY(P.nodeWorld(doc, other.segments[0].to), at.x + 240, at.y);
+  expect(doc.points.some((q) => q.id === fromId)).toBe(false);
+});
+
+test('mergeIntoNode without a via is mergePoints', () => {
+  const doc = makeDoc();
+  const a = polyline(doc, [{ u: 0.1, v: 0.1 }, { u: 0.3, v: 0.1 }]);
+  const c = polyline(doc, [{ u: 0.3, v: 0.5 }, { u: 0.31, v: 0.11 }]);
+  const fromId = c.segments[0].to.pointId;
+  P.mergeIntoNode(doc, fromId, { c: 0, r: 0 }, { pointId: a.segments[0].to.pointId, cell: { c: 0, r: 0 } });
+  expect(c.segments[0].to).toEqual({ pointId: a.segments[0].to.pointId, cell: { c: 0, r: 0 } });
+  expect(doc.points.some((q) => q.id === fromId)).toBe(false);
+});

@@ -249,15 +249,11 @@ export function movePointsBy(doc: Doc, ids: string[], startPos: Record<string, U
   shiftControlPoints(doc, ids, ddu, ddv);
 }
 
-// Replace every reference to `fromId` (seen in `fromCell`) by `toId` at the same place (seen in `toCell`), keeping
-// absolute control points, dropping a segment that becomes zero-length, then deleting the point. A via node that
-// referenced `fromId` is rewritten the same way (its world position is unchanged, since the copy sees the same place).
-export function mergePoints(doc: Doc, fromId: string, fromCell: Cell, toId: string, toCell: Cell): void {
-  if (fromId === toId) return;
-  const dc = toCell.c - fromCell.c, dr = toCell.r - fromCell.r;
+// Rewrite nodes through `map` (which returns the same object for a node it leaves alone), dropping segments that become
+// zero-length and re-basing a control point only after a replaced previous node; then drop emptied paths and orphans.
+function rewriteNodes(doc: Doc, map: (n: Node) => Node): void {
   for (const p of doc.paths) {
     const prevs = p.segments.map((_, j) => prevNode(p, j)), abs = p.segments.map((_, j) => cpAbs(p, j));
-    const map = (n: Node): Node => (n.pointId === fromId ? cloneNode({ ...n, cell: { c: n.cell.c + dc, r: n.cell.r + dr }, pointId: toId }) : n);
     p.start = map(p.start);
     const keep: Segment[] = [];
     let prev = p.start;
@@ -276,6 +272,26 @@ export function mergePoints(doc: Doc, fromId: string, fromCell: Cell, toId: stri
     doc.bindings = doc.bindings.filter((b) => kept.has(b.pathId));
     pruneOrphans(doc);
   });
+}
+
+// Replace every reference to `fromId` (seen in `fromCell`) by `toId` at the same place (seen in `toCell`), keeping
+// absolute control points, dropping a segment that becomes zero-length, then deleting the point. A via node that
+// referenced `fromId` is rewritten the same way (its world position is unchanged, since the copy sees the same place).
+export function mergePoints(doc: Doc, fromId: string, fromCell: Cell, toId: string, toCell: Cell): void {
+  if (fromId === toId) return;
+  const dc = toCell.c - fromCell.c, dr = toCell.r - fromCell.r;
+  rewriteNodes(doc, (n) => (n.pointId === fromId ? cloneNode({ ...n, cell: { c: n.cell.c + dc, r: n.cell.r + dr }, pointId: toId }) : n));
+}
+
+// Merge into any node. A via target turns each plain reference into a via node whose copy cell is shifted by that
+// reference's cell offset, so it keeps the same place relative to the others. Via references to `fromId` are left alone.
+export function mergeIntoNode(doc: Doc, fromId: string, fromCell: Cell, target: Node): void {
+  if (!target.via) { mergePoints(doc, fromId, fromCell, target.pointId, target.cell); return; }
+  if (fromId === target.pointId) return;
+  const tv = target.via;
+  rewriteNodes(doc, (n) => (n.pointId === fromId && !n.via
+    ? { pointId: target.pointId, cell: { ...target.cell }, via: { ...tv, cell: { c: tv.cell.c + n.cell.c - fromCell.c, r: tv.cell.r + n.cell.r - fromCell.r } } }
+    : n));
 }
 
 export function setControlPointAbs(doc: Doc, pathId: string, j: number, abs: UV | null): void {
