@@ -6,6 +6,8 @@ import * as UI from '../../src/state/ui';
 import * as P from '../../src/engine/paths';
 import * as pen from '../../src/interaction/tools/pen';
 import * as freehand from '../../src/interaction/tools/freehand';
+import * as select from '../../src/interaction/tools/select';
+import { STR } from '../../src/strings';
 import { hoverAt } from '../../src/interaction/pointer';
 import { reset, beginGesture, endGesture } from '../../src/state/history';
 import { copies, cloneMatrices } from '../../src/state/derived';
@@ -139,4 +141,32 @@ test('Freehand: extending a path, an end on that path\'s own mirror clone start 
   expect(last.via).toBeUndefined();
   const at = P.nodeWorld(doc.value, last);
   expect(at.x).toBeCloseTo(180, 6); expect(at.y).toBeCloseTo(60, 6);
+});
+
+// --- B / C2: an unlink on the first move refreshes the drag's targets
+
+test('Select: dragging a shared end of the selected path never lands on that path\'s own (stale) line', () => {
+  let aId = '';
+  fresh('freehand', (d) => {
+    const a = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.5, v: 0.5 }]), shared = a.segments[0].to;   // A: (48,48) → (120,120)
+    const b = P.startPath(d, { ...shared, cell: { ...shared.cell } }, { color: '#000', weight: 2 }, d.layers[0].id);
+    P.appendNode(d, b.id, P.addPoint(d, { u: 0.8, v: 0.2 }));                                 // B: (120,120) → (192,48)
+    aId = a.id;
+  });
+  UI.tool.value = 'select';
+  UI.selection.value = { kind: 'path', id: aId, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } };
+  expect(hit({ x: 120, y: 120 })?.kind).toBe('point');
+  let hint: string | undefined;
+  const pts = [{ x: 120, y: 120 }, { x: 110, y: 110 }, { x: 95, y: 98 }, { x: 84, y: 88 }];
+  hoverAt(pts[0], hit(pts[0]), ctx);
+  select.onDown(hit(pts[0]), pts[0], ev(), ctx);
+  const d = UI.drag.value!;
+  d.moved = true; beginGesture();
+  for (const p of pts.slice(1)) { select.onMove(d, p, ev(), ctx); hint = UI.snapHint.value?.label; }
+  UI.drag.value = null;
+  select.onUp(d, pts[pts.length - 1], ev(), ctx); endGesture();
+  expect(hint).not.toBe(STR.snap.line);
+  const a = P.getPath(doc.value, aId)!, end = P.nodeWorld(doc.value, a.segments[0].to);
+  expect(a.segments).toHaveLength(1);
+  expect(end.x).toBeCloseTo(90, 6); expect(end.y).toBeCloseTo(90, 6);          // the grid point, not (68.06, 68.06) on A's old line
 });

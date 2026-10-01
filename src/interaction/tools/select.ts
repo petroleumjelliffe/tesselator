@@ -89,6 +89,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
           const s = UI.selection.value, k = s && s.kind === 'path' && !s.copy.bindingId ? s.copy.cell : { c: 0, r: 0 };
           d.cell = { c: n.cell.c + k.c, r: n.cell.r + k.r };
           d.pointId = n.pointId; d.via = undefined;
+          d.targets = snapTargets.value;   // C2: the old targets put this path's own lines on the shared point id; rebuild from the unlinked doc
         }
       }
       const S = d.via ? compose(P.viaMatrix(doc.value, d.via), cellMatrix(d.cell, doc.value.lattice)) : cellMatrix(d.cell, doc.value.lattice);
@@ -140,7 +141,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
     }
     case 'canchor': {
       if (!d.moved) return;
-      if (!d.unlinked) { d.unlinked = true; const n = unlinkForDrag(d.pointId, d.cell); if (n) d.pointId = n.pointId; }
+      if (!d.unlinked) { d.unlinked = true; const n = unlinkForDrag(d.pointId, d.cell); if (n) { d.pointId = n.pointId; d.targets = snapTargets.value; } }
       const M = copyMatrix(d.copy), S = compose(M, cellMatrix(d.cell, doc.value.lattice));
       const s = nodeSnap(d.targets, d.pointId, S, w, ctx);
       d.snap = s; UI.snapSticky.value = s?.id ?? null; UI.snapHint.value = A.hintOf(s && s.cat !== 'grid' ? s : null);
