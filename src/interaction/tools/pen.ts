@@ -1,11 +1,16 @@
+// Pen: every click goes through drawSnap (spec D14), whatever it hit, so the same-layer rule and the path's own targets
+// apply (O2, I1). A press on a point or clone anchor can still become a drag of that node; a click on the path's last
+// node ends the path.
+import { doc } from '../../state/doc';
 import * as UI from '../../state/ui';
 import * as A from '../../actions';
+import * as P from '../../engine/paths';
 import * as select from './select';
 import { startDrag, type ToolModule } from './common';
 
 export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
-  if (t && (t.kind === 'point' || t.kind === 'canchor' || t.kind === 'diamond')) { select.onDown(t, w, e, ctx); return; }
-  if (t && t.kind === 'segment') { startDrag(e, t, w, ctx.hitScale, { kind: 'click' }); return; }
+  if (t && (t.kind === 'point' || t.kind === 'canchor')) { select.onDown(t, w, e, ctx); return; }   // a click, or a node drag
+  if (t && UI.selection.value && !UI.pen.value) UI.selection.value = null;                             // a hit starts drawing at once
   A.penClickEmpty(w, ctx.snapOn, ctx.hitScale);
   startDrag(e, t, w, ctx.hitScale, { kind: 'click' });
 };
@@ -13,10 +18,15 @@ export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
 export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => { select.onMove(d, w, e, ctx); };
 
 export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
-  if (d.kind === 'pt' && d.moved && d.snap && !d.via) { A.joinDroppedPoint(d.pointId, d.cell, d.snap.hit); UI.cursor.value = null; return; }
-  if (d.moved || !d.target) return;
-  if (d.target.kind === 'point') A.penClickNode({ pointId: d.target.pointId, cell: d.target.cell, ...(d.target.via ? { via: d.target.via } : {}) });
-  else if (d.target.kind === 'canchor') A.penClickNode({ pointId: d.target.pointId, cell: d.target.cell, via: { cell: { ...d.target.copy.cell }, bindingId: d.target.copy.bindingId!, power: d.target.copy.power } });   // clone anchors only exist for clone copies
-  else if (d.target.kind === 'segment') A.penClickSegment(d.target.pathId, d.target.j, d.target.copy, w, ctx.snapOn, ctx.hitScale);
   UI.cursor.value = null;
+  if (d.moved) { if (d.kind === 'pt' || d.kind === 'canchor') select.onUp(d, w, e, ctx); return; }
+  const t = d.target;
+  if (!t || (t.kind !== 'point' && t.kind !== 'canchor')) return;
+  const pn = UI.pen.value, path = pn && P.getPath(doc.value, pn.pathId);
+  if (path && t.kind === 'point') {
+    const nodes = P.pathNodes(path);
+    if (P.sameNode(nodes[nodes.length - 1], { pointId: t.pointId, cell: t.cell, ...(t.via ? { via: t.via } : {}) })) { A.endPen(); return; }
+  }
+  if (!pn) UI.selection.value = null;
+  A.penClickEmpty(d.start, ctx.snapOn, ctx.hitScale);   // H6: the snap at the press, as the hint showed it
 };

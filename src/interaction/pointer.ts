@@ -13,11 +13,20 @@ import * as freehand from './tools/freehand';
 import * as fill from './tools/fill';
 import * as construct from './tools/construct';
 import type { ToolModule, ToolCtx } from './tools/common';
-import type { XY, View, PointerKind } from '../types';
+import type { XY, View, PointerKind, HitTarget } from '../types';
 
 const TOOLS: Record<string, ToolModule> = { select, pen, freehand, fill };
 const dist = (a: XY, b: XY) => Math.hypot(a.x - b.x, a.y - b.y);
 const mid = (a: XY, b: XY): XY => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+// Hover with no button down: the hovered target, and in Pen and Freehand the snap a click would use (H2, H6). Every
+// Pen click and Freehand start goes through that snap, over a line or point too, so the hint shows whatever is hovered.
+export function hoverAt(w: XY, hit: HitTarget | null, c: ToolCtx): void {
+  UI.hover.value = hit;
+  const drawing = UI.layer.value === 'drawing' && (UI.tool.value === 'pen' || UI.tool.value === 'freehand');
+  if (drawing) A.hoverSnap(w, c.snapOn, c.hitScale);
+  else if (UI.snapHint.value) { UI.snapHint.value = null; UI.snapSticky.value = null; }
+}
 
 export function attachPointer(svg: SVGSVGElement): () => void {
   const pointers = new Map<number, XY>();
@@ -66,13 +75,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
     const w = world(e);
     UI.cursor.value = w;
     const d = UI.drag.value;
-    if (!d) {
-      UI.hover.value = hitTest(doc.value, hitCtx(scaleOf(e)), w);
-      const drawing = UI.layer.value === 'drawing' && (UI.tool.value === 'pen' || UI.tool.value === 'freehand');
-      if (drawing && !UI.hover.value) { const c = ctxOf(e); A.hoverSnap(w, c.snapOn, c.hitScale); }
-      else if (UI.snapHint.value) { UI.snapHint.value = null; UI.snapSticky.value = null; }
-      return;
-    }
+    if (!d) { hoverAt(w, hitTest(doc.value, hitCtx(scaleOf(e)), w), ctxOf(e)); return; }
     if (d.pointerId !== e.pointerId || !dragTool) return;
     if (!d.moved && dist(w, d.start) > CONFIG.DRAG_THRESHOLD_PX / UI.view.value.zoom) { d.moved = true; beginGesture(); }
     dragTool.onMove(d, w, e, ctxOf(e));

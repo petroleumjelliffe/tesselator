@@ -2,13 +2,12 @@
 import { doc } from '../../state/doc';
 import * as UI from '../../state/ui';
 import * as A from '../../actions';
-import * as P from '../../engine/paths';
 import { orbit } from '../../engine/transform';
 import { pickSnap } from '../../engine/snap';
 import { snapTargets } from '../../state/derived';
 import { CONFIG } from '../../config';
 import { startDrag, type ToolModule } from './common';
-import type { Node, Matrix, XY, Drag, SnapCat } from '../../types';
+import type { Matrix, XY, Drag, SnapCat } from '../../types';
 
 const TRACE_CATS: ReadonlySet<SnapCat> = new Set<SnapCat>(['edge', 'axis', 'line']);
 const nearestOnPolyline = (pl: XY[], p: XY): { q: XY; d: number } => {
@@ -38,21 +37,15 @@ export function traceStep(d: Extract<Drag, { kind: 'free' }>, w: XY, alt: boolea
   return r.q;
 }
 
-// The groups the stroke's clones come from: the extended path's bindings, else the groups new paths receive.
-function groupsFor(startNode: Node | null): string[][][] {
-  const d = doc.value;
-  const extendId = startNode && !startNode.via ? P.openEndAt(d, startNode.pointId) : null;   // as finishFreehand: a via start never extends a path
-  return extendId ? d.bindings.filter((b) => b.pathId === extendId).map((b) => b.groups) : [d.newPathGroups];
-}
-
+// Spec D3, D5, O2: the start is the snap at the press, like any drawing point. It extends a path only when it lands on a
+// plain open end of a path on the active layer; otherwise the new path starts there (a same-layer join or location only,
+// decided by nodeForSnap at the end). The stroke's clones come from the extended path's bindings, else the new-path groups.
 export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
-  let startNode: Node | null = null, start = w;
-  let startSnap = null;
-  if (t && t.kind === 'point') { startNode = { pointId: t.pointId, cell: t.cell, ...(t.via ? { via: t.via } : {}) }; start = P.nodeWorld(doc.value, startNode); }
-  else { startSnap = A.drawSnap(w, ctx.snapOn, ctx.hitScale, null); if (startSnap) start = startSnap.at; }
-  const groups = groupsFor(startNode), d = doc.value;
+  const d = doc.value, startSnap = A.drawSnap(w, ctx.snapOn, ctx.hitScale, null), ext = A.extendTarget(d, startSnap);
+  const start = startSnap ? startSnap.at : w;
+  const groups = ext ? d.bindings.filter((b) => b.pathId === ext.pathId).map((b) => b.groups) : [d.newPathGroups];
   const cloneMatrices = groups.flatMap((g) => orbit(g, d.elements, d.lattice, CONFIG.ORBIT_CAP, CONFIG.CLONE_CAP).matrices.filter((M): M is Matrix => M !== null));
-  startDrag(e, t, start, ctx.hitScale, { kind: 'free', raw: [{ x: start.x, y: start.y }], startNode, startSnap, groups, cloneMatrices, end: null, pin: null, cooldown: null });
+  startDrag(e, t, start, ctx.hitScale, { kind: 'free', raw: [{ x: start.x, y: start.y }], startNode: ext?.node ?? null, startSnap, groups, cloneMatrices, end: null, pin: null, cooldown: null });
   UI.snapSticky.value = null;
 };
 
@@ -62,7 +55,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
   const last = d.raw[d.raw.length - 1];
   if (Math.hypot(p.x - last.x, p.y - last.y) >= 1.5) d.raw.push({ x: p.x, y: p.y });
   if (d.pin) { UI.snapHint.value = { at: p, line: d.pin.geom }; d.end = null; return; }
-  const s = A.drawSnap(w, ctx.snapOn, ctx.hitScale, { pts: d.raw, groups: d.groups });
+  const s = A.drawSnap(w, ctx.snapOn, ctx.hitScale, A.freeStroke(d));
   d.end = s && s.cat !== 'grid' ? s : null;
   UI.snapSticky.value = d.end?.id ?? null;
   UI.snapHint.value = A.hintOf(d.end);
@@ -70,6 +63,6 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
 
 export const onUp: ToolModule['onUp'] = (d, w, _e, ctx) => {
   if (d.kind !== 'free') return;
-  const end = A.drawSnap(w, ctx.snapOn, ctx.hitScale, { pts: d.raw, groups: d.groups });   // H6: the held snap is the snap used
+  const end = A.drawSnap(w, ctx.snapOn, ctx.hitScale, A.freeStroke(d));   // H6: the held snap is the snap used
   A.finishFreehand(d, end);
 };

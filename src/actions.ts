@@ -9,10 +9,10 @@ import { apply, invert, mirrorAngle, mirrorDirFromAngle } from './engine/transfo
 import { snapWorld, projectOnSegment, seedOf, type Anchor } from './engine/hit';
 import { faceAt, seedFor, fillOfFace } from './engine/regions';
 import { strokeToPath } from './engine/freehand';
-import { pickSnap, gridResult, strokeCopies, strokeCands, NODE_ONLY, nearestOnSeg } from './engine/snap';
-import { joinPointToHit, nodeForSnap, splitNearest } from './engine/joins';
+import { pickSnap, gridResult, strokeCopies, strokeCands, nearestOnSeg, bezAt } from './engine/snap';
+import { joinable, joinPointToHit, nodeForSnap, splitNearest } from './engine/joins';
 import { CONFIG } from './config';
-import type { Doc, XY, UV, Cell, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer, SnapResult, SnapHit } from './types';
+import type { Doc, XY, UV, Cell, Node, Copy, ElementKind, Lattice, Drag, Style, Tool, Layer, SnapResult, SnapHit, Path, SnapCat } from './types';
 
 // Every mutation is bracketed by via repair, so a change that removes a binding or clone slot (element edits, lattice
 // edits, deletions) materialises the via nodes that depended on it where they were, whether or not `fn` remembered
@@ -39,20 +39,53 @@ export function snapDeltaUV(dw: XY, on: boolean): UV {
 
 export function hintOf(s: SnapResult | null): UI.SnapHint | null { return s ? { at: s.at, label: s.label, line: s.line } : null; }
 
+// A stroke for drawSnap: its world polyline (start first, tip last), the groups its clones come from, and the stored path
+// it belongs to (the Pen path in progress, or the path a Freehand stroke extends), if any.
+export type DrawStroke = { pts: XY[]; groups: string[][][]; pathId?: string };
+
+// Spec I1: the path being drawn offers itself only as its own targets (own start, own line, own clones and repeats), so
+// its lines and the points only it uses are not plain targets. A point another path also uses stays a real node target.
+function ownExclusions(d: Doc, pathId: string): { excludePaths: Set<string>; excludePoints: Set<string> } {
+  const own = P.getPath(d, pathId), others = new Set(d.paths.filter((p) => p.id !== pathId).flatMap((p) => P.pathNodes(p).map((n) => n.pointId)));
+  return { excludePaths: new Set([pathId]), excludePoints: new Set(own ? P.pathNodes(own).map((n) => n.pointId).filter((id) => !others.has(id)) : []) };
+}
+
 // The snap for a drawing point (Pen click, stroke start or end, hover): every target, the stroke's own targets, the held
-// snap; the grid when nothing else is near. With snapping off only existing points attract.
-export function drawSnap(w: XY, on: boolean, hitScale: number, stroke: { pts: XY[]; groups: string[][][] } | null): SnapResult | null {
+// snap; the grid when nothing else is near. With snapping off only existing points attract: nodes, and the stroke's own
+// start (its own nodes are not node targets, I1, so closing a shape still works with snapping off).
+const NODE_OR_OWN_START: ReadonlySet<SnapCat> = new Set<SnapCat>(['node', 'ownStart']);
+export function drawSnap(w: XY, on: boolean, hitScale: number, stroke: DrawStroke | null): SnapResult | null {
   const thr = threshold(hitScale), d = doc.value;
-  const extra = on && stroke ? strokeCands(stroke.pts, stroke.groups.flatMap((g) => strokeCopies(d, g)), w, thr) : [];
-  const s = pickSnap(snapTargets.value, w, thr, { extra, sticky: UI.snapSticky.value, cats: on ? undefined : NODE_ONLY });
+  const extra = stroke ? strokeCands(stroke.pts, stroke.groups.flatMap((g) => strokeCopies(d, g)), w, thr) : [];
+  const ex = stroke?.pathId ? ownExclusions(d, stroke.pathId) : {};
+  const s = pickSnap(snapTargets.value, w, thr, { extra, sticky: UI.snapSticky.value, cats: on ? undefined : NODE_OR_OWN_START, ...ex });
   return s ?? (on ? gridResult(w, d.lattice, UI.prefs.value.gridDivisions) : null);
 }
 
-// The Pen path in progress as a stroke: its world nodes and its bindings' groups.
-export function penStroke(): { pts: XY[]; groups: string[][][] } | null {
+// A path's world polyline, curves sampled, in its own node order.
+export function pathPolyline(d: Doc, p: Path): XY[] {
+  const W = P.pathWorld(d, p), C = P.pathCpsWorld(d, p), out: XY[] = [W[0]];
+  for (let j = 0; j + 1 < W.length; j++) {
+    if (!C[j]) { out.push(W[j + 1]); continue; }
+    for (let i = 1; i <= 8; i++) out.push(bezAt(W[j], C[j], W[j + 1], i / 8));
+  }
+  return out;
+}
+
+// The Pen path in progress as a stroke: its world polyline and its bindings' groups.
+export function penStroke(): DrawStroke | null {
   const pn = UI.pen.value, p = pn && P.getPath(doc.value, pn.pathId);
   if (!p) return null;
-  return { pts: P.pathWorld(doc.value, p), groups: doc.value.bindings.filter((b) => b.pathId === p.id).map((b) => b.groups) };
+  return { pts: pathPolyline(doc.value, p), groups: doc.value.bindings.filter((b) => b.pathId === p.id).map((b) => b.groups), pathId: p.id };
+}
+
+// Spec D5: a drawing start extends a path only when it lands on a plain node that is an open end of a path on the drawing
+// layer and every path using that point is on it. Returns that path and the node as seen (its window cell).
+export function extendTarget(d: Doc, s: SnapResult | null, layerId: string = activeLayerId(d)): { pathId: string; node: Node } | null {
+  const h = s?.hit;
+  if (!h || h.kind !== 'node' || h.copy.bindingId || !joinable(d, h, layerId)) return null;
+  const id = P.openEndAt(d, h.pointId), path = id ? P.getPath(d, id) : null;
+  return path && path.layerId === layerId ? { pathId: path.id, node: { pointId: h.pointId, cell: { ...h.cell } } } : null;
 }
 
 export function hoverSnap(w: XY, on: boolean, hitScale: number): void {
@@ -133,8 +166,10 @@ export function setFillLayer(fillId: string, layerId: string): boolean {
 
 function bindNewPath(d: Doc, pathId: string) { if (d.newPathGroups.length) P.addBinding(d, pathId, d.newPathGroups); }
 
-// A Pen click on empty space (spec D14): the same targets and commits as a stroke end. On a path in progress, its own
-// start closes it, its repeated start wraps it, and its own earlier line splits it; each ends the path.
+// A Pen click (spec D14): the same targets and commits as a stroke end, whatever the click hit. On a path in progress,
+// its own start closes it, its repeated start wraps it, and its own earlier line splits it; each ends the path, as does
+// landing on a node the path already has. With no path in progress, an open end on the drawing layer resumes that path
+// (D5); anything else starts a new one. Joins are same-layer only (O2, in nodeForSnap / extendTarget).
 export function penClickEmpty(w: XY, on: boolean, hitScale = 1): boolean {
   if (UI.selection.value && !UI.pen.value) { UI.selection.value = null; return true; }
   const penNow = UI.pen.value;
@@ -152,60 +187,24 @@ export function penClickEmpty(w: XY, on: boolean, hitScale = 1): boolean {
       else if (h.kind === 'ownLine') node = splitNearest(d, penPath.id, s!.at, penPath.segments.length - 1);
       if (node) { P.appendNode(d, penPath.id, node); ended = true; return; }
     }
+    if (!penPath) {
+      const ext = extendTarget(d, s, layerId);
+      if (ext) { P.orientToEnd(d, ext.pathId, ext.node.pointId, ext.node.cell); started = ext.pathId; return; }
+    }
     const node = nodeForSnap(d, s, w, layerId);
-    if (penNow) { P.appendNode(d, penNow.pathId, node); return; }
+    if (penPath) {
+      const had = P.pathNodes(penPath);
+      if (!P.appendNode(d, penPath.id, node)) { ended = true; return false; }   // the last node again: done
+      if (had.some((n) => P.sameNode(n, node))) ended = true;                   // closed, or a loop on its own node
+      return;
+    }
     const path = P.startPath(d, node, UI.prefs.value.style, layerId);
     bindNewPath(d, path.id);
     started = path.id;
   });
   if (started) UI.pen.value = { pathId: started };
   if (ended) endPen();
-  return ok;
-}
-
-// Click a point copy or a clone anchor. A clone anchor arrives as a node with `via`, and the segment lands where it was clicked.
-export function penClickNode(node: Node): boolean {
-  const penNow = UI.pen.value;
-  if (penNow) {
-    const path = P.getPath(doc.value, penNow.pathId);
-    if (!path) { UI.pen.value = null; return false; }
-    const nodes = P.pathNodes(path);
-    if (P.sameNode(nodes[nodes.length - 1], node)) { endPen(); return true; }
-    return mutate((d) => { P.appendNode(d, penNow.pathId, node); });
-  }
-  let pathId: string | null = null;
-  const ok = mutate((d) => {
-    const openId = node.via ? null : P.openEndAt(d, node.pointId);
-    if (openId) { P.orientToEnd(d, openId, node.pointId, node.cell); pathId = openId; return; }
-    const path = P.startPath(d, node, UI.prefs.value.style, activeLayerId(d));
-    bindNewPath(d, path.id);
-    pathId = path.id;
-  });
-  if (pathId) { UI.pen.value = { pathId }; UI.selection.value = null; }
-  return ok;
-}
-
-// Click a line with the Pen: split the source segment where the click projects and draw from the new node. On a clone
-// copy the node is seen through that copy (`via`); on the source or a cell copy it is a plain shared node.
-export function penClickSegment(pathId: string, j: number, copy: Copy, w: XY, on: boolean, hitScale = 1): boolean {
-  const penNow = UI.pen.value;
-  if (penNow && penNow.pathId === pathId) return penClickEmpty(w, on, hitScale);
-  const M = copyMatrix(copy), src = apply(invert(M), w);
-  let started: string | null = null;
-  const ok = mutate((d) => {
-    const p = P.getPath(d, pathId);
-    if (!p || j < 0 || j >= p.segments.length) return false;
-    const A = P.nodeWorld(d, P.prevNode(p, j)), B = P.nodeWorld(d, p.segments[j].to), C = P.cpWorld(d, p, j);
-    const n = P.insertNodeAt(d, pathId, j, P.nearestT(A, C, B, src));
-    const node: Node = copy.bindingId ? { pointId: n.pointId, cell: n.cell, via: { cell: { ...copy.cell }, bindingId: copy.bindingId, power: copy.power } }
-      : { pointId: n.pointId, cell: { c: n.cell.c + copy.cell.c, r: n.cell.r + copy.cell.r } };
-    if (penNow) { P.appendNode(d, penNow.pathId, node); return; }
-    const path = P.startPath(d, node, UI.prefs.value.style, activeLayerId(d));
-    bindNewPath(d, path.id);
-    started = path.id;
-  });
-  if (started) { UI.pen.value = { pathId: started }; UI.selection.value = null; }
-  return ok;
+  return ok || ended;
 }
 
 // A point drag released on a snap joins the point to what it landed on (same layer only; see engine/joins.ts).
@@ -460,31 +459,46 @@ export function fillAt(w: XY): boolean {
 
 // --- freehand
 
+// The path a Freehand stroke extends (D5): its start node is a plain open end of a path on the active layer.
+function freeExtends(d: Doc, dr: Extract<Drag, { kind: 'free' }>): string | null {
+  const n = dr.startNode, id = n && !n.via ? P.openEndAt(d, n.pointId) : null;
+  return id && P.getPath(d, id)!.layerId === activeLayerId(d) ? id : null;
+}
+
+// A Freehand stroke as drawSnap sees it. Extending path E, the stroke is E (oriented to end at the start node, in that
+// node's cell) followed by the raw points, and E is its own path (I1): E's start is the own start, E's lines its own line.
+export function freeStroke(dr: Extract<Drag, { kind: 'free' }>): DrawStroke {
+  const d = doc.value, id = freeExtends(d, dr), E = id ? P.getPath(d, id) : null;
+  if (!E || !dr.startNode) return { pts: dr.raw, groups: dr.groups };
+  const nodes = P.pathNodes(E), last = nodes[nodes.length - 1], atEnd = !last.via && last.pointId === dr.startNode.pointId;
+  const end = atEnd ? last : nodes[0], off = toWorld({ u: dr.startNode.cell.c - end.cell.c, v: dr.startNode.cell.r - end.cell.r }, d.lattice);
+  const pl = pathPolyline(d, E).map((q) => ({ x: q.x + off.x, y: q.y + off.y }));
+  return { pts: [...(atEnd ? pl : pl.reverse()), ...dr.raw.slice(1)], groups: dr.groups, pathId: E.id };
+}
+
 // End a Freehand stroke (spec D3–D11): fit it, then make its start and end nodes from their snaps: share or split
 // same-layer geometry, close on its own start, wrap into its own repeat, split itself (loop and tail), or sit on its
-// own clone's line re-snapped to the fitted clone; anything else is a new point where the snap put it.
+// own clone's line re-snapped to the fitted clone; anything else is a new point where the snap put it. Extending a path,
+// "its own" means the whole extended path.
 export function finishFreehand(dr: Extract<Drag, { kind: 'free' }>, end: SnapResult | null): boolean {
   const raw = end ? [...dr.raw.slice(0, -1), end.at] : dr.raw;
   const fit = strokeToPath(raw, { eps: CONFIG.FREEHAND_EPS, minDeviation: CONFIG.FREEHAND_MIN_DEVIATION });
   if (!fit) return false;
   let pathId: string | null = null;
   const ok = mutate((d) => {
-    const extendId = dr.startNode && !dr.startNode.via ? P.openEndAt(d, dr.startNode.pointId) : null;
-    const layerId = extendId ? P.getPath(d, extendId)!.layerId : activeLayerId(d);
-    const startNode = dr.startNode ?? nodeForSnap(d, dr.startSnap, fit.points[0], layerId);
-    const h = end?.hit, n = fit.points.length;
+    const extendId = freeExtends(d, dr), layerId = activeLayerId(d);
+    let path;
+    if (extendId) { path = P.getPath(d, extendId)!; P.orientToEnd(d, extendId, dr.startNode!.pointId, dr.startNode!.cell); }
+    else path = P.startPath(d, dr.startNode ?? nodeForSnap(d, dr.startSnap, fit.points[0], layerId), UI.prefs.value.style, layerId);
+    const st = path.start, h = end?.hit, n = fit.points.length;
     const inner = fit.points.slice(1, -1).map((v) => P.addPoint(d, toUV(v, d.lattice)));
     let last: Node | 'self' | 'copy';
-    if (h?.kind === 'ownStart') last = startNode;
-    else if (h?.kind === 'ownRepeat' && !startNode.via) last = { pointId: startNode.pointId, cell: { c: startNode.cell.c + h.cell.c, r: startNode.cell.r + h.cell.r } };
+    if (h?.kind === 'ownStart') last = st;
+    else if (h?.kind === 'ownRepeat' && !st.via) last = { pointId: st.pointId, cell: { c: st.cell.c + h.cell.c, r: st.cell.r + h.cell.r } };
     else if (h?.kind === 'ownLine') last = 'self';
     else if (h?.kind === 'ownCopy') last = 'copy';
     else last = nodeForSnap(d, end, fit.points[n - 1], layerId);
     const lastNode: Node = typeof last === 'string' ? P.addPoint(d, toUV(fit.points[n - 1], d.lattice)) : last;
-    let path;
-    if (extendId) { path = P.getPath(d, extendId)!; P.orientToEnd(d, extendId, startNode.pointId, startNode.cell); }
-    else path = P.startPath(d, startNode, UI.prefs.value.style, layerId);
-    const from = path.segments.length;
     [...inner, lastNode].forEach((node, j) => { if (P.appendNode(d, path.id, node) && fit.cps[j]) P.setControlPointWorld(d, path.id, path.segments.length - 1, fit.cps[j]); });
     if (path.segments.length === 0) { P.deletePath(d, path.id); return false; }
     if (last === 'self') {                                   // D7: land on the stroke's own earlier line and share the node there
@@ -493,7 +507,7 @@ export function finishFreehand(dr: Extract<Drag, { kind: 'free' }>, end: SnapRes
     } else if (last === 'copy' && h?.kind === 'ownCopy') {  // D8: re-snap the end onto the fitted copy (location only)
       const p = P.getPath(d, path.id)!, W = P.pathWorld(d, p).map((q) => apply(h.M, q)), C = P.pathCpsWorld(d, p).map((c) => c && apply(h.M, c));
       let best: XY | null = null, bd = Infinity;
-      for (let j = from; j < p.segments.length - 1; j++) { const r = nearestOnSeg(W[j], C[j], W[j + 1], fit.points[n - 1]); if (r.d < bd) { bd = r.d; best = r.q; } }
+      for (let j = 0; j < p.segments.length - 1; j++) { const r = nearestOnSeg(W[j], C[j], W[j + 1], fit.points[n - 1]); if (r.d < bd) { bd = r.d; best = r.q; } }
       if (best) { const uv = toUV(best, d.lattice); P.movePoint(d, lastNode.pointId, uv.u - lastNode.cell.c, uv.v - lastNode.cell.r); }
     }
     if (!extendId) bindNewPath(d, path.id);

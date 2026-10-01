@@ -10,12 +10,26 @@ import { faces, copyMatrix, cloneMatrices, copies, snapTargets } from '../../src
 import { apply, invert } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import * as select from '../../src/interaction/tools/select';
-import type { Drag } from '../../src/types';
+import * as pen from '../../src/interaction/tools/pen';
+import type { Drag, XY, Node } from '../../src/types';
 import { computeFaces } from '../../src/engine/regions';
 import { anchorsWorld, hitTest, type HitContext } from '../../src/engine/hit';
 
 function fresh() { reset(); UI.resetUi(); doc.value = emptyDoc(); UI.viewport.value = { width: 800, height: 600 }; UI.prefs.value = { ...UI.prefs.value, snap: false }; }
 const W = (u: number, v: number) => ({ x: u * 240, y: v * 240 });
+// A Pen click as pointer.ts delivers it: hit-test, then the Pen's onDown and onUp. Snapping off by default (nodes still
+// attract); segment clicks need it on, since with snapping off lines are not targets.
+function penAt(w: XY, snapOn = false): boolean {
+  const hc: HitContext = { layer: UI.layer.value, tool: UI.tool.value, selection: UI.selection.value, pen: UI.pen.value, zoom: UI.view.value.zoom, hitScale: 1, copies: copies.value, cloneMatrices: cloneMatrices.value, faces: faces.value };
+  const before = doc.value, penBefore = UI.pen.value;
+  const ev = { pointerId: 1, shiftKey: false, metaKey: false, ctrlKey: false, pointerType: 'mouse' } as unknown as PointerEvent;
+  const ctx = { snapOn, hitScale: 1, threshold: A.threshold(1) };
+  pen.onDown(hitTest(doc.value, hc, w), w, ev, ctx);
+  const d = UI.drag.value; UI.drag.value = null;
+  if (d) pen.onUp(d, w, ev, ctx);
+  return doc.value !== before || UI.pen.value !== penBefore;
+}
+const penOn = (n: Node) => penAt(P.nodeWorld(doc.value, n));
 
 test('pen: empty clicks build a path, clicking the last node ends it, short paths are discarded', () => {
   fresh();
@@ -23,7 +37,7 @@ test('pen: empty clicks build a path, clicking the last node ends it, short path
   A.penClickEmpty(W(0.4, 0.1), false);
   const path = doc.value.paths[0];
   expect(path.segments).toHaveLength(1);
-  A.penClickNode(path.segments[0].to);
+  penOn(path.segments[0].to);
   expect(UI.pen.value).toBe(null);
   A.penClickEmpty(W(0.8, 0.8), false); A.endPen();
   expect(doc.value.paths).toHaveLength(1);
@@ -37,7 +51,7 @@ test('pen: new paths receive newPathGroups; clicking an open end resumes and rev
   A.penClickEmpty(W(0.1, 0.1), false); A.penClickEmpty(W(0.4, 0.1), false); A.endPen();
   expect(doc.value.bindings).toHaveLength(1);
   const path = doc.value.paths[0], first = path.start.pointId;
-  A.penClickNode(path.start);
+  penOn(path.start);
   expect(UI.pen.value?.pathId).toBe(path.id);
   expect(doc.value.paths[0].segments[0].to.pointId).toBe(first);
 });
@@ -56,7 +70,7 @@ test('addElement binds the selected path; deleteElement drops bindings and chain
 test('fillAt seeds at the centroid, recolours on a second click, and maps neighbour cells to the same region', () => {
   fresh();
   for (const p of [W(0.25, 0.25), W(0.75, 0.25), W(0.75, 0.75), W(0.25, 0.75)]) A.penClickEmpty(p, false);
-  A.penClickNode(doc.value.paths[0].start); A.endPen();
+  penOn(doc.value.paths[0].start); A.endPen();
   A.setTool('fill');
   expect(faces.value).toHaveLength(9);
   expect(A.fillAt(W(0.05, 0.05))).toBe(false);
@@ -112,7 +126,7 @@ test('finishFreehand starting on a via node keeps the via on the new path\'s sta
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 };
   A.setTool('pen');
-  A.penClickSegment(body.id, 0, clone, W(0.8, 0.52), false);                          // splits the source, tail starts on a via node
+  penAt(W(0.8, 0.52), true);                          // splits the source, tail starts on a via node
   A.penClickEmpty(W(0.8, 0.9), false); A.endPen();
   const tailStart = doc.value.paths[1].start;
   expect(tailStart.via).toEqual(clone);
@@ -177,7 +191,7 @@ test('undo after two pen clicks resumes drawing the one-node path instead of lea
   const path = doc.value.paths[0];
   expect(path.segments).toHaveLength(0);
   expect(UI.pen.value).toEqual({ pathId: path.id });
-  expect(() => A.penClickNode(path.start)).not.toThrow();   // repeat of the last node ends the pen, which deletes the empty path
+  expect(() => penOn(path.start)).not.toThrow();   // repeat of the last node ends the pen, which deletes the empty path
   expect(doc.value.paths).toHaveLength(0); expect(UI.pen.value).toBe(null);
   A.redo(); expect(doc.value.paths).toHaveLength(0);         // endPen's delete cleared the redo stack
 });
@@ -198,7 +212,7 @@ test('undo that restores a pen path in progress also restores the Pen tool and D
 test('a region straddling the cell edge is one fill from either side, seeded inside the base cell', () => {
   fresh();
   for (const p of [W(0.75, 0.25), W(1.25, 0.25), W(1.25, 0.75), W(0.75, 0.75)]) A.penClickEmpty(p, false);
-  A.penClickNode(doc.value.paths[0].start); A.endPen();
+  penOn(doc.value.paths[0].start); A.endPen();
   A.setTool('fill');
   expect(A.fillAt({ x: 250, y: 120 })).toBe(true);
   UI.prefs.value = { ...UI.prefs.value, fillColor: '#123456' };
@@ -305,7 +319,7 @@ test('pen: clicking a source segment inserts a shared node and starts a path fro
   A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.9, 0.5), false); A.endPen();
   const body = doc.value.paths[0];
   A.setTool('pen');
-  expect(A.penClickSegment(body.id, 0, base, W(0.3, 0.52), false)).toBe(true);
+  expect(penAt(W(0.3, 0.52), true)).toBe(true);
   const b2 = doc.value.paths[0];
   expect(b2.segments).toHaveLength(2);
   expect(P.nodeUVAbs(doc.value, b2.segments[0].to)).toEqual({ u: expect.closeTo(0.3, 6), v: expect.closeTo(0.5, 6) });
@@ -316,14 +330,17 @@ test('pen: clicking a source segment inserts a shared node and starts a path fro
   expect(doc.value.points).toHaveLength(4);
 });
 
-test('pen: clicking a segment of the path in progress adds a free point instead of splitting it', () => {
+test('pen: clicking a segment of the path in progress splits it there and ends the path (D7)', () => {
   fresh(); A.setTool('pen');
-  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.9, 0.5), false);
+  A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.9, 0.5), false); A.penClickEmpty(W(0.9, 0.9), false);
   const p = doc.value.paths[0];
-  A.penClickSegment(p.id, 0, base, W(0.5, 0.52), false);
+  penAt(W(0.5, 0.52), true);
   expect(doc.value.paths).toHaveLength(1);
-  expect(doc.value.paths[0].segments).toHaveLength(2);                              // appended, not split
-  expect(doc.value.paths[0].segments[1].to.via).toBeUndefined();
+  const nodes = P.pathNodes(doc.value.paths[0]), last = nodes[nodes.length - 1];
+  expect(doc.value.paths[0].id).toBe(p.id);
+  expect(nodes.slice(1, -1).some((n) => n.pointId === last.pointId)).toBe(true);    // split and shared, not a free point
+  expect(last.via).toBeUndefined();
+  expect(UI.pen.value).toBe(null);
 });
 
 test('pen: clicking a clone segment splits the source and starts a via node at the clicked spot; releasing a dragged point on a point merges them', () => {
@@ -334,7 +351,7 @@ test('pen: clicking a clone segment splits the source and starts a via node at t
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 };
   A.setTool('pen');
-  A.penClickSegment(body.id, 0, clone, W(0.8, 0.52), false);                         // the clone runs (0.9,0.5)→(0.6,0.5)
+  penAt(W(0.8, 0.52), true);                         // the clone runs (0.9,0.5)→(0.6,0.5)
   const tail = doc.value.paths[1];
   expect(doc.value.paths[0].segments).toHaveLength(2);                              // source split
   expect(tail.start.via).toEqual(clone);
@@ -354,7 +371,7 @@ test('removing the binding a via node depends on materialises the node where it 
   A.penClickEmpty(W(0.1, 0.3), false); A.penClickEmpty(W(0.4, 0.3), false); A.endPen();
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   A.setTool('pen');
-  A.penClickSegment(body.id, 0, { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 }, W(0.7, 0.31), false);
+  penAt(W(0.7, 0.31), true);
   A.penClickEmpty(W(0.7, 0.8), false); A.endPen();
   const before = P.nodeWorld(doc.value, doc.value.paths[1].start);
   A.removeBinding(b.id);
@@ -370,7 +387,7 @@ test('dragging a via node follows the pointer each move (it never snaps to its o
   A.penClickEmpty(W(0.1, 0.5), false); A.penClickEmpty(W(0.4, 0.5), false); A.endPen();
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   A.setTool('pen');
-  A.penClickSegment(body.id, 0, { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 }, W(0.8, 0.52), false);
+  penAt(W(0.8, 0.52), true);
   A.penClickEmpty(W(0.8, 0.9), false); A.endPen();
   A.setTool('select');
   const ctx = { snapOn: false, hitScale: 1, threshold: 12 }, ev = {} as PointerEvent;
@@ -425,12 +442,12 @@ test('pen: a plain click on a point does not resume an open path whose end is a 
   const { body, clone } = bodyWithHalfTurn();
   A.setTool('pen');
   A.penClickEmpty(W(0.2, 0.8), false);
-  A.penClickSegment(body.id, 0, clone, W(0.8, 0.52), false);                          // tail ends on the clone at (192,120); the split point itself is at (48,120)
+  penAt(W(0.8, 0.52), true);                          // tail ends on the clone at (192,120); the split point itself is at (48,120)
   A.endPen();
   const tail = doc.value.paths[1], split = doc.value.paths[0].segments[0].to;
   expect(tail.segments[0].to).toEqual({ pointId: split.pointId, cell: split.cell, via: clone });
   expect(P.openEndAt(doc.value, split.pointId)).toBe(null);
-  A.penClickNode({ pointId: split.pointId, cell: split.cell });
+  penOn({ pointId: split.pointId, cell: split.cell });
   expect(doc.value.paths).toHaveLength(3);
   expect(UI.pen.value?.pathId).toBe(doc.value.paths[2].id);
   expect(doc.value.paths[2].start).toEqual({ pointId: split.pointId, cell: split.cell });
@@ -441,7 +458,7 @@ test('pen: with a path in progress, clicking a clone anchor appends a via node a
   const { body, clone } = bodyWithHalfTurn();
   A.setTool('pen');
   A.penClickEmpty(W(0.8, 0.8), false);
-  expect(A.penClickNode({ pointId: body.start.pointId, cell: body.start.cell, via: clone })).toBe(true);
+  expect(penOn({ pointId: body.start.pointId, cell: body.start.cell, via: clone })).toBe(true);
   const p = doc.value.paths[1], last = p.segments[p.segments.length - 1].to;
   expect(last).toEqual({ pointId: body.start.pointId, cell: body.start.cell, via: clone });
   const anchor = anchorsWorld(doc.value).find((a) => a.bindingId === clone.bindingId && a.power === 1 && a.pointId === body.start.pointId && a.cell.c === 0 && a.cell.r === 0 && a.via!.cell.c === 0 && a.via!.cell.r === 0)!;
@@ -465,13 +482,13 @@ test('regions: a straight and a curved T-junction drawn with the Pen through pen
   const drawSquare = () => {
     fresh(); A.setTool('pen');
     for (const q of [W(0.25, 0.25), W(0.75, 0.25), W(0.75, 0.75), W(0.25, 0.75)]) A.penClickEmpty(q, false);
-    A.penClickNode(doc.value.paths[0].start); A.endPen();                             // closes; segments: 0 top, 1 right, 2 bottom, 3 left
+    penOn(doc.value.paths[0].start); A.endPen();                             // closes; segments: 0 top, 1 right, 2 bottom, 3 left
     return doc.value.paths[0];
   };
   const chord = (sq: { id: string }, rightClick: { x: number; y: number }) => {
     A.setTool('pen');
-    expect(A.penClickSegment(sq.id, 3, base, W(0.26, 0.5), false)).toBe(true);        // left edge → (60,120)
-    expect(A.penClickSegment(sq.id, 1, base, rightClick, false)).toBe(true);          // right edge (still segment 1)
+    expect(penAt(W(0.26, 0.5), true)).toBe(true);        // left edge → (60,120)
+    expect(penAt(rightClick, true)).toBe(true);          // right edge (still segment 1)
     A.endPen();
   };
   const sq = drawSquare(); chord(sq, W(0.74, 0.5));
@@ -496,7 +513,7 @@ function bodyWithFourFoldAndPower3Tail() {
   expect(cloneMatrices.value.get(b.id)).toHaveLength(3);
   const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 3 };
   A.setTool('pen');
-  A.penClickSegment(body.id, 0, clone, apply(copyMatrix(clone), W(0.25, 0.3)), false);
+  penAt(apply(copyMatrix(clone), W(0.25, 0.3)), true);
   A.penClickEmpty(W(0.8, 0.8), false); A.endPen();
   const tail = doc.value.paths[1];
   expect(tail.start.via).toEqual(clone);
@@ -523,7 +540,7 @@ test('a gesture whose element edits remove a clone slot materialises the via nod
   expect(cloneMatrices.value.get(b.id)).toHaveLength(2);
   const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 2 };
   A.setTool('pen');
-  A.penClickSegment(body.id, 0, clone, apply(copyMatrix(clone), W(0.2, 0.3)), false);
+  penAt(apply(copyMatrix(clone), W(0.2, 0.3)), true);
   A.penClickEmpty(W(0.8, 0.8), false); A.endPen();
   const pre = doc.value, before = P.nodeWorld(pre, pre.paths[1].start);
   expect(pre.paths[1].start.via).toEqual(clone);
@@ -550,15 +567,15 @@ test('pen: a plain click on X resumes a path X → via(X) from its plain end (th
   const body = doc.value.paths[0], b = doc.value.bindings[0];
   const clone = { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 };
   A.setTool('pen');
-  A.penClickSegment(body.id, 0, base, W(0.25, 0.31), false);                            // split node X; the tail starts on plain X
+  penAt(W(0.25, 0.31), true);                            // split node X; the tail starts on plain X
   const X = doc.value.paths[0].segments[0].to;
   expect(X.via).toBeUndefined();
-  A.penClickNode({ pointId: X.pointId, cell: X.cell, via: clone });                    // tail: X → via(X)
+  penOn({ pointId: X.pointId, cell: X.cell, via: clone });                    // tail: X → via(X)
   A.endPen();
   const tail = doc.value.paths[1];
   expect(tail.start).toEqual({ pointId: X.pointId, cell: X.cell });
   expect(tail.segments[0].to).toEqual({ pointId: X.pointId, cell: X.cell, via: clone });
-  expect(A.penClickNode({ pointId: X.pointId, cell: X.cell })).toBe(true);
+  expect(penOn({ pointId: X.pointId, cell: X.cell })).toBe(true);
   expect(UI.pen.value?.pathId).toBe(tail.id);
   const resumed = doc.value.paths[1], last = resumed.segments[resumed.segments.length - 1].to;
   expect(last).toEqual({ pointId: X.pointId, cell: X.cell });                           // the pen continues from plain X
@@ -570,7 +587,7 @@ test('freehand: a stroke started on a via node whose point is a plain open end s
   const { body, clone } = bodyWithHalfTurn();
   A.setTool('pen');
   A.penClickEmpty(W(0.8, 0.8), false);
-  A.penClickNode({ pointId: body.start.pointId, cell: body.start.cell, via: clone });  // tail ends on the clone anchor of the body's start
+  penOn({ pointId: body.start.pointId, cell: body.start.cell, via: clone });  // tail ends on the clone anchor of the body's start
   A.endPen();
   const bodyBefore = doc.value.paths[0];
   expect(P.openEndAt(doc.value, body.start.pointId)).toBe(bodyBefore.id);              // the body's start is a plain open end
@@ -596,19 +613,22 @@ test('fish fixture: the tail drawn by Pen clicks on the body and on its clone in
   doc.value = { ...fish, paths: fish.paths.filter((p) => p.id !== 'path_mum4wgrz_k'), bindings: fish.bindings.filter((b) => b.pathId !== 'path_mum4wgrz_k') };
   A.mutate((d) => { P.pruneOrphans(d); });
   A.setTool('pen');
+  UI.view.value = { ...UI.view.value, zoom: 2 };                                       // the snap threshold follows the zoom
+  UI.activeLayerId.value = body.layerId;                                               // joins are same-layer only (O2)
   // The hit context as pointer.ts builds it. Zoom 2 (the user was zoomed in: the tail's ends missed the body by 0.15 and
-  // 0.31 units): at zoom 1 the second click sits 5.9 px from a clone anchor, which by design outranks the line under it.
+  // 0.31 units). Every click now goes through drawSnap: the second click lands 5.8 units from a clone node, inside the
+  // zoom-2 threshold of 6, and a point outranks the line under it, so the tail ends on that node through the clone.
   const ctx = (): HitContext => ({ layer: UI.layer.value, tool: UI.tool.value, selection: UI.selection.value, pen: UI.pen.value, zoom: 2, hitScale: 1, copies: copies.value, cloneMatrices: cloneMatrices.value, faces: faces.value });
   const click1 = { x: 31.5, y: 42.7 };
   const t1 = hitTest(doc.value, ctx(), click1);
   expect(t1).toMatchObject({ kind: 'segment', pathId: body.id, copy: { cell: { c: 0, r: 0 }, bindingId: null } });
   if (t1?.kind !== 'segment') throw new Error('unreachable');
-  expect(A.penClickSegment(t1.pathId, t1.j, t1.copy, click1, false)).toBe(true);
+  expect(penAt(click1, true)).toBe(true);
   const click2 = { x: -29.5, y: 17.8 };
   const t2 = hitTest(doc.value, ctx(), click2);
   expect(t2).toMatchObject({ kind: 'segment', pathId: body.id, copy: { cell: { c: -1, r: -1 }, bindingId: bodyBinding.id } });
   if (t2?.kind !== 'segment') throw new Error('unreachable');
-  expect(A.penClickSegment(t2.pathId, t2.j, t2.copy, click2, false)).toBe(true);
+  expect(penAt(click2, true)).toBe(true);
   A.endPen();
   expect(doc.value.paths).toHaveLength(2);
   const tail = doc.value.paths[1], body2 = doc.value.paths[0];

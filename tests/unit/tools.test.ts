@@ -1,0 +1,142 @@
+// Tool-level tests: hitTest → the tool's onDown / onMove / onUp, as pointer.ts drives them. The bugs these guard were in
+// the tools' routing, which action-level tests did not reach.
+import { test, expect } from 'vitest';
+import { doc, emptyDoc } from '../../src/state/doc';
+import * as UI from '../../src/state/ui';
+import * as P from '../../src/engine/paths';
+import * as pen from '../../src/interaction/tools/pen';
+import * as freehand from '../../src/interaction/tools/freehand';
+import { hoverAt } from '../../src/interaction/pointer';
+import { reset, beginGesture, endGesture } from '../../src/state/history';
+import { copies, cloneMatrices } from '../../src/state/derived';
+import { hitTest, type HitContext } from '../../src/engine/hit';
+import type { ToolModule, ToolCtx } from '../../src/interaction/tools/common';
+import type { Doc, XY, UV } from '../../src/types';
+
+const ev = (over: Partial<PointerEvent> = {}) => ({ pointerId: 1, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, pointerType: 'mouse', ...over }) as unknown as PointerEvent;
+const ctx: ToolCtx = { snapOn: true, hitScale: 1, threshold: 12 };
+function fresh(tool: 'pen' | 'freehand', build: (d: Doc) => void = () => {}) {
+  reset(); UI.resetUi(); const d = emptyDoc(); build(d); doc.value = d;
+  UI.view.value = { pan: { x: 0, y: 0 }, zoom: 1 }; UI.prefs.value = { ...UI.prefs.value, snap: true }; UI.tool.value = tool; UI.activeLayerId.value = d.layers[0].id;
+}
+function line(d: Doc, pts: UV[], layerId = d.layers[0].id) {
+  const p = P.startPath(d, P.addPoint(d, pts[0]), { color: '#000', weight: 2 }, layerId);
+  for (const uv of pts.slice(1)) P.appendNode(d, p.id, P.addPoint(d, uv));
+  return p;
+}
+const hctx = (): HitContext => ({ layer: UI.layer.value, tool: UI.tool.value, selection: UI.selection.value, pen: UI.pen.value, zoom: 1, hitScale: 1, copies: copies.value, cloneMatrices: cloneMatrices.value, faces: [] });
+const hit = (w: XY) => hitTest(doc.value, hctx(), w);
+// pointer.ts: hover, then press, optional moves (the gesture opens on the first), release.
+function gesture(tool: ToolModule, pts: XY[], e = ev()) {
+  hoverAt(pts[0], hit(pts[0]), ctx);
+  tool.onDown(hit(pts[0]), pts[0], e, ctx);
+  const d = UI.drag.value;
+  if (!d) return;
+  for (const p of pts.slice(1)) { if (!d.moved) { d.moved = true; beginGesture(); } tool.onMove(d, p, e, ctx); }
+  UI.drag.value = null;
+  try { tool.onUp(d, pts[pts.length - 1], e, ctx); } finally { endGesture(); }
+}
+const click = (w: XY) => gesture(pen, [w]);
+const newest = () => doc.value.paths[doc.value.paths.length - 1];
+const along = (from: XY, to: XY, n = 12): XY[] => Array.from({ length: n + 1 }, (_, i) => ({ x: from.x + ((to.x - from.x) * i) / n, y: from.y + ((to.y - from.y) * i) / n }));
+
+// --- A / C1: Pen and Freehand go through drawSnap
+
+test('Pen: a click on another layer\'s line does not split it; the new node is location only, on the line', () => {
+  let hostId = '';
+  fresh('pen', (d) => { d.layers.push({ id: 'L2', name: 'Layer 2' }); hostId = line(d, [{ u: 0.2, v: 0.5 }, { u: 0.8, v: 0.5 }], 'L2').id; });
+  expect(hit({ x: 120, y: 122 })?.kind).toBe('segment');
+  click({ x: 120, y: 122 });
+  const host = P.getPath(doc.value, hostId)!, p = UI.pen.value && P.getPath(doc.value, UI.pen.value.pathId);
+  expect(host.segments).toHaveLength(1);
+  expect(p).toBeTruthy();
+  expect(p!.layerId).toBe(doc.value.layers[0].id);
+  expect(P.pathNodes(host).some((n) => n.pointId === p!.start.pointId)).toBe(false);
+  const at = P.nodeWorld(doc.value, p!.start);
+  expect(at.x).toBeCloseTo(120, 6); expect(at.y).toBeCloseTo(120, 6);
+});
+
+test('Freehand: a stroke starting on another layer\'s endpoint is a new path on the active layer; the other path is unchanged', () => {
+  let otherId = '';
+  fresh('freehand', (d) => { d.layers.push({ id: 'L2', name: 'Layer 2' }); otherId = line(d, [{ u: 0.2, v: 0.5 }, { u: 0.5, v: 0.5 }], 'L2').id; });
+  expect(hit({ x: 49, y: 121 })?.kind).toBe('point');
+  gesture(freehand, along({ x: 49, y: 121 }, { x: 60, y: 200 }));
+  const other = P.getPath(doc.value, otherId)!, p = newest();
+  expect(other.segments).toHaveLength(1);
+  expect(p.id).not.toBe(otherId);
+  expect(p.layerId).toBe(doc.value.layers[0].id);
+  expect(P.pathNodes(other).some((n) => n.pointId === p.start.pointId)).toBe(false);
+  const at = P.nodeWorld(doc.value, p.start);
+  expect(at.x).toBeCloseTo(48, 6); expect(at.y).toBeCloseTo(120, 6);
+});
+
+test('Freehand: a stroke starting on an open end of a path on the active layer extends that path', () => {
+  let id = '';
+  fresh('freehand', (d) => { id = line(d, [{ u: 0.2, v: 0.5 }, { u: 0.5, v: 0.5 }]).id; });
+  gesture(freehand, along({ x: 121, y: 121 }, { x: 130, y: 220 }));
+  expect(doc.value.paths).toHaveLength(1);
+  expect(P.getPath(doc.value, id)!.segments.length).toBeGreaterThan(1);
+});
+
+// --- A / I1: the path in progress is in its own targets only
+
+test('Pen: a click near its own start closes the path and ends the Pen', () => {
+  fresh('pen');
+  click({ x: 60, y: 60 }); click({ x: 180, y: 60 }); click({ x: 180, y: 180 });   // on the 30 px grid
+  const id = UI.pen.value!.pathId;
+  click({ x: 63, y: 62 });
+  expect(P.isClosed(P.getPath(doc.value, id)!)).toBe(true);
+  expect(UI.pen.value).toBe(null);
+});
+
+test('Pen: a click on its own earlier segment splits it there and ends the Pen', () => {
+  fresh('pen');
+  click({ x: 60, y: 60 }); click({ x: 180, y: 60 }); click({ x: 180, y: 180 });
+  const id = UI.pen.value!.pathId;
+  click({ x: 105, y: 63 });
+  const nodes = P.pathNodes(P.getPath(doc.value, id)!), last = nodes[nodes.length - 1];
+  expect(nodes.slice(1, -1).some((n) => n.pointId === last.pointId)).toBe(true);
+  expect(P.nodeWorld(doc.value, last).y).toBeCloseTo(60, 6);
+  expect(UI.pen.value).toBe(null);
+});
+
+test('Pen: a click on its own mirror clone\'s start is location only, never a via node', () => {
+  fresh('pen', (d) => { const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 }); d.newPathGroups = [[el.id]]; });
+  click({ x: 60, y: 60 }); click({ x: 90, y: 150 });
+  const id = UI.pen.value!.pathId;
+  expect(hit({ x: 178, y: 61 })?.kind).toBe('canchor');           // the clone's start, (180, 60)
+  click({ x: 178, y: 61 });
+  const p = P.getPath(doc.value, id)!, last = P.pathNodes(p)[P.pathNodes(p).length - 1];
+  expect(p.segments).toHaveLength(2);
+  expect(last.via).toBeUndefined();
+  expect(last.pointId).not.toBe(p.start.pointId);
+  const at = P.nodeWorld(doc.value, last);
+  expect(at.x).toBeCloseTo(180, 6); expect(at.y).toBeCloseTo(60, 6);
+});
+
+// --- A / I2: the hint shows over lines and points
+
+test('Pen: the snap hint shows while hovering over a line', () => {
+  fresh('pen', (d) => { line(d, [{ u: 0.2, v: 0.5 }, { u: 0.8, v: 0.5 }]); });
+  const w = { x: 120, y: 122 };
+  hoverAt(w, hit(w), ctx);
+  expect(UI.hover.value?.kind).toBe('segment');
+  expect(UI.snapHint.value?.at.y).toBeCloseTo(120, 6);
+});
+
+test('Freehand: extending a path, an end on that path\'s own mirror clone start is location only (no via node)', () => {
+  let id = '';
+  fresh('freehand', (d) => {
+    const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });   // x = 120
+    const p = line(d, [{ u: 0.25, v: 0.25 }, { u: 0.25, v: 0.75 }]);                 // (60,60) → (60,180); its clone starts at (180,60)
+    P.addBinding(d, p.id, [[el.id]]);
+    id = p.id;
+  });
+  gesture(freehand, [...along({ x: 61, y: 181 }, { x: 100, y: 220 }), ...along({ x: 100, y: 220 }, { x: 130, y: 61 }).slice(1), ...along({ x: 130, y: 61 }, { x: 178, y: 61 }).slice(1)]);
+  expect(doc.value.paths).toHaveLength(1);
+  const nodes = P.pathNodes(P.getPath(doc.value, id)!), last = nodes[nodes.length - 1];
+  expect(nodes.length).toBeGreaterThan(2);
+  expect(last.via).toBeUndefined();
+  const at = P.nodeWorld(doc.value, last);
+  expect(at.x).toBeCloseTo(180, 6); expect(at.y).toBeCloseTo(60, 6);
+});
