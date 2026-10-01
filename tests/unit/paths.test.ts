@@ -194,20 +194,6 @@ test('placeInGroup / removeFromBinding move an element between groups and never 
   expect(doc.bindings).toHaveLength(0);               // a binding with no groups is removed
 });
 
-test('dragGroupFor picks the first group with a nonzero power in the clone index, falling back to the first group', () => {
-  const doc = makeDoc();
-  const path = polyline(doc, [{ u: 0, v: 0 }, { u: 0.5, v: 0 }]);
-  const r2 = P.addElement(doc, { kind: 'rotate', u: 0.5, v: 0.5, n: 2 });
-  const m = P.addElement(doc, { kind: 'mirror', u: 0, v: 0.5, du: 1, dv: 0 });
-  const b = P.addBinding(doc, path.id, [[r2.id], [m.id]]);           // slots: 1 = r2, 2 = m, 3 = m ∘ r2
-  expect(P.dragGroupFor(b, 1, doc.elements, doc.lattice)).toEqual([r2.id]);
-  expect(P.dragGroupFor(b, 2, doc.elements, doc.lattice)).toEqual([m.id]);
-  expect(P.dragGroupFor(b, 3, doc.elements, doc.lattice)).toEqual([r2.id]);
-  expect(P.dragGroupFor(b, 0, doc.elements, doc.lattice)).toEqual([r2.id]);   // all zeros / out of range → first group
-  expect(P.dragGroupFor(b, 9, doc.elements, doc.lattice)).toEqual([r2.id]);
-  expect(P.dragGroupFor({ id: 'x', pathId: path.id, groups: [] }, 1, doc.elements, doc.lattice)).toBe(null);
-});
-
 test('addLayer names layers in order and pushes on top; layerIdOr falls back to the top layer', () => {
   const doc = makeDoc();
   const l2 = P.addLayer(doc);

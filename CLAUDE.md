@@ -31,7 +31,7 @@ Everything in the document is in lattice `(u, v)` coordinates; world position is
 - **Elements** are the three primitive isometries: `translate {u, v}`, `mirror {u, v, du, dv}` (centre and lattice direction), `rotate {u, v, n}` (1/n turn). There is no glide kind: a glide is a group `[mirror, translate]`. The lattice is not an element.
 - **Bindings** `{ pathId, groups: string[][] }` are ordered lists of groups. A group composes its elements left to right; its own clones are the powers of that composite up to the first lattice translation (cap 12, `open` past it). The binding's clones are the product across groups: `orbit()` in `src/engine/transform.ts` returns `matrices[i]` for clone index `i + 1` (mixed-radix over the groups, stable when a group is appended) or `null` for a clone that coincides with the source or a lower index modulo the lattice; truncated at `CLONE_CAP` (48). Every consumer skips nulls. `doc.newPathGroups` is the binding every new path receives; `O` / `M` / `T` append a one-element group to it and to the selected path's first binding.
 - **Fills** are seed points with a `layerId`; `src/engine/regions.ts` builds a planar arrangement of every copy in the 3×3 window and each seed paints the face containing it (faces carry holes; even-odd rendering). Seeds are placed at the face centroid when it lies inside. A region is identified across its window copies by `sameRegion`.
-- **Copies.** Everything on screen is a `Copy { cell, bindingId, power }` of a path with matrix `cellMatrix ∘ cloneMatrix`; `power` is the clone index. Selection carries the copy the user clicked; handles render there and edits map back through the copy's inverse.
+- **Copies.** Everything on screen is a `Copy { cell, bindingId, power }` of a path with matrix `cellMatrix ∘ cloneMatrix`; `power` is the clone index. Selection carries the copy the user clicked; handles render there and edits map back through the copy's inverse. Dragging the body of any copy (original, repeat or clone) moves the original so the grabbed copy follows the pointer; the snap is measured at that copy (`bodyTargets(..., G)`) and joins happen at the pre-image. Elements move only by their own handles.
 
 ## Architecture
 
@@ -53,7 +53,6 @@ Everything in the document is in lattice `(u, v)` coordinates; world position is
 - Clones are not composed across bindings (no group closure).
 - Collinear overlapping edges that are not identical are not split against each other.
 - Only the base cell's copies are hit-tested for segments in the visible cells; points are hit in the 3×3 window.
-- Clone-body drags move the first element of the first group that contributes to the dragged copy (the first group with a nonzero power in the copy's clone index); with other non-translation groups contributing, the copy follows in the transformed frame.
 - Layer rename, reorder, hide and lock are not in this chrome (Project 2).
 - A traced stretch is fitted like the rest of the stroke, so on a curve it follows the line within the fitting tolerance rather than copying it exactly, and the fitted curve can kink where it peels off (spec D12, D13).
 - Regions still read every path on every layer, fills are still seeds, and existing documents may share points across layers; the layers, regions and fills plan changes these.

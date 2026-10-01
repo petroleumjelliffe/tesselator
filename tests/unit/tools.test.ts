@@ -12,7 +12,7 @@ import { STR } from '../../src/strings';
 import { CONFIG } from '../../src/config';
 import { restore } from '../../src/state/persist';
 import { hoverAt } from '../../src/interaction/pointer';
-import { reset, beginGesture, endGesture } from '../../src/state/history';
+import { reset, beginGesture, endGesture, abortGesture, undo } from '../../src/state/history';
 import { copies, cloneMatrices } from '../../src/state/derived';
 import { hitTest, type HitContext } from '../../src/engine/hit';
 import type { ToolModule, ToolCtx } from '../../src/interaction/tools/common';
@@ -526,4 +526,98 @@ test('Freehand: hover next to an open end, then a ⌘ stroke from the same point
   expect(P.getPath(doc.value, id)!.segments).toHaveLength(1);
   const at = P.nodeWorld(doc.value, newest().start);
   expect(at.x).toBeCloseTo(123, 6); expect(at.y).toBeCloseTo(122, 6);
+});
+
+// --- B / E5a: dragging the body of a clone or repeat moves the original; transforms never move
+
+// A: (48,48) → (72,72). `kind` picks its one-element binding: translate (1/2, 0) puts the clone at (168,48) → (192,72);
+// a mirror about x = 120 puts it at (192,48) → (168,72).
+function bodyScene(kind: 'translate' | 'mirror') {
+  let id = '';
+  fresh('freehand', (d) => {
+    const el = kind === 'translate' ? P.addElement(d, { kind: 'translate', u: 0.5, v: 0 }) : P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+    id = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.3, v: 0.3 }]).id; P.addBinding(d, id, [[el.id]]);
+  });
+  UI.tool.value = 'select'; UI.selection.value = null;
+  const path = () => P.getPath(doc.value, id)!;
+  return { id, start: () => P.nodeWorld(doc.value, path().start), end: () => P.nodeWorld(doc.value, path().segments[0].to) };
+}
+
+test('E5a: dragging a translation clone\'s body moves the original; elements and copies are unchanged', () => {
+  const { start, end } = bodyScene('translate');
+  const els = structuredClone(doc.value.elements), n = copies.value.length;
+  const t = hit({ x: 180, y: 60 });
+  expect(t?.kind).toBe('segment'); expect(t?.kind === 'segment' && t.copy.bindingId).toBeTruthy();
+  selectDrag([{ x: 180, y: 60 }, { x: 195, y: 65 }, { x: 210, y: 70 }], noGrid);
+  expect(doc.value.elements).toEqual(els);
+  expect(copies.value.length).toBe(n);
+  expect(start().x).toBeCloseTo(78, 6); expect(start().y).toBeCloseTo(58, 6);
+  expect(end().x).toBeCloseTo(102, 6); expect(end().y).toBeCloseTo(82, 6);
+});
+
+test('E5a: dragging a mirror clone\'s body +30 px in x moves the original −30 px; the clone follows the pointer', () => {
+  const { start, end } = bodyScene('mirror');
+  const els = structuredClone(doc.value.elements);
+  const t = hit({ x: 180, y: 60 });
+  expect(t?.kind === 'segment' && t.copy.bindingId).toBeTruthy();
+  selectDrag([{ x: 180, y: 60 }, { x: 195, y: 60 }, { x: 210, y: 60 }], noGrid);
+  expect(doc.value.elements).toEqual(els);
+  expect(start().x).toBeCloseTo(18, 6); expect(start().y).toBeCloseTo(48, 6);
+  expect(end().x).toBeCloseTo(42, 6); expect(end().y).toBeCloseTo(72, 6);
+  // the clone's start is the mirror of the original's: 240 − 18 = 222, i.e. 30 px right of 192
+  expect(240 - start().x).toBeCloseTo(222, 6);
+});
+
+test('E5a: dragging a repeat at cell {1,0} moves the original by the same delta', () => {
+  let id = '';
+  fresh('freehand', (d) => { id = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.3, v: 0.3 }]).id; });
+  UI.tool.value = 'select'; UI.selection.value = null;
+  const t = hit({ x: 300, y: 60 });
+  expect(t?.kind === 'segment' && t.copy.cell.c).toBe(1);
+  selectDrag([{ x: 300, y: 60 }, { x: 315, y: 65 }, { x: 330, y: 70 }], noGrid);
+  const s = P.nodeWorld(doc.value, P.getPath(doc.value, id)!.start);
+  expect(s.x).toBeCloseTo(78, 6); expect(s.y).toBeCloseTo(58, 6);
+});
+
+test('E5a: a clone dragged with its start 4 px from a tile corner lands on the corner; the hint shows at the clone', () => {
+  const { start } = bodyScene('translate');
+  // the clone's start (168,48) moves by (69.6, −44.8) to (237.6, 3.2), 4 px from the corner (240, 0)
+  const pts = [{ x: 180, y: 60 }, { x: 220, y: 30 }, { x: 249.6, y: 15.2 }];
+  select.onDown(hit(pts[0]), pts[0], ev(), noGrid);
+  const d = UI.drag.value!;
+  d.moved = true; beginGesture();
+  for (const p of pts.slice(1)) select.onMove(d, p, ev(), noGrid);
+  const hint = UI.snapHint.value;
+  UI.drag.value = null;
+  select.onUp(d, pts[2], ev(), noGrid); endGesture();
+  expect(hint?.at.x).toBeCloseTo(240, 6); expect(hint?.at.y).toBeCloseTo(0, 6);
+  expect(start().x).toBeCloseTo(120, 6); expect(start().y).toBeCloseTo(0, 6);   // the original's start; its clone is at (240, 0)
+});
+
+test('E5a: one undo restores everything after a clone body drag', () => {
+  bodyScene('mirror');
+  const before = structuredClone(doc.value);
+  selectDrag([{ x: 180, y: 60 }, { x: 200, y: 70 }, { x: 215, y: 90 }]);
+  expect(doc.value).not.toEqual(before);
+  undo();
+  expect(doc.value).toEqual(before);
+  // Esc mid-drag (abortGesture) restores everything too
+  select.onDown(hit({ x: 180, y: 60 }), { x: 180, y: 60 }, ev(), ctx);
+  const d = UI.drag.value!;
+  d.moved = true; beginGesture();
+  select.onMove(d, { x: 215, y: 90 }, ev(), ctx);
+  expect(doc.value).not.toEqual(before);
+  UI.drag.value = null; abortGesture();
+  expect(doc.value).toEqual(before);
+});
+
+test('E5a: a clone body dropped with its end on a same-layer clone node joins the pre-image in the original\'s frame', () => {
+  const { aId, x } = cloneScene(true);                                                // A's clone (192,48) → (192,120); Q's clone starts at (180,180)
+  UI.selection.value = null;
+  const t = hit({ x: 192, y: 84 });
+  expect(t?.kind === 'segment' && t.copy.bindingId).toBeTruthy();
+  selectDrag([{ x: 192, y: 84 }, { x: 186, y: 120 }, { x: 181, y: 146 }], noGrid);   // the clone's end comes to (181,182)
+  const end = P.getPath(doc.value, aId)!.segments[0].to;
+  expect(end.pointId).toBe(x);                                                       // A's source end is Q's start (60,180)
+  expect(end.via).toBeUndefined();
 });

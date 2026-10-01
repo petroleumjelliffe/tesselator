@@ -1,7 +1,7 @@
 // Draft mutations. Every function takes a Doc draft and mutates it; nothing here touches UI state.
 import { makeId } from '../ids';
 import { toWorld, toUV, cellOf, nodeUV } from './lattice';
-import { IDENTITY, apply, orbit, clonePowers, cellMatrix, compose, invert, type Orbit } from './transform';
+import { IDENTITY, apply, orbit, cellMatrix, compose, invert, type Orbit } from './transform';
 import { CONFIG } from '../config';
 import type { Doc, UV, XY, Cell, Node, Segment, Path, Element, Binding, Fill, Matrix, Style, Box, DocLayer, Lattice, Copy } from '../types';
 
@@ -469,14 +469,6 @@ export function removeFromBinding(doc: Doc, bindingId: string, elementId: string
 
 export function removeBinding(doc: Doc, id: string): void {
   withViaRepair(doc, () => { doc.bindings = doc.bindings.filter((b) => b.id !== id); });
-}
-
-// The group a drag of clone `power`'s body should drive: the first group with a nonzero power in the copy's clone
-// index (moving its first element moves that copy), or the first group when the index decodes to all zeros.
-export function dragGroupFor(b: Binding, power: number, elements: Element[], lat: Lattice, ownCap = 12): string[] | null {
-  if (!b.groups.length) return null;
-  const gi = clonePowers(b.groups, elements, lat, power, ownCap).findIndex((p) => p > 0);
-  return b.groups[gi >= 0 ? gi : 0];
 }
 
 export function cloneMatrices(doc: Doc, bindingId: string, ownCap = CONFIG.ORBIT_CAP, cloneCap = CONFIG.CLONE_CAP): Orbit {

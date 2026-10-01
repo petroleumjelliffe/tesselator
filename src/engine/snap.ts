@@ -338,17 +338,20 @@ export function windowCopies(doc: Doc, pathId: string): { copy: Copy; M: Matrix 
   return out;
 }
 
-// A body drag's inputs, taken once at drag start: the moving ends (every node of a closed path) in the source frame, the
-// path's own clone copies for SN3 meets, and every point that moves with the path (its own and those of paths that share
-// them), whose targets and adjacent lines are excluded.
-export function bodyTargets(doc: Doc, set: TargetSet, pathId: string): BodyTargets | null {
+// A body drag's inputs, taken once at drag start: the moving ends (every node of a closed path) as the grabbed copy shows
+// them, the path's other copies for SN3 meets, and every point that moves with the path (its own and those of paths that
+// share them), whose targets and adjacent lines are excluded. G is the grabbed copy's base-cell matrix (identity for the
+// original or a repeat). E5a: every copy moves with the original, so the snap is measured at G: an end there is G·p and a
+// copy K of the source is K∘G⁻¹ relative to it. Seen from a clone, the original and its repeats are copies too.
+export function bodyTargets(doc: Doc, set: TargetSet, pathId: string, G: Matrix = [1, 0, 0, 1, 0, 0]): BodyTargets | null {
   const path = getPath(doc, pathId);
   if (!path) return null;
   const nodes = pathNodes(path), Pw = pathWorld(doc, path);
   const idx = isClosed(path) ? nodes.slice(0, -1).map((_, i) => i) : [0, nodes.length - 1];
-  const moving = idx.filter((i) => !nodes[i].via).map((i) => ({ index: i, p: Pw[i] }));
+  const moving = idx.filter((i) => !nodes[i].via).map((i) => ({ index: i, p: apply(G, Pw[i]) }));
+  const Gi = invert(G), linear = Math.abs(G[0] - 1) + Math.abs(G[1]) + Math.abs(G[2]) + Math.abs(G[3] - 1) > 1e-9;
   const own: BodyTargets['own'] = [];
-  for (const { copy, M } of windowCopies(doc, pathId)) if (copy.bindingId) for (const m of moving) own.push({ K: M, p: m.p, index: m.index });
+  for (const { copy, M } of windowCopies(doc, pathId)) if (copy.bindingId || linear) for (const m of moving) own.push({ K: compose(M, Gi), p: m.p, index: m.index });
   return { pathId, moving, own, exclude: new Set(nodes.map((n) => n.pointId)), set };
 }
 
