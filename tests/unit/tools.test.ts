@@ -185,3 +185,70 @@ test('Freehand: Alt-tracing a line and releasing 16 px off it ends on the line; 
   expect(end.x).toBeCloseTo(150, 6);
   expect(P.getPath(doc.value, id)!.segments).toHaveLength(1);
 });
+
+// --- D / I4: clone-anchor and several-point drags behave as node drags
+
+function selectDrag(pts: XY[]) {
+  select.onDown(hit(pts[0]), pts[0], ev(), ctx);
+  const d = UI.drag.value!;
+  d.moved = true; beginGesture();
+  for (const p of pts.slice(1)) select.onMove(d, p, ev(), ctx);
+  UI.drag.value = null;
+  select.onUp(d, pts[pts.length - 1], ev(), ctx); endGesture();
+}
+
+test('Select: dragging several points with nothing near snaps the grabbed one to the grid', () => {
+  let a = '', b = '';
+  fresh('freehand', (d) => { const p = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.3, v: 0.3 }]); a = p.start.pointId; b = p.segments[0].to.pointId; });   // (48,48), (72,72)
+  UI.tool.value = 'select'; UI.selection.value = { kind: 'points', ids: [a, b] };
+  expect(hit({ x: 48, y: 48 })?.kind).toBe('point');
+  selectDrag([{ x: 48, y: 48 }, { x: 80, y: 50 }, { x: 101, y: 52 }]);
+  const pa = P.nodeWorld(doc.value, { pointId: a, cell: { c: 0, r: 0 } }), pb = P.nodeWorld(doc.value, { pointId: b, cell: { c: 0, r: 0 } });
+  expect(pa.x).toBeCloseTo(90, 6); expect(pa.y).toBeCloseTo(60, 6);                // the grid point nearest (101, 52)
+  expect(pb.x).toBeCloseTo(114, 6); expect(pb.y).toBeCloseTo(84, 6);               // moved rigidly
+});
+
+test('Select: several points dragged with the grabbed one onto a same-layer node join there', () => {
+  let a = '', b = '', x = '';
+  fresh('freehand', (d) => {
+    const p = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.3, v: 0.3 }]); a = p.start.pointId; b = p.segments[0].to.pointId;
+    x = line(d, [{ u: 0.5, v: 0.25 }, { u: 0.7, v: 0.25 }]).start.pointId;            // a node at (120, 60)
+  });
+  UI.tool.value = 'select'; UI.selection.value = { kind: 'points', ids: [a, b] };
+  selectDrag([{ x: 48, y: 48 }, { x: 100, y: 55 }, { x: 117, y: 58 }]);
+  expect(doc.value.paths[0].start.pointId).toBe(x);
+  expect(doc.value.points.some((q) => q.id === a)).toBe(false);
+});
+
+// Mirror x = 120. A: (48,48) → (48,120), its clone ends at (192,120). Q: (60,180) → (60,216), its clone starts at (180,180).
+function cloneScene(bindQ: boolean) {
+  let aId = '', aBind = '', x = '';
+  fresh('freehand', (d) => {
+    const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });
+    const a = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.2, v: 0.5 }]); aId = a.id; aBind = P.addBinding(d, a.id, [[el.id]]).id;
+    const q = line(d, [{ u: 0.25, v: 0.75 }, { u: 0.25, v: 0.9 }]); x = q.start.pointId;
+    if (bindQ) P.addBinding(d, q.id, [[el.id]]);
+    else P.movePoint(d, x, 0.75, 0.75);                                                // Q unbound, starting at (180,180) itself
+  });
+  UI.tool.value = 'select';
+  UI.selection.value = { kind: 'path', id: aId, copy: { cell: { c: 0, r: 0 }, bindingId: aBind, power: 1 } };
+  return { aId, x };
+}
+
+test('Select: a clone-anchor drag released on a same-layer node joins through the clone\'s frame', () => {
+  const { aId, x } = cloneScene(true);
+  expect(hit({ x: 192, y: 120 })?.kind).toBe('canchor');
+  selectDrag([{ x: 192, y: 120 }, { x: 185, y: 160 }, { x: 181, y: 178 }]);          // onto Q's clone start (180,180)
+  const end = P.getPath(doc.value, aId)!.segments[0].to;
+  expect(end.pointId).toBe(x);                                                       // A's source end is Q's start (60,180)
+  expect(end.via).toBeUndefined();
+});
+
+test('Select: a clone-anchor drop whose pre-image is no node is location only', () => {
+  const { aId, x } = cloneScene(false);
+  selectDrag([{ x: 192, y: 120 }, { x: 185, y: 160 }, { x: 181, y: 178 }]);          // onto Q's raw start (180,180): nothing at (60,180)
+  const end = P.getPath(doc.value, aId)!.segments[0].to;
+  expect(end.pointId).not.toBe(x);
+  const at = P.nodeWorld(doc.value, end);
+  expect(at.x).toBeCloseTo(60, 6); expect(at.y).toBeCloseTo(180, 6);
+});

@@ -12,16 +12,31 @@ import { pickSnap, gridResult, pointCopyMatrices, ownFixedCands, NODE_ONLY, body
 import { CONFIG } from '../../config';
 import { STR } from '../../strings';
 import { startDrag, cloneBodyMove, type ToolModule, type ToolCtx } from './common';
-import type { HitTarget, XY, Drag, Copy, Cell, Matrix, TargetSet, SnapResult, Node } from '../../types';
+import type { HitTarget, XY, Drag, Copy, Cell, Matrix, TargetSet, SnapResult, Node, SnapCat } from '../../types';
 
 const sameCopy = (a: Copy, b: Copy) => a.cell.c === b.cell.c && a.cell.r === b.cell.r && a.bindingId === b.bindingId && a.power === b.power;
 
 // Snap for a node being dragged: every target except the point itself and lines touching it, plus its own clones resolved
 // to their axis or centre (SN3), the held snap, and the grid as a fallback. S maps the point's base-cell position to the drag.
-function nodeSnap(targets: TargetSet, pointId: string, S: Matrix, w: XY, ctx: ToolCtx): SnapResult | null {
+// `also` names further points that move with it (a several-point drag), which are not targets either.
+function nodeSnap(targets: TargetSet, pointId: string, S: Matrix, w: XY, ctx: ToolCtx, also: string[] = []): SnapResult | null {
   const extra = ctx.snapOn ? ownFixedCands(S, pointCopyMatrices(doc.value, pointId), w, ctx.threshold) : [];
-  const s = pickSnap(targets, w, ctx.threshold, { extra, sticky: UI.snapSticky.value, excludePoints: new Set([pointId]), cats: ctx.snapOn ? undefined : NODE_ONLY });
+  const s = pickSnap(targets, w, ctx.threshold, { extra, sticky: UI.snapSticky.value, excludePoints: new Set([pointId, ...also]), cats: ctx.snapOn ? undefined : NODE_ONLY });
   return s ?? (ctx.snapOn ? gridResult(w, doc.value.lattice, UI.prefs.value.gridDivisions) : null);
+}
+
+// A node dragged through a copy (a clone anchor, or a point picked through a clone) is moved in its source frame, so
+// a drop joins what lies under it in that frame: the node or line at M⁻¹(at), which the instance shows exactly on the
+// snapped target. Where nothing is there (the target cannot be expressed in that frame, e.g. a plain node whose
+// pre-image is no copy of anything), the drop stays location only. Same-layer rule as every join (joinDroppedPoint).
+// `targets` are the drag's own, taken before the point moved: the moved point now sits on the pre-image, and targets
+// built from the current document would have merged the node there into its own (excluded) target.
+const JOINABLE: ReadonlySet<SnapCat> = new Set<SnapCat>(['node', 'line']);
+function joinThrough(targets: TargetSet, M: Matrix, pointId: string, cell: Cell, s: SnapResult, also: string[] = []): void {
+  if (s.hit.kind !== 'node' && s.hit.kind !== 'curve') return;
+  const src = apply(invert(M), s.at);
+  const r = pickSnap(targets, src, 1e-6 * (1 + Math.hypot(src.x, src.y)), { excludePoints: new Set([pointId, ...also]), cats: JOINABLE });
+  if (r && (r.hit.kind === 'node' || r.hit.kind === 'curve')) A.joinDroppedPoint(pointId, cell, r.hit);
 }
 
 // Select tool with a path selected: the first move of a drag on one of its nodes unlinks it from other paths first.
@@ -43,7 +58,7 @@ export function pointDown(t: Extract<HitTarget, { kind: 'point' }>, w: XY, e: Po
     const s = UI.selection.value, copies = s && s.kind === 'points' ? s.copies ?? {} : {};
     const pt = P.getPoint(doc.value, t.pointId)!, rawAt = A.worldOf({ u: pt.u + t.cell.c, v: pt.v + t.cell.r });
     const at = t.via ? apply(P.viaMatrix(doc.value, t.via), rawAt) : rawAt;
-    startDrag(e, t, w, hitScale, { kind: 'pts', ids: selPts.slice(), startPos: P.snapshotPositions(doc.value, selPts), copies, targets: snapTargets.value, grab: { pointId: t.pointId, at } });
+    startDrag(e, t, w, hitScale, { kind: 'pts', ids: selPts.slice(), startPos: P.snapshotPositions(doc.value, selPts), copies, targets: snapTargets.value, grab: { pointId: t.pointId, cell: t.cell, via: t.via, at }, snap: null });
     return;
   }
   startDrag(e, t, w, hitScale, { kind: 'pt', pointId: t.pointId, cell: t.cell, via: t.via, targets: snapTargets.value, snap: null });
@@ -103,11 +118,12 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
     case 'pts': {
       if (!d.moved) return;
       let delta = { x: w.x - d.start.x, y: w.y - d.start.y };
-      if (d.grab) {
-        const raw = { x: d.grab.at.x + delta.x, y: d.grab.at.y + delta.y };
-        const s = pickSnap(d.targets, raw, ctx.threshold, { sticky: UI.snapSticky.value, excludePoints: new Set(d.ids), cats: ctx.snapOn ? undefined : NODE_ONLY });
-        UI.snapSticky.value = s?.id ?? null; UI.snapHint.value = A.hintOf(s);
-        if (s) delta = { x: s.at.x - d.grab.at.x, y: s.at.y - d.grab.at.y };
+      if (d.grab) {   // spec §6.3: the grabbed node snaps as one node drag (SN3, grid fallback); the others follow rigidly
+        const g = d.grab, raw = { x: g.at.x + delta.x, y: g.at.y + delta.y }, lat = doc.value.lattice;
+        const S = g.via ? compose(P.viaMatrix(doc.value, g.via), cellMatrix(g.cell, lat)) : cellMatrix(g.cell, lat);
+        const s = nodeSnap(d.targets, g.pointId, S, raw, ctx, d.ids);
+        d.snap = s; UI.snapSticky.value = s?.id ?? null; UI.snapHint.value = A.hintOf(s && s.cat !== 'grid' ? s : null);
+        if (s) delta = { x: s.at.x - g.at.x, y: s.at.y - g.at.y };
       }
       const groups = new Map<string, { ids: string[]; M: Matrix | null }>();
       for (const id of d.ids) {
@@ -199,6 +215,13 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
     return;
   }
   if (d.kind === 'pt' && d.moved && d.snap && !d.via) { A.joinDroppedPoint(d.pointId, d.cell, d.snap.hit); return; }
+  if (d.kind === 'canchor' && d.moved && d.snap) { joinThrough(d.targets, copyMatrix(d.copy), d.pointId, d.cell, d.snap); return; }
+  if (d.kind === 'pts' && d.moved && d.snap && d.grab) {
+    const g = d.grab, others = d.ids.filter((id) => id !== g.pointId);
+    if (g.via) joinThrough(d.targets, P.viaMatrix(doc.value, g.via), g.pointId, g.cell, d.snap, others);
+    else if (d.snap.hit.kind === 'node' || d.snap.hit.kind === 'curve') A.joinDroppedPoint(g.pointId, g.cell, d.snap.hit);
+    return;
+  }
   if (d.kind === 'body' && d.moved && d.snap) { A.joinDroppedNode(d.pathId, d.snap.nodeIndex, d.snap.res.hit); return; }
   if (d.moved || !d.target) return;
   const t = d.target, s = UI.selection.value;
