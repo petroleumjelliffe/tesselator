@@ -214,6 +214,21 @@ export function joinDroppedPoint(pointId: string, cell: Cell, hit: SnapHit): boo
   return true;
 }
 
+// Give the path its own point for one of its nodes (a plain node on `pointId`, or its via node through `via`), so a drag
+// moves only this path. Null when nothing was shared.
+export function unlinkNode(pathId: string, pointId: string, via?: Copy): Node | null {
+  let out: Node | null = null;
+  mutate((d) => {
+    const path = P.getPath(d, pathId);
+    const node = path && P.pathNodes(path).find((n) => n.pointId === pointId && (via
+      ? !!n.via && n.via.bindingId === via.bindingId && n.via.power === via.power && n.via.cell.c === via.cell.c && n.via.cell.r === via.cell.r
+      : !n.via));
+    out = node ? P.detachFromPath(d, pathId, node) : null;
+    return out ? undefined : false;
+  });
+  return out;
+}
+
 // A body drag released on a snap joins the snapped end (same layer only). Corners, axes and the path's own copies join nothing.
 export function joinDroppedNode(pathId: string, nodeIndex: number, hit: SnapHit): boolean {
   if (hit.kind !== 'node' && hit.kind !== 'curve') return false;

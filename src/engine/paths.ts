@@ -294,6 +294,32 @@ export function mergeIntoNode(doc: Doc, fromId: string, fromCell: Cell, target: 
     : n));
 }
 
+// Give path `pathId` its own point for `node`, so a drag of it leaves every other path (and every via node elsewhere that
+// saw the old point) where it is. A plain node: every plain node of the path on that point switches to a new point at the
+// same (u, v), each keeping its cell; null when no other path references the point. A via node: it, and every node of the
+// path equal to it, becomes a plain node at a new point at its world position. Control points are re-based so they do not move.
+export function detachFromPath(doc: Doc, pathId: string, node: Node): Node | null {
+  const path = getPath(doc, pathId), pt = getPoint(doc, node.pointId);
+  if (!path || !pt) return null;
+  const abs = path.segments.map((_, j) => cpAbs(path, j));
+  let map: (n: Node) => Node, fresh: Node;
+  if (node.via) {
+    const f = addPoint(doc, toUV(nodeWorld(doc, node), doc.lattice));
+    fresh = f;
+    map = (n) => (sameNode(n, node) ? { pointId: f.pointId, cell: { ...f.cell } } : n);
+  } else {
+    if (!doc.paths.some((p) => p.id !== pathId && pathNodes(p).some((n) => n.pointId === node.pointId))) return null;
+    const np = { id: makeId('pt'), u: pt.u, v: pt.v };
+    doc.points.push(np);
+    fresh = { pointId: np.id, cell: { ...node.cell } };
+    map = (n) => (n.pointId === node.pointId && !n.via ? { pointId: np.id, cell: { ...n.cell } } : n);
+  }
+  path.start = map(path.start);
+  for (const s of path.segments) s.to = map(s.to);
+  path.segments.forEach((s, j) => { const c = abs[j]; s.cp = c && rel(c, prevNode(path, j).cell); });
+  return fresh;
+}
+
 export function setControlPointAbs(doc: Doc, pathId: string, j: number, abs: UV | null): void {
   const p = getPath(doc, pathId);
   if (!p) return;

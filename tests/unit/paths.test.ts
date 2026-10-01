@@ -478,3 +478,49 @@ test('mergeIntoNode without a via is mergePoints', () => {
   expect(c.segments[0].to).toEqual({ pointId: a.segments[0].to.pointId, cell: { c: 0, r: 0 } });
   expect(doc.points.some((q) => q.id === fromId)).toBe(false);
 });
+
+test('detachFromPath gives the path its own copy of a shared point; the other path keeps the old one', () => {
+  const doc = makeDoc();
+  const a = polyline(doc, [{ u: 0.2, v: 0.2 }, { u: 0.5, v: 0.5 }]);
+  const shared = a.segments[0].to;
+  const b = P.startPath(doc, { ...shared, cell: { ...shared.cell } }, { color: '#000', weight: 2 }, 'L1');
+  P.appendNode(doc, b.id, P.addPoint(doc, { u: 0.8, v: 0.2 }));
+  const n = P.detachFromPath(doc, a.id, shared)!;
+  expect(n.pointId).not.toBe(shared.pointId);
+  expect(a.segments[0].to).toEqual(n);
+  expect(b.start.pointId).toBe(shared.pointId);
+  closeXY(P.nodeWorld(doc, n), 120, 120);
+  expect(P.detachFromPath(doc, a.id, n)).toBe(null);
+});
+
+test('detachFromPath keeps a closed path closed and leaves its control points alone', () => {
+  const doc = makeDoc();
+  const sq = polyline(doc, [{ u: 0.2, v: 0.2 }, { u: 0.6, v: 0.2 }, { u: 0.6, v: 0.6 }]);
+  P.appendNode(doc, sq.id, { ...sq.start, cell: { ...sq.start.cell } });
+  P.setControlPointAbs(doc, sq.id, 2, { u: 0.3, v: 0.5 });
+  const other = P.startPath(doc, { ...sq.start, cell: { c: 1, r: 0 } }, { color: '#000', weight: 2 }, 'L1');
+  P.appendNode(doc, other.id, P.addPoint(doc, { u: 0.9, v: 0.9 }));
+  const n = P.detachFromPath(doc, sq.id, sq.start)!;
+  expect(P.isClosed(sq)).toBe(true);
+  expect(sq.segments[2].to.pointId).toBe(n.pointId);
+  expect(P.cpAbs(sq, 2)).toEqual({ u: 0.3, v: 0.5 });
+  expect(other.start.pointId).not.toBe(n.pointId);
+});
+
+test('detachFromPath turns a via end into a plain node where it was', () => {
+  const doc = makeDoc();
+  const body = polyline(doc, [{ u: 0.1, v: 0.1 }, { u: 0.3, v: 0.1 }]);
+  const el = P.addElement(doc, { kind: 'rotate', u: 0.5, v: 0.5, n: 2 });
+  const b = P.addBinding(doc, body.id, [[el.id]]);
+  const tail = P.startPath(doc, P.addPoint(doc, { u: 0.5, v: 0.6 }), { color: '#000', weight: 2 }, 'L1');
+  const via = { pointId: body.start.pointId, cell: { c: 0, r: 0 }, via: { cell: { c: 0, r: 0 }, bindingId: b.id, power: 1 } };
+  P.appendNode(doc, tail.id, via);
+  P.setControlPointAbs(doc, tail.id, 0, { u: 0.7, v: 0.7 });
+  const at = P.nodeWorld(doc, via), cp = P.cpAbs(tail, 0)!;
+  const n = P.detachFromPath(doc, tail.id, via)!;
+  expect(n.via).toBeUndefined();
+  expect(tail.segments[0].to).toEqual(n);
+  closeXY(P.nodeWorld(doc, n), at.x, at.y);
+  expect(P.cpAbs(tail, 0)!.u).toBeCloseTo(cp.u, 9); expect(P.cpAbs(tail, 0)!.v).toBeCloseTo(cp.v, 9);
+  expect(P.getPoint(doc, body.start.pointId)).not.toBe(null);
+});
