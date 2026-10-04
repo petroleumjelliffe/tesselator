@@ -82,7 +82,7 @@ Rotation centres that a pattern implies without an element (the extra 2-fold cen
 |---|---|---|
 | Layer mode | Drawing · Construction (`Tab`) | built |
 | Tool | Select `V` · Pen `P` · Freehand `F` · Fill `B` | built |
-| Grid snap | on · off (`G`); silent, never hinted | built; decided 2026-10-01 |
+| Grid snap | on · off (`G`); silent when moving, shown by the placement node when drawing (H9) | built; decided 2026-10-01, amended 2026-10-02 |
 | Target snap | always on; hold `⌘` / `Ctrl` to turn it off for one gesture | built 2026-10-01 (was: `G` turned targets off) |
 
 Pen, Freehand and (later) Shape tools share one rule set for nodes, snapping and commit (§5, §6).
@@ -156,7 +156,7 @@ Pen, Freehand and (later) Shape tools share one rule set for nodes, snapping and
 | T10 | The stroke's own clones and repeats: their start and line | point / line | new |
 | T11 | Grid | point (fallback) | built |
 | T12 | Handle guides: axis lines through the anchors, tangents, mirror normals | line | specced |
-| T13 | Scale fractions of the lattice spans | value | specced |
+| T13 | Size fractions: k/n of the tile's width and height, n ≤ `CONFIG.FRACTION_MAX_N` (4 for now; may later grow with zoom). Silent (§6.5). | value | change 2026-10-02 (was: hinted scale fractions) |
 
 Hidden paths and paths on hidden layers are never targets.
 
@@ -164,6 +164,7 @@ Hidden paths and paths on hidden layers are never targets.
 
 - **SN1.** Candidates are the targets within the threshold, `SNAP_PX × hitScale / zoom` (doubled for touch), measured from the **raw** pointer, never from a previously snapped position.
 - **SN2. Precedence** is one ordered list in config, easy to reorder. Default: intersection → endpoint or node → the stroke's own start → rotation point → tile corner → any line → grid. A point within range beats a line within range; within a class the nearest wins, ties by the list.
+- **SN2a. The grid filters lines** (decided 2026-10-02): while `G` is on, a line target (tile edge, axis, path line, a stroke's own line or its clones' lines, handle guides) snaps only where it crosses a grid line. For a tile edge or a lattice-aligned axis these are exactly its grid points; a curve or diagonal axis snaps at its grid-line crossings, so the point stays exactly on the line. Point targets (nodes, corners, centres, intersections, own start, clone meets) are never filtered. Plain grid points remain the fallback when nothing else holds. With `G` off, lines snap continuously. `⌘` / `Ctrl` frees everything. This applies in every gesture (drawing, moving, editing); only the hinting differs (H9).
 - **SN3. Own clones are solved, not chased.** During a node or body drag, the dragged node's own clones move with it, so they are not targets as positions. Instead, each own clone whose relative transform has a fixed set becomes that set: a mirror clone becomes its axis ("meets its mirror clone"), a rotated clone its centre ("meets its rotated clone"). Translations and glides have no fixed set and add nothing. This stops the clone and the axis from competing, and stops the snap from chasing a target that moves with it. (Drawing is unaffected: the stroke's own clones' starts are fixed once the stroke starts.)
   - **SN3a. Ends meet each other's clones.** In a body drag, the other ends' clones move with the path too, so they are solved the same way. Each moving end is paired with every clone of every other moving end ("meets its clone's end"). A rotated clone gives one spot. A mirror gives a line of spots, but only when the two ends already line up along the axis; a glide only when their offset along the axis equals the glide's. Otherwise moving the path can never make them meet, so no hint appears. Translations add nothing. In a node drag the other ends stay still, so their clones are ordinary node targets (T6).
 - **SN4. Stickiness.** A snap that holds stays until the pointer is 1.5× the threshold from it, or until a candidate earlier in the precedence list comes within the threshold, or until a same-class candidate is nearer by more than half the threshold.
@@ -179,7 +180,9 @@ Hidden paths and paths on hidden layers are never targets.
 | Node drag (one) | T1–T7 and SN3, T11 |
 | Nodes drag (several) | the grabbed node, as one node drag |
 | Body drag | each endpoint (every node of a closed path) as a node drag; the nearest snap moves the whole path |
-| Box scale | T13; hints also show on the selection's endpoints when they land on T1–T7 |
+| Box scale | T13 (silent); hints also show on the selection's endpoints when they land on T1–T7 |
+| Translation element resize (construction) | T13 on its u and v components, silent |
+| Box rotate | angle steps (§6.5), shown by the rotation hint (E6a) |
 | Handle drag | T12 |
 
 ### 6.4 Commit (what a snap does on release)
@@ -198,10 +201,11 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 
 ### 6.5 Toggles
 
-- **Grid** (decided 2026-10-01): `G` turns grid snapping on and off. The grid is the fallback when no target is near, and it is never hinted.
+- **Grid** (decided 2026-10-01): `G` turns grid snapping on and off. It filters line targets to their grid-line crossings (SN2a, 2026-10-02) and is the fallback when no target is near. It is never hinted while moving or editing; while drawing, the placement node (H9) shows the grid point a click would use (amended 2026-10-02).
 - **Targets** (decided 2026-10-01): snapping to every target in §6.1 (T1–T10, T12–T13) is always on. Holding `⌘` / `Ctrl` turns it off for that gesture, existing points included, for a fully free placement. The grid still applies while `G` is on. There is no target toggle for now. The canvas suppresses the context menu so `Ctrl`-click works on a Mac.
-- Silent step quantisation (15° rotation steps, twelfths of the lattice, lattice handle steps) counts as grid: it follows `G`, and `⌘` / `Ctrl` does not free it (recorded 2026-10-01).
-- `⇧` keeps its meanings: free scale, add to selection.
+- Silent step quantisation (15° rotation steps, lattice handle steps) counts as grid: it follows `G`, and `⌘` / `Ctrl` does not free it (recorded 2026-10-01).
+- **Size fractions** (decided 2026-10-02): resizing a translation element and resizing the selection box snap silently to k/n of the tile's width and height (T13), n ≤ 4. They are always on, have no toggle, ignore `G`, and holding `⌘` / `Ctrl` turns them off. They replace the twelfths step for translations and the hinted scale fractions. H7 does not apply to them (like the grid, they are never hinted).
+- Box scale modifiers (decided 2026-10-02): `⇧` keeps proportions, `⌥` scales from the box centre; they combine. `⌘` / `Ctrl` frees the size fractions (T13). `⇧` still adds to the selection on click.
 
 ### 6.6 Pinned movement (tracing)
 
@@ -222,6 +226,7 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 | R4 | A Fill click copies the region's outline (outer boundary and holes, exact curve pieces) into a new **fill shape** on the active layer, with the fill colour. Its points belong to that layer (O1). | change (was: a live seed) |
 | R5 | A fill shape persists: later edits, moves or visibility changes of the paths below never change it. Refill to update. | change |
 | R6 | A fill shape repeats by the lattice only, not through clones. Fill each mirrored region separately (this leaves room for alternating colours). | new |
+| R9 | A fill shape has a repeat pattern (decided 2026-10-02): **every tile** (default), **rows** (alternate by tile row), **columns** (alternate by tile column) or **checkered** (alternate where c + r is odd). A patterned fill has two colours; the second colours the tiles the pattern skips (or none, leaving them unfilled). Alternation by transform (colour-swapping groups) is not in scope. | new |
 | R7 | Unfilled regions are transparent to clicks in Select. A fill shape is an ordinary object: select, recolour, delete. Clicking it selects the fill shape. | change (was: a click in a region selects its owner path, specced) |
 | R8 | Saved documents with seed fills are converted to fill shapes once on load (outline of the region the seed paints at load time). | change |
 
@@ -237,13 +242,18 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 | S4 | `⇧`-click adds or removes an instance (original, repeat or clone). Delete removes the selected instances' whole paths; per-clone actions wait for the roadmap. | new |
 | S5 | Marquee selects nodes of every visible instance inside it; a node picked through a clone moves through that clone's inverse. | built in one frame; new across instances |
 | S6 | Where a node and a box handle coincide, the node wins. | new |
+| S7 | With several paths selected (S4), the transform-group panel edits all of them at once (decided 2026-10-02). It shows the groups they share; where they differ, an element shows as mixed. Every change (add or remove an element in group N, add a `+ then` group, remove a group) is applied to each selected path's binding, one undo for the whole change. A path without a binding gets one. Selecting several instances of the same path edits that path once. | new |
+| S8 | A marquee that contains **every node of a path instance** selects that instance as a path, not its nodes (decided 2026-10-02). If it contains several whole instances, they become a several-paths selection (S4, S7). If the marquee contains no whole instance, it selects nodes as before (S5). If it contains some whole instances and some partial ones, it selects the whole instances only. Holding `⌥` while releasing the marquee always selects nodes. | new |
 | E1 | Drag a node; all instances follow. | built |
 | E2 | Drag selected nodes as a unit. | built |
 | E3 | Handles move rigidly with a dragged node. | specced |
 | E4 | Dragging a node of the selected path pulls it off a shared point. | specced |
 | E5 | Drag a path's body; its endpoints snap as they move (§6.3) and join on release (§6.4). | move built; snapping specced, extended |
 | E5a | Dragging the body of a clone or repeat moves the **original** path so the grabbed copy follows the pointer; transforms never move (decided 2026-10-01: moving the transform broke rational placement and multiplied copies). Snapping is measured at the grabbed copy. Transforms move only by their own handles. | built 2026-10-01 (change; was: moved the transform) |
-| E6 | Box handles scale and rotate; scale snaps to lattice fractions; endpoint hints while scaling. | built; snap specced; hints new |
+| E5b | With several paths selected (S4, S8), pressing on any selected instance and dragging moves the **whole selection** (decided 2026-10-02). Each selected instance moves by the same on-screen delta: its original moves through that instance's frame (E5a). A path selected through more than one instance moves once, through the grabbed instance if it is one of them, else the first. Snapping is measured at the grabbed instance only (§6.3 body row), and only the grabbed path joins on release. One undo. A click on a selected instance without dragging selects just that instance. Pressing an unselected path replaces the selection and drags it alone. | new |
+| E6 | Box handles scale and rotate; scale snaps silently to size fractions (T13); endpoint hints while scaling. | built; snap changed 2026-10-02; hints new |
+| E6a | **Rotation** (decided 2026-10-02): hovering just outside a corner handle of a selected path's box shows the rotate cursor; dragging from there rotates the path about the box centre (only, for now). A hint shows the angle while rotating. Angle steps follow §6.5. No separate rotation handle. | new |
+| E6b | Resizing a translation element (construction layer) snaps its u and v components silently to size fractions (T13); `⌘` / `Ctrl` frees it. | new 2026-10-02 (was: twelfths, following `G`) |
 | E7 | Handle drags snap to axis angles, tangents, mirror normals. | specced |
 | E8 | Dropping a node on a node (same layer) merges them. | built; cross-layer change |
 | E9 | Dropping a node on a line (same layer) splits the line and shares the node. | new |
@@ -262,6 +272,7 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 | H6 | What you see is what you get: if a hint is showing when the pointer goes down or up, that is the snap used, including a sticky hold beyond the plain threshold (SN4). | built for Pen, Freehand and Select drags |
 | H7 | No hint, no snap (decided 2026-10-01): a target snap happens only if its hint is visible at that moment; otherwise the point lands where the pointer is, or on the grid while `G` is on. A commit never re-picks a snap that was not shown. | built for Pen, Freehand and Select drags |
 | H8 | While Pen or Freehand is selected, nodes are shown only for paths near the cursor (within a few thresholds of any of their instances), not for every path (decided 2026-10-01). | new |
+| H9 | **Placement node** (decided 2026-10-02): while Pen or Freehand is selected and the pointer is on the canvas, a node marker always shows where a click (Pen) or press (Freehand start) would place the point: on the snapped target when one holds (with its usual label), on the nearest grid point when `G` is on and no target holds (no label), otherwise at the raw pointer. It is what a click uses (H6, H7). Drawing only: moving and editing keep the grid silent. | new |
 
 ---
 
@@ -295,9 +306,17 @@ Status: Pen built for same-layer rows; everything else new. Merges across layers
 | UC-E8 | Cancel a drag with `Esc`. | K1 |
 | UC-E9 | Drag a node toward a mirror axis without the snap flickering between the axis and the node's own clone. | SN3, SN4 |
 | UC-E10 | Drag a whole path until its start meets its clone's end (or its end meets its clone's start). | SN3a |
+| UC-E11 | Hover just outside a box corner, see the rotate cursor, and rotate the path, reading the angle from the hint. | E6a |
+| UC-E17 | Scale a path from its centre keeping its proportions (`⇧⌥` while dragging a corner). | E6 |
+| UC-E12 | Scale a selected path so its width is exactly a third of the tile; hold `⌘` to scale freely. | E6, T13 |
+| UC-E13 | Resize a translation element to half the tile's height; hold `⌘` to place it freely. | E6b, T13 |
+| UC-E14 | Select three paths and add the same mirror group to all of them; one undo removes it from all three. | S7 |
+| UC-E15 | Drag a marquee around four paths; the four paths are selected, not their nodes. Hold `⌥` to get their nodes instead. | S8 |
+| UC-E16 | With four paths selected, drag one of them; all four move together, and one undo puts them back. | E5b |
 | UC-F1 | Fill a region bounded by paths on lower layers, then add details above it. | R1, R4 |
 | UC-F2 | Edit or hide the paths below a fill; the fill stays. | R5 |
 | UC-F3 | Click inside an unfilled region; it does nothing. | R7 |
+| UC-F4 | Fill a region in a checkered pattern of two colours, then switch it to alternate by rows. | R9 |
 
 ---
 
