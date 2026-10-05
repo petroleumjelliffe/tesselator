@@ -1416,7 +1416,7 @@ Replace the `segment` case of `onDown` (lines 107–111) with:
       const inSel = !!multi && multi.some((x) => x.id === t.pathId && sameCopy(x.copy, t.copy));
       const riders = multi && inSel ? ridersFor(multi, t.pathId, new Set(ids)) : [];
       const drive = (multi && inSel ? drivingCopy(multi, t.pathId, t.copy) : null) ?? t.copy;   // a selected original drives its clone's grab
-      return startDrag(e, t, w, ctx.hitScale, { kind: 'body', pathId: t.pathId, copy: drive, ids, startPos: P.snapshotPositions(doc.value, ids), frame: bodyFrame(t.pathId, drive), targets: null, snap: null, riders, replace: !!multi && !inSel });
+      return startDrag(e, t, w, ctx.hitScale, { kind: 'body', pathId: t.pathId, copy: t.copy, ids, startPos: P.snapshotPositions(doc.value, ids), frame: bodyFrame(t.pathId, drive), targets: null, snap: null, riders, replace: !!multi && !inSel });
     }
 ```
 
