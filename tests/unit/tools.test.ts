@@ -989,6 +989,13 @@ test('E6a (final review): a click on a box handle without a move keeps the selec
   expect(P.getPath(doc.value, id)!.segments).toHaveLength(1);
 });
 
+test('E6a (final review): a click without a move on a box corner with nothing under it keeps the selection', () => {
+  const s = rhombusScene();
+  expect(hit({ x: 120, y: 120 })).toMatchObject({ kind: 'bbox', h: 2 });
+  gesture(select, [{ x: 120, y: 120 }]);
+  expect(UI.selection.value).toEqual({ kind: 'path', id: s.id, copy: base0 });
+});
+
 test('E6a (final review): the hint offers rotation for a selected original only; a repeat\'s hint does not', () => {
   const s = rhombusScene();
   expect(hintText()).toBe(STR.hint.path);

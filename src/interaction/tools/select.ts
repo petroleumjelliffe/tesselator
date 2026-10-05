@@ -304,10 +304,11 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
   const s = UI.selection.value, add = e.shiftKey || UI.addToSelection.value;
   if (t.kind === 'bbox' || t.kind === 'bboxrot') {
     // A click without a move on the box or its rotate zone is an ordinary click: re-test as if no box were there (no
-    // selection), so a line under it is selected and empty space clears. The selected instance's own line there (a
-    // handle sitting on it) keeps the selection rather than inserting a node.
+    // selection), so a line under it is selected. Empty space clears only from the rotate zone; a handle click with
+    // nothing under it keeps the selection. The selected instance's own line there (a handle sitting on it) keeps the
+    // selection rather than inserting a node.
     const u = hitTest(doc.value, { ...hitContext(ctx.hitScale), selection: null }, w);
-    if (!u) { if (!add) UI.selection.value = null; return; }
+    if (!u) { if (t.kind === 'bboxrot' && !add) UI.selection.value = null; return; }
     if (u.kind === 'segment' && s && s.kind === 'path' && s.id === u.pathId && sameCopy(s.copy, u.copy)) return;
     t = u;
   }

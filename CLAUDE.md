@@ -60,6 +60,7 @@ Everything in the document is in lattice `(u, v)` coordinates; world position is
 - Regions still read every path on every layer, fills are still seeds, and existing documents may share points across layers; the layers, regions and fills plan changes these.
 - Touch has no toggle for tracing yet (⌥ only).
 - A via node on a path selected through a clone copy is not drawn or hit.
+- A marquee started in the rotate zone (a small band just outside a selected original's corners) rotates instead.
 - Box scale and rotation act on one selected path; several selected paths only move together (spec roadmap 14). Rotation is about the box centre only.
 - Toggling `⇧` or `⌥` during a box scale applies from the next pointer move.
 - Touch has stand-ins for `⇧` (Proportional while scaling, Add while marquee-selecting) but none for `⌥` (scale from the centre, marquee nodes).
