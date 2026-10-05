@@ -21,6 +21,8 @@ export function copyMatrixOf(copy: Copy, lat: Lattice, cm: Map<string, (Matrix |
 
 // Spec §1: the original is the path as stored, in the tile: no clone and cell (0, 0). A repeat elsewhere is not.
 export const isOriginal = (c: Copy): boolean => !c.bindingId && c.cell.c === 0 && c.cell.r === 0;
+// The same instance: same cell, binding and clone index.
+export const sameCopy = (a: Copy, b: Copy): boolean => a.cell.c === b.cell.c && a.cell.r === b.cell.r && a.bindingId === b.bindingId && a.power === b.power;
 
 const dist = (a: XY, b: XY) => Math.hypot(a.x - b.x, a.y - b.y);
 const mid = (a: XY, b: XY): XY => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });

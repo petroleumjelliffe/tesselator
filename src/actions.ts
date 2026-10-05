@@ -6,7 +6,7 @@ import { copyMatrix, cloneMatrices, faces, snapTargets } from './state/derived';
 import * as P from './engine/paths';
 import { toWorld, toUV, snapGrid, snapFraction } from './engine/lattice';
 import { apply, invert, mirrorAngle, mirrorDirFromAngle } from './engine/transform';
-import { projectOnSegment, seedOf } from './engine/hit';
+import { projectOnSegment, seedOf, sameCopy } from './engine/hit';
 import { faceAt, seedFor, fillOfFace } from './engine/regions';
 import { strokeToPath } from './engine/freehand';
 import { pickSnap, gridResult, strokeCopies, strokeCands, nearestOnSeg, bezAt } from './engine/snap';
@@ -121,7 +121,6 @@ export function pressSnap(w: XY, m: SnapMode, stroke: DrawStroke | null): SnapRe
 }
 
 const baseCopy: Copy = { cell: { c: 0, r: 0 }, bindingId: null, power: 0 };
-const sameCopy = (a: Copy, b: Copy) => a.cell.c === b.cell.c && a.cell.r === b.cell.r && a.bindingId === b.bindingId && a.power === b.power;
 // After a binding's groups change, a selected clone's power can point past the end of (or at a deduped-null slot in)
 // the new cloneMatrices; fall back to the base copy rather than let the selection silently act on the source path.
 function resetCloneSelectionIfGone(bindingId: string): void {

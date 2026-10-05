@@ -4,8 +4,8 @@ import * as UI from '../../state/ui';
 import * as A from '../../actions';
 import * as P from '../../engine/paths';
 import { commit } from '../../state/history';
-import { copyMatrix, snapTargets, copies } from '../../state/derived';
-import { pointsInRectAll, bboxHandles, boxScale, scaleMatrix, isOriginal, instancesInRect } from '../../engine/hit';
+import { copyMatrix, snapTargets, copies, hitContext } from '../../state/derived';
+import { pointsInRectAll, bboxHandles, boxScale, scaleMatrix, isOriginal, instancesInRect, sameCopy, hitTest } from '../../engine/hit';
 import { toUV } from '../../engine/lattice';
 import { apply, invert, compose, rotation, cellMatrix, isIdentity, rotationAngle, angleDeg } from '../../engine/transform';
 import { pickSnap, gridResult, pointCopyMatrices, ownFixedCands, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines } from '../../engine/snap';
@@ -13,8 +13,6 @@ import { CONFIG } from '../../config';
 import { STR } from '../../strings';
 import { startDrag, type ToolModule, type ToolCtx } from './common';
 import type { HitTarget, XY, Drag, Copy, Cell, Matrix, TargetSet, SnapResult, Node, SnapCat, BodySnap, BodyRider } from '../../types';
-
-const sameCopy = (a: Copy, b: Copy) => a.cell.c === b.cell.c && a.cell.r === b.cell.r && a.bindingId === b.bindingId && a.power === b.power;
 
 // Snap for a node being dragged: every target except the point itself and lines touching it, plus its own clones resolved
 // to their axis or centre (SN3), the held snap, and the grid as a fallback. S maps the point's base-cell position to the drag.
@@ -249,7 +247,7 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
         // counts as grid, §6.5, so ⌘ / Ctrl does not free it). The hint shows the angle at the grabbed corner.
         const th = rotationAngle(Math.atan2(w.y - d.cy, w.x - d.cx) - d.a0, ctx.gridOn ? CONFIG.ROTATE_STEP_DEG : 0);
         T = rotation(th, d.cx, d.cy);
-        UI.snapHint.value = { at: apply(T, { x: d.h.x, y: d.h.y }), label: STR.snap.angle(angleDeg(th)) };
+        UI.snapHint.value = { at: apply(T, { x: d.h.x, y: d.h.y }), label: STR.snap.angle(angleDeg(th)), ring: false };   // a reading, not a snap: no ring
       } else {
         // E6, §6.5: ⇧ keeps proportions, ⌥ scales from the box centre; they combine. The size fractions (T13) snap
         // silently unless ⌘ / Ctrl is held, whatever G says.
@@ -302,11 +300,21 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
   }
   if (d.kind === 'body' && d.moved && d.snap) { joinBody(d.pathId, d.frame.G, d.snap, [...d.ids, ...d.riders.flatMap((r) => r.ids)], d.riders.map((r) => r.pathId)); return; }   // E5b: only the grabbed path joins
   if (d.moved || !d.target) return;
-  const t = d.target, s = UI.selection.value;
+  let t = d.target;
+  const s = UI.selection.value, add = e.shiftKey || UI.addToSelection.value;
+  if (t.kind === 'bbox' || t.kind === 'bboxrot') {
+    // A click without a move on the box or its rotate zone is an ordinary click: re-test as if no box were there (no
+    // selection), so a line under it is selected and empty space clears. The selected instance's own line there (a
+    // handle sitting on it) keeps the selection rather than inserting a node.
+    const u = hitTest(doc.value, { ...hitContext(ctx.hitScale), selection: null }, w);
+    if (!u) { if (!add) UI.selection.value = null; return; }
+    if (u.kind === 'segment' && s && s.kind === 'path' && s.id === u.pathId && sameCopy(s.copy, u.copy)) return;
+    t = u;
+  }
   switch (t.kind) {
-    case 'point': if (e.shiftKey || UI.addToSelection.value) A.togglePointSelection(t.pointId, t.via); else A.selectPoints([t.pointId], t.via ? { [t.pointId]: t.via } : undefined); return;
+    case 'point': if (add) A.togglePointSelection(t.pointId, t.via); else A.selectPoints([t.pointId], t.via ? { [t.pointId]: t.via } : undefined); return;
     case 'segment':
-      if (e.shiftKey || UI.addToSelection.value) { A.toggleInstance(t.pathId, t.copy); return; }
+      if (add) { A.toggleInstance(t.pathId, t.copy); return; }
       if (s && s.kind === 'path' && s.id === t.pathId && sameCopy(s.copy, t.copy)) A.insertNodeOnSegment(t.pathId, t.j, w, t.copy, ctx.gridOn);
       else A.selectPathAt(t.pathId, t.copy);
       return;

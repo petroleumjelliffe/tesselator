@@ -24,7 +24,7 @@ export const viewRestored = signal(false);            // true when the initial v
 export const keepProportions = signal(false);  // touch stand-in for ⇧ while box-scaling: keep proportions
 export const addToSelection = signal(false);   // touch stand-in for Shift while marquee-selecting
 
-export type SnapHint = { at: XY; label?: string; line?: XY[] };
+export type SnapHint = { at: XY; label?: string; line?: XY[]; ring?: boolean };   // ring: draw the snap ring (default true); off for a reading such as an angle
 export const snapHint = signal<SnapHint | null>(null);       // what the current gesture or hover would snap to, for the canvas
 export const snapSticky = signal<string | null>(null);       // id of the held snap (spec SN4, H6): hover hands it to the press
 // H7: the target snap behind the hover hint (s null: no hint showed), with what it was computed for: the pointer

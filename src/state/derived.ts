@@ -1,10 +1,10 @@
 import { computed, signal, effect } from '@preact/signals';
 import { CONFIG } from '../config';
 import { doc } from './doc';
-import { view, viewport, drag, selection } from './ui';
+import { view, viewport, drag, selection, layer, tool, pen } from './ui';
 import { visibleOffsets } from '../engine/lattice';
 import { cellMatrix, compose, orbit, ownClones, apply } from '../engine/transform';
-import { anchorsWorld } from '../engine/hit';
+import { anchorsWorld, type HitContext } from '../engine/hit';
 import { computeFaces } from '../engine/regions';
 import { buildTargets } from '../engine/snap';
 import { getPath, pathNodes, pathWorld } from '../engine/paths';
@@ -77,3 +77,8 @@ export const multiNodeMarks = computed<NodeMark[]>(() => {
   }
   return out;
 });
+
+// The hit-test context for the current state, at a pointer's hit scale (pointer.ts, and the Select tool's click re-test).
+export function hitContext(hitScale: number): HitContext {
+  return { layer: layer.value, tool: tool.value, selection: selection.value, pen: pen.value, zoom: view.value.zoom, hitScale, copies: copies.value, cloneMatrices: cloneMatrices.value, faces: faces.value };
+}

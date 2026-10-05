@@ -1,4 +1,8 @@
 // Every user-visible string lives here (spec V1), so a word can be renamed in one place as the vocabulary settles.
+// The selected-path hint, in two parts around the rotate phrase, which only an original offers (E6a).
+const PATH_HINT_HEAD = 'Path: click a line to insert a point · drag ◇ to bend · double-click ◇ to straighten · box handles scale (⇧ keeps proportions, ⌥ from the centre, ⌘ frees the size steps)';
+const PATH_HINT_TAIL = 'any copy is editable · Layer chips move it · drag a node to pull it off a shared point';
+const ROTATE_PHRASE = 'drag just outside a corner to rotate';
 export const STR = {
   snap: {
     corner: 'tile corner',
@@ -38,7 +42,9 @@ export const STR = {
     points: (n: number) => `${n} point${n > 1 ? 's' : ''} selected · drag to move together · ⇧-click adds · ⌫ deletes`,
     instances: (n: number) => `${n} instances · drag one to move them all · click one to select just it · ⌫ deletes their paths`,
     clone: 'Clone: drag its body to move the original so this clone follows · drag its anchors to edit the shared shape · drag an anchor on a shared point to pull it off · box handles scale it',
-    path: 'Path: click a line to insert a point · drag ◇ to bend · double-click ◇ to straighten · box handles scale (⇧ keeps proportions, ⌥ from the centre, ⌘ frees the size steps) · drag just outside a corner to rotate · any copy is editable · Layer chips move it · drag a node to pull it off a shared point',
+    path: `${PATH_HINT_HEAD} · ${ROTATE_PHRASE} · ${PATH_HINT_TAIL}`,
+    pathRepeat: `${PATH_HINT_HEAD} · ${PATH_HINT_TAIL}`,   // a repeat cannot rotate (E6a): no rotate phrase
+    rotatePhrase: ROTATE_PHRASE,
     select: 'Select: click a point, line, copy or fill · drag a line to move the path · drag empty space to select the paths wholly inside (⌥ for their nodes)',
     freehand: 'Freehand: press and drag · release to fit curves · start on an open end on this layer to continue its path · hold ⌥ to trace a line',
     fill: 'Fill: press to preview a closed region · release to colour it · press again to recolour',

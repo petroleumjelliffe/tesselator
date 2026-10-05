@@ -4,8 +4,8 @@ import { doc } from '../state/doc';
 import * as UI from '../state/ui';
 import * as A from '../actions';
 import { beginGesture, endGesture, abortGesture } from '../state/history';
-import { copies, cloneMatrices, faces } from '../state/derived';
-import { hitTest, type HitContext } from '../engine/hit';
+import { hitContext } from '../state/derived';
+import { hitTest } from '../engine/hit';
 import { CONFIG } from '../config';
 import * as select from './tools/select';
 import * as pen from './tools/pen';
@@ -39,13 +39,12 @@ export function attachPointer(svg: SVGSVGElement): () => void {
   const kindOf = (e: PointerEvent): PointerKind => (e.pointerType === 'touch' ? 'touch' : e.pointerType === 'pen' ? 'pen' : 'mouse');
   const scaleOf = (e: PointerEvent) => (e.pointerType === 'touch' ? CONFIG.TOUCH_HIT_SCALE : 1);
   const ctxOf = (e: PointerEvent): ToolCtx => ({ targetsOn: !(e.metaKey || e.ctrlKey), gridOn: UI.prefs.value.grid, hitScale: scaleOf(e), threshold: A.threshold(scaleOf(e)) });
-  const hitCtx = (hitScale: number): HitContext => ({ layer: UI.layer.value, tool: UI.tool.value, selection: UI.selection.value, pen: UI.pen.value, zoom: UI.view.value.zoom, hitScale, copies: copies.value, cloneMatrices: cloneMatrices.value, faces: faces.value });
   // ⌘ / Ctrl changes the snap mode without a pointer move: redo the hover so the hint (and the press, H7) follow at once.
   const rehover = (e: KeyboardEvent) => {
     const w = UI.cursor.value;
     if (!w || UI.drag.value || (e.key !== 'Meta' && e.key !== 'Control')) return;
     const hs = UI.lastPointerType.value === 'touch' ? CONFIG.TOUCH_HIT_SCALE : 1;
-    hoverAt(w, hitTest(doc.value, hitCtx(hs), w), { targetsOn: !(e.metaKey || e.ctrlKey), gridOn: UI.prefs.value.grid, hitScale: hs, threshold: A.threshold(hs) });
+    hoverAt(w, hitTest(doc.value, hitContext(hs), w), { targetsOn: !(e.metaKey || e.ctrlKey), gridOn: UI.prefs.value.grid, hitScale: hs, threshold: A.threshold(hs) });
   };
   const activeTool = (): ToolModule => (UI.layer.value === 'construction' ? construct : TOOLS[UI.tool.value]);
 
@@ -62,7 +61,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
       return;
     }
     if (pointers.size > 2 || navDead) return;
-    const w = world(e), target = hitTest(doc.value, hitCtx(scaleOf(e)), w);
+    const w = world(e), target = hitTest(doc.value, hitContext(scaleOf(e)), w);
     let t = activeTool();
     if (UI.space.value && UI.layer.value === 'drawing' && (UI.pen.value || UI.tool.value === 'freehand')) { construct.startMultiDrag(w, target, e); t = construct; }
     else t.onDown(target, w, e, ctxOf(e));
@@ -82,7 +81,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
     const w = world(e);
     UI.cursor.value = w;
     const d = UI.drag.value;
-    if (!d) { hoverAt(w, hitTest(doc.value, hitCtx(scaleOf(e)), w), ctxOf(e)); return; }
+    if (!d) { hoverAt(w, hitTest(doc.value, hitContext(scaleOf(e)), w), ctxOf(e)); return; }
     if (d.pointerId !== e.pointerId || !dragTool) return;
     if (!d.moved && dist(w, d.start) > CONFIG.DRAG_THRESHOLD_PX / UI.view.value.zoom) { d.moved = true; beginGesture(); }
     dragTool.onMove(d, w, e, ctxOf(e));
@@ -100,7 +99,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
     UI.drag.value = null; dragTool = null;
     try { t.onUp(d, world(e), e, ctxOf(e)); } finally { endGesture(); }   // a commit on release (merge on drop) belongs to the drag's one history entry
     UI.clearSnap();
-    UI.hover.value = hitTest(doc.value, hitCtx(scaleOf(e)), world(e));
+    UI.hover.value = hitTest(doc.value, hitContext(scaleOf(e)), world(e));
   }
 
   function onCancel(e?: PointerEvent) {
@@ -118,7 +117,7 @@ export function attachPointer(svg: SVGSVGElement): () => void {
   }
 
   function onDblClick(e: MouseEvent) {
-    const w = world(e as unknown as PointerEvent), t = hitTest(doc.value, hitCtx(1), w);
+    const w = world(e as unknown as PointerEvent), t = hitTest(doc.value, hitContext(1), w);
     if (t && t.kind === 'diamond') A.straightenSegment(t.pathId, t.j);
   }
 

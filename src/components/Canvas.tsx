@@ -9,15 +9,13 @@ import { cloneMatrices, visibleCells, copies, copyMatrix, faces, snapTargets, mu
 import { toWorld, nodeUV, windowOffsets, cellPolygon } from '../engine/lattice';
 import { IDENTITY, apply, toSvg } from '../engine/transform';
 import { getPath, getElement, pathNodes, pathWorld, pathCpsWorld, boundsWorld, nodeWorld, sameNode } from '../engine/paths';
-import { bboxHandles, seedOf, pathsNear } from '../engine/hit';
+import { bboxHandles, seedOf, pathsNear, sameCopy } from '../engine/hit';
 import { faceAt, facePathData, fillFace } from '../engine/regions';
 import { segD, pathD } from '../engine/svgpath';
 import type { XY, Path, Matrix, Cell, HitTarget } from '../types';
 
 const isBase = (o: Cell) => o.c === 0 && o.r === 0;
 const cellKey = (o: Cell) => `${o.c},${o.r}`;
-const sameCopy = (a: { cell: Cell; bindingId: string | null; power: number }, b: typeof a) =>
-  a.cell.c === b.cell.c && a.cell.r === b.cell.r && a.bindingId === b.bindingId && a.power === b.power;
 const hoverIs = (h: HitTarget | null, kind: HitTarget['kind']) => !!h && h.kind === kind;
 
 // Base cell geometry: every source and clone, at cell (0,0), in world coordinates.
@@ -289,7 +287,7 @@ function SnapMark() {
   const z = view.value.zoom;
   return <g class="snap-mark">
     {h.line && <polyline class="snap-line" points={h.line.map((p) => `${p.x},${p.y}`).join(' ')} />}
-    <circle class="snap-ring" cx={h.at.x} cy={h.at.y} r={7 / z} />
+    {h.ring !== false && <circle class="snap-ring" cx={h.at.x} cy={h.at.y} r={7 / z} />}
     {h.label && <text class="snap-label" x={h.at.x + 10 / z} y={h.at.y - 10 / z} font-size={12 / z}>{h.label}</text>}
   </g>;
 }

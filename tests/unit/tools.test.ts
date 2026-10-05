@@ -20,6 +20,7 @@ import { hitTest, type HitContext } from '../../src/engine/hit';
 import type { ToolModule, ToolCtx } from '../../src/interaction/tools/common';
 import type { Doc, XY, UV } from '../../src/types';
 import { cursorFor, ROTATE_CURSOR } from '../../src/interaction/cursor';
+import { hintText } from '../../src/components/Chrome';
 
 const ev = (over: Partial<PointerEvent> = {}) => ({ pointerId: 1, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, pointerType: 'mouse', ...over }) as unknown as PointerEvent;
 const ctx: ToolCtx = { targetsOn: true, gridOn: true, hitScale: 1, threshold: 12 };
@@ -961,6 +962,53 @@ test('E6a (final review): 1 px outside a selected square\'s edge near a corner i
   }
   hoverAt({ x: 66, y: 47 }, hit({ x: 66, y: 47 }), ctx);
   expect(cursorFor()).not.toBe(ROTATE_CURSOR);
+});
+
+test('E6a (final review): a click without a move in the rotate zone is an ordinary click: another path\'s line there is selected, empty space clears', () => {
+  let lId = '';
+  const s = rhombusScene((d) => { lId = line(d, [{ u: 100 / 240, v: 38 / 240 }, { u: 200 / 240, v: 38 / 240 }]).id; });   // y = 38, through (130, 38)
+  expect(hit({ x: 130, y: 38 })).toMatchObject({ kind: 'bboxrot', h: 1 });
+  gesture(select, [{ x: 130, y: 38 }]);
+  expect(UI.selection.value).toEqual({ kind: 'path', id: lId, copy: base0 });
+  A.selectPathAt(s.id);
+  expect(hit({ x: 34, y: 34 })).toMatchObject({ kind: 'bboxrot', h: 0 });                             // empty, outside the top-left corner
+  gesture(select, [{ x: 34, y: 34 }]);
+  expect(UI.selection.value).toBe(null);
+  A.selectPathAt(s.id);
+  expect(hit({ x: 120, y: 84 })).toMatchObject({ kind: 'point' });                                     // the node on the side handle: unchanged
+  expect(hit({ x: 84, y: 48 })).toMatchObject({ kind: 'point' });
+});
+
+test('E6a (final review): a click on a box handle without a move keeps the selection and inserts nothing', () => {
+  let id = '';
+  fresh('freehand', (d) => { id = line(d, [{ u: 0.2, v: 0.5 }, { u: 0.5, v: 0.5 }]).id; });         // (48,120) → (120,120); the top edge handle sits on its midpoint
+  UI.tool.value = 'select'; A.selectPathAt(id);
+  expect(hit({ x: 84, y: 120 })).toMatchObject({ kind: 'bbox' });
+  gesture(select, [{ x: 84, y: 120 }]);
+  expect(UI.selection.value).toEqual({ kind: 'path', id, copy: base0 });
+  expect(P.getPath(doc.value, id)!.segments).toHaveLength(1);
+});
+
+test('E6a (final review): the hint offers rotation for a selected original only; a repeat\'s hint does not', () => {
+  const s = rhombusScene();
+  expect(hintText()).toBe(STR.hint.path);
+  expect(STR.hint.path).toContain(STR.hint.rotatePhrase);
+  gesture(select, [{ x: 336, y: 60 }]);                                                               // the repeat's first edge, (324,48) → (360,84)
+  expect(UI.selection.value).toEqual({ kind: 'path', id: s.id, copy: { cell: { c: 1, r: 0 }, bindingId: null, power: 0 } });
+  expect(hintText()).toBe(STR.hint.pathRepeat);
+  expect(STR.hint.pathRepeat).not.toContain(STR.hint.rotatePhrase);
+});
+
+test('H10 (final review): the rotation\'s angle hint has no snap ring; a snap hint keeps it', () => {
+  rhombusScene();
+  const hint = track(select, [{ x: 130, y: 38 }, { x: 140, y: 90 }, { x: 130, y: 125 }], [ev(), ev(), ev()], ctx);
+  expect(hint?.label).toBe(STR.snap.angle(90));
+  expect(hint?.ring).toBe(false);
+  const { a } = threePaths((d) => { line(d, [{ u: 103 / 240, v: 45 / 240 }, { u: 103 / 240, v: 10 / 240 }]); });
+  A.selectPathAt(a);
+  const snap = track(select, [{ x: 36, y: 24 }, { x: 51, y: 34 }, { x: 66, y: 44 }], [ev(), ev(), ev()], noGrid);   // clear of A's handles; its end comes to (102, 44)
+  expect(snap).toBeTruthy();
+  expect(snap!.ring).not.toBe(false);
 });
 
 // --- S8: a marquee selects the instances it wholly contains; else nodes; ⌥ at release always picks nodes

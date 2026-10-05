@@ -9,6 +9,7 @@ import { cloneMatrices, openElements } from '../state/derived';
 import { orbit, cloneCount, mirrorAngle } from '../engine/transform';
 import { latticeAngle } from '../engine/lattice';
 import { getPath, getBinding, getElement, getFill } from '../engine/paths';
+import { isOriginal } from '../engine/hit';
 import { exportSvg, serializeDoc, parseDoc } from '../engine/serialize';
 import { CONFIG } from '../config';
 import { fmtFrac } from './Canvas';
@@ -193,7 +194,7 @@ function UndoBar() {
   </div>;
 }
 
-function hintText(): string {
+export function hintText(): string {
   const s = UI.selection.value, d = doc.value;
   if (UI.layer.value === 'construction') {
     if (s && s.kind === 'element') {
@@ -209,7 +210,7 @@ function hintText(): string {
       if (s && s.kind === 'points') return STR.hint.points(s.ids.length);
       if (s && s.kind === 'paths') return STR.hint.instances(s.items.length);
       if (s && s.kind === 'path' && s.copy.bindingId) return STR.hint.clone;
-      if (s && s.kind === 'path') return STR.hint.path;
+      if (s && s.kind === 'path') return isOriginal(s.copy) ? STR.hint.path : STR.hint.pathRepeat;
       return STR.hint.select;
     case 'freehand': return STR.hint.freehand;
     case 'fill': return STR.hint.fill;
