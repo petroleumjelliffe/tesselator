@@ -146,7 +146,7 @@ function SelectionBar() {
       <Btn cls="small violet" title={STR.titles.newGroupedTranslate} onClick={() => A.addElement('translate')}>{STR.bar.newTranslate}</Btn>
       <Sep />
       {path.segments.some((x) => x.cp) && <Btn cls="small outline" title={STR.titles.straighten} onClick={() => A.straightenPath(path.id)}>{STR.bar.straighten}</Btn>}
-      <Btn cls="small" on={UI.freeScale.value} title={STR.titles.freeScale} onClick={() => A.toggleFreeScale()}>{STR.bar.freeScale}</Btn>
+      <Btn cls="small" on={UI.keepProportions.value} title={STR.titles.keepProportions} onClick={() => A.toggleKeepProportions()}>{STR.bar.keepProportions}</Btn>
       <Sep /><Label>{STR.bar.layerColon}</Label>{d.layers.map((l) => <Btn key={l.id} cls="small" on={l.id === path.layerId} title={STR.titles.moveToLayer(l.name)} onClick={() => A.setPathLayer(path.id, l.id)}>{l.name}</Btn>)}
     </>;
   } else if (s.kind === 'element') {

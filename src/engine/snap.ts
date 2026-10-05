@@ -3,12 +3,12 @@
 // clones resolved to their axis or centre). Pure: takes a doc and explicit inputs. World distances throughout.
 import { CONFIG } from '../config';
 import { STR } from '../strings';
-import { toWorld, toUV, snapGrid, windowOffsets } from './lattice';
+import { toWorld, toUV, snapGrid, windowOffsets, nearestFraction } from './lattice';
 import { apply, compose, invert, cellMatrix, classify, orbit, isTranslation } from './transform';
 import { getPath, pathNodes, cloneMatrices, pathWorld, isClosed, viaMatrix } from './paths';
 import { collectSegments } from './regions';
 import { anchorsWorld } from './hit';
-import type { Doc, XY, Matrix, Copy, Lattice, SnapCat, SnapHit, SnapResult, PointTarget, LineTarget, TargetSet, StrokeCopy, Line, BoxHandle, BodyTargets, BodySnap } from '../types';
+import type { Doc, XY, Matrix, Copy, Lattice, SnapCat, SnapHit, SnapResult, PointTarget, LineTarget, TargetSet, StrokeCopy, Line, BoxHandle, Box, BodyTargets, BodySnap } from '../types';
 
 const add = (a: XY, b: XY): XY => ({ x: a.x + b.x, y: a.y + b.y });
 const sub = (a: XY, b: XY): XY => ({ x: a.x - b.x, y: a.y - b.y });
@@ -398,21 +398,32 @@ export function snapBodyDelta(T: BodyTargets, raw: XY, threshold: number, sticky
 
 const unit = (v: XY): XY | null => { const L = Math.hypot(v.x, v.y); return L < 1e-9 ? null : { x: v.x / L, y: v.y / L }; };
 
-export function snapScale(nodes: XY[], lat: Lattice, h: BoxHandle, raw: { sx: number; sy: number }, free: boolean, threshold: number, fractions: readonly number[]): { sx: number; sy: number; snapped: boolean } {
-  const xs = nodes.map((p) => p.x), ys = nodes.map((p) => p.y);
-  const Wn = Math.max(...xs) - Math.min(...xs), Hn = Math.max(...ys) - Math.min(...ys);
-  const spans = (a: number, b: number) => [Math.abs(a), Math.abs(b)].filter((s) => s >= 1).flatMap((s) => fractions.map((f) => f * s));
-  const sgn = (s: number) => (s < 0 ? -1 : 1);
-  const cands = (ext: number, targets: number[], s: number) => (ext < 1e-6 ? [] : targets.map((t) => (sgn(s) * t) / ext));
+// T13 (silent): a scaled box dimension snaps to k/n of the tile's span on that axis (n ≤ maxN, k ≥ 1): the width to
+// |a.x| or |b.x|, the height to |a.y| or |b.y| (a span under 1 px is skipped). For a candidate scale c the handle is
+// |s − c|·|v| from where the pointer put it (v from the fixed point `a` to the handle), so that is held to `threshold`.
+// Proportional: a corner takes the nearest candidate of either axis for both, an edge its own axis's. Otherwise each
+// moving axis snaps on its own.
+export function snapScale(box: Box, lat: Lattice, h: BoxHandle, a: XY, raw: { sx: number; sy: number }, proportional: boolean, threshold: number, maxN: number): { sx: number; sy: number; snapped: boolean } {
+  const W = box.x1 - box.x0, H = box.y1 - box.y0, vx = h.x - a.x, vy = h.y - a.y;
+  const cands = (s: number, ext: number, spans: number[]): number[] => {
+    if (ext < 1e-6) return [];
+    const out: number[] = [];
+    for (const span of spans) {
+      if (span < 1) continue;
+      const q = nearestFraction((Math.abs(s) * ext) / span, maxN);
+      if (q > 0) out.push(((s < 0 ? -1 : 1) * q * span) / ext);
+    }
+    return out;
+  };
   const pick = (s: number, cs: number[], len: number): number | null => {
     let best: number | null = null, bd = threshold;
     for (const c of cs) { const dd = Math.abs(s - c) * len; if (dd <= bd) { bd = dd; best = c; } }
     return best;
   };
-  const vx = h.x - h.ax, vy = h.y - h.ay;
-  const cx = cands(Wn, spans(lat.ax, lat.bx), raw.sx), cy = cands(Hn, spans(lat.ay, lat.by), raw.sy);
-  if (vx && vy && !free) {
-    const s = pick(raw.sx, [...cx, ...cy], Math.hypot(vx, vy));
+  const cx = vx ? cands(raw.sx, W, [Math.abs(lat.ax), Math.abs(lat.bx)]) : [];
+  const cy = vy ? cands(raw.sy, H, [Math.abs(lat.ay), Math.abs(lat.by)]) : [];
+  if (proportional) {
+    const s = vx && vy ? pick(raw.sx, [...cx, ...cy], Math.hypot(vx, vy)) : vx ? pick(raw.sx, cx, Math.abs(vx)) : vy ? pick(raw.sy, cy, Math.abs(vy)) : null;
     return s === null ? { ...raw, snapped: false } : { sx: s, sy: s, snapped: true };
   }
   const sx = vx ? pick(raw.sx, cx, Math.abs(vx)) : null, sy = vy ? pick(raw.sy, cy, Math.abs(vy)) : null;

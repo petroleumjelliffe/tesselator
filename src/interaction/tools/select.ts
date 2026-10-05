@@ -5,7 +5,7 @@ import * as A from '../../actions';
 import * as P from '../../engine/paths';
 import { commit } from '../../state/history';
 import { copyMatrix, snapTargets } from '../../state/derived';
-import { pointsInRectAll, bboxHandles, scaleFor, scaleMatrix } from '../../engine/hit';
+import { pointsInRectAll, bboxHandles, boxScale, scaleMatrix } from '../../engine/hit';
 import { toUV } from '../../engine/lattice';
 import { apply, invert, compose, rotation, cellMatrix, isIdentity } from '../../engine/transform';
 import { pickSnap, gridResult, pointCopyMatrices, ownFixedCands, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines } from '../../engine/snap';
@@ -207,14 +207,17 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
         if (ctx.gridOn) th = Math.round(th / (Math.PI / 12)) * (Math.PI / 12);
         T = rotation(th, d.cx, d.cy);
       } else {
-        const free = e.shiftKey || UI.freeScale.value;
-        let { sx, sy } = scaleFor(d.h, w, free);
-        UI.snapHint.value = null;
-        if (ctx.targetsOn) {   // T13; ⇧ means "free" here (free scale), not "no snapping"
-          const s = snapScale(d.nodes, doc.value.lattice, d.h, { sx, sy }, free, ctx.threshold, CONFIG.SCALE_FRACTIONS);
-          if (s.snapped) { sx = s.sx; sy = s.sy; UI.snapHint.value = { at: { x: d.h.ax + sx * (d.h.x - d.h.ax), y: d.h.ay + sy * (d.h.y - d.h.ay) }, label: STR.snap.scale(`${Math.round(sx * 1000) / 1000} × ${Math.round(sy * 1000) / 1000}`) }; }
+        // E6, §6.5: ⇧ keeps proportions, ⌥ scales from the box centre; they combine. The size fractions (T13) snap
+        // silently unless ⌘ / Ctrl is held, whatever G says.
+        const proportional = e.shiftKey || UI.keepProportions.value;
+        const b = boxScale(d.box, d.h, w, { proportional, fromCentre: e.altKey });
+        let { sx, sy } = b;
+        if (ctx.targetsOn) {
+          const s = snapScale(d.box, doc.value.lattice, d.h, { x: b.ax, y: b.ay }, { sx, sy }, proportional, ctx.threshold, CONFIG.FRACTION_MAX_N);
+          sx = s.sx; sy = s.sy;
         }
-        T = scaleMatrix(d.h.ax, d.h.ay, sx, sy);
+        UI.snapHint.value = null;   // H10: no hint for the size fractions; the endpoint hints below still apply
+        T = scaleMatrix(b.ax, b.ay, sx, sy);
       }
       const Mc = copyMatrix(d.copy, d.startDoc);
       const Msrc = compose(invert(Mc), compose(T, Mc));

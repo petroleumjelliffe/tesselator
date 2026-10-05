@@ -259,21 +259,24 @@ test('snapBodyDelta: a tied delta still prefers a point over a line, even from a
   near(s.res.at, { x: 240, y: 0 });
 });
 
-const lat = { ...CONFIG.LATTICE_PRESETS.Square }, F = [1, 1 / 2, 1 / 3];
+const lat = { ...CONFIG.LATTICE_PRESETS.Square };
 
-test('snapScale: an edge lands on a half and a third of the lattice span; a flat axis is not snapped', () => {
-  const nodes = [{ x: 0, y: 0 }, { x: 100, y: 0 }], right = { x: 100, y: 0, ax: 0, ay: 0, cursor: '' };
-  expect(snapScale(nodes, lat, right, { sx: 1.21, sy: 1 }, false, 12, F)).toEqual({ sx: 1.2, sy: 1, snapped: true });
-  expect(snapScale(nodes, lat, right, { sx: 0.81, sy: 1 }, false, 12, F).sx).toBeCloseTo(0.8, 9);
-  expect(snapScale(nodes, lat, right, { sx: 1.5, sy: 1 }, false, 12, F).snapped).toBe(false);
+test('snapScale: an edge lands on k/n of the tile (n ≤ 4) within the threshold; a flat axis is not snapped', () => {
+  const box = { x0: 0, y0: 0, x1: 100, y1: 0 }, right = { x: 100, y: 0, ax: 0, ay: 0, cursor: '' }, a = { x: 0, y: 0 };
+  expect(snapScale(box, lat, right, a, { sx: 1.21, sy: 1 }, false, 12, 4)).toEqual({ sx: 1.2, sy: 1, snapped: true });   // 121 → 120 = 1/2
+  expect(snapScale(box, lat, right, a, { sx: 0.81, sy: 1 }, false, 12, 4).sx).toBeCloseTo(0.8, 9);                        // 81 → 80 = 1/3
+  expect(snapScale(box, lat, right, a, { sx: 1.62, sy: 1 }, false, 12, 4).sx).toBeCloseTo(1.6, 9);                        // 162 → 160 = 2/3
+  expect(snapScale(box, lat, right, a, { sx: 1, sy: 1 }, false, 12, 4).snapped).toBe(false);                              // 100: 20 from 80 and 120
   const bottom = { x: 50, y: 10, ax: 50, ay: 0, cursor: '' };
-  expect(snapScale(nodes, lat, bottom, { sx: 1, sy: 3 }, false, 12, F)).toEqual({ sx: 1, sy: 3, snapped: false });
+  expect(snapScale(box, lat, bottom, { x: 50, y: 0 }, { sx: 1, sy: 3 }, false, 12, 4)).toEqual({ sx: 1, sy: 3, snapped: false });
 });
 
-test('snapScale: a uniform corner takes the nearest target from either axis', () => {
-  const nodes = [{ x: 0, y: 0 }, { x: 100, y: 60 }], corner = { x: 100, y: 60, ax: 0, ay: 0, cursor: '' };
-  const s = snapScale(nodes, lat, corner, { sx: 1.19, sy: 1.19 }, false, 12, F);
+test('snapScale: a proportional corner takes the nearest candidate from either axis; about the centre the handle moves half as far', () => {
+  const box = { x0: 0, y0: 0, x1: 100, y1: 60 }, corner = { x: 100, y: 60, ax: 0, ay: 0, cursor: '' };
+  const s = snapScale(box, lat, corner, { x: 0, y: 0 }, { sx: 1.19, sy: 1.19 }, true, 12, 4);
   expect(s.snapped).toBe(true); expect(s.sx).toBeCloseTo(1.2, 9); expect(s.sy).toBeCloseTo(1.2, 9);
+  const c = snapScale(box, lat, corner, { x: 50, y: 30 }, { sx: 1.21, sy: 1 }, false, 12, 4);
+  expect(c.snapped).toBe(true); expect(c.sx).toBeCloseTo(1.2, 9);
 });
 
 test('cpLines and snapToLines: tangent to a straight neighbour, and the crossing of two lines', () => {

@@ -741,3 +741,100 @@ test('E6b: a component more than the threshold from every fraction stays free; t
   gesture(construct, [{ x: 120, y: 0 }, { x: 60, y: 60 }, { x: 24, y: 121 }], ev(), ctx);   // u = 0.1 (24 px from 0), v = 0.504
   expect(el().u).toBeCloseTo(0.1, 9); expect(el().v).toBe(0.5);
 });
+
+// --- E6, §6.5: box scale modifiers (⇧ proportions, ⌥ from the centre) and silent size fractions (T13)
+
+const withCmd = (over: Partial<PointerEvent> = {}) => ev({ metaKey: true, ...over });
+const expectAt = (p: XY, x: number, y: number) => { expect(p.x).toBeCloseTo(x, 6); expect(p.y).toBeCloseTo(y, 6); };
+// A drag through `tool` with one event per point (the press uses es[0], the release the last); returns the hint shown
+// after the last move.
+function track(tool: ToolModule, pts: XY[], es: PointerEvent[], c: ToolCtx) {
+  hoverAt(pts[0], hit(pts[0]), c);
+  tool.onDown(hit(pts[0]), pts[0], es[0], c);
+  const d = UI.drag.value!;
+  d.moved = true; beginGesture();
+  for (let i = 1; i < pts.length; i++) tool.onMove(d, pts[i], es[i], c);
+  const hint = UI.snapHint.value;
+  UI.drag.value = null;
+  try { tool.onUp(d, pts[pts.length - 1], es[es.length - 1], c); } finally { endGesture(); }
+  return hint;
+}
+// An open rhombus, selected, whose box (48,48)–(120,120) has empty corners: (84,48) → (120,84) → (84,120) → (48,84).
+function rhombusScene(more: (d: Doc, rhombusId: string) => void = () => {}) {
+  let id = '';
+  fresh('freehand', (d) => { id = line(d, [{ u: 0.35, v: 0.2 }, { u: 0.5, v: 0.35 }, { u: 0.35, v: 0.5 }, { u: 0.2, v: 0.35 }]).id; more(d, id); });
+  UI.tool.value = 'select';
+  UI.selection.value = { kind: 'path', id, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } };
+  const at = (i: number) => P.nodeWorld(doc.value, P.pathNodes(P.getPath(doc.value, id)!)[i]);
+  return { id, at };
+}
+
+test('E6: a corner scales each axis on its own by default; ⇧ (or the Proportional toggle) keeps proportions', () => {
+  let s = rhombusScene();
+  expect(hit({ x: 120, y: 120 })).toMatchObject({ kind: 'bbox', h: 2 });
+  track(select, [{ x: 120, y: 120 }, { x: 156, y: 138 }], [withCmd(), withCmd()], free(ctx));   // ⌘: no size fractions, the raw maths
+  expectAt(s.at(1), 156, 93); expectAt(s.at(2), 102, 138);                                         // × 1.5 wide, × 1.25 tall, from (48,48)
+  s = rhombusScene();
+  const sh = withCmd({ shiftKey: true });
+  track(select, [{ x: 120, y: 120 }, { x: 156, y: 138 }], [sh, sh], free(ctx));
+  expectAt(s.at(1), 147, 97.5); expectAt(s.at(2), 97.5, 147);                                       // × 1.375 both ways
+  s = rhombusScene();
+  A.toggleKeepProportions();
+  track(select, [{ x: 120, y: 120 }, { x: 156, y: 138 }], [withCmd(), withCmd()], free(ctx));
+  expectAt(s.at(1), 147, 97.5);
+});
+
+test('E6: ⌥ scales from the box centre, and ⇧⌥ from the centre keeping proportions', () => {
+  let s = rhombusScene();
+  const alt = withCmd({ altKey: true });
+  track(select, [{ x: 120, y: 120 }, { x: 156, y: 138 }], [alt, alt], free(ctx));
+  expectAt(s.at(0), 84, 30); expectAt(s.at(1), 156, 84); expectAt(s.at(2), 84, 138);               // × 2 wide, × 1.5 tall about (84,84)
+  s = rhombusScene();
+  const both = withCmd({ altKey: true, shiftKey: true });
+  track(select, [{ x: 120, y: 120 }, { x: 156, y: 138 }], [both, both], free(ctx));
+  expectAt(s.at(0), 84, 21); expectAt(s.at(1), 147, 84); expectAt(s.at(2), 84, 147);               // × 1.75 both ways about (84,84)
+});
+
+test('E6 (review focus): ⇧ and ⌥ pressed or released mid-drag apply from the next move; only the last move\'s modifiers count', () => {
+  let s = rhombusScene();
+  const both = withCmd({ altKey: true, shiftKey: true });
+  track(select, [{ x: 120, y: 120 }, { x: 138, y: 138 }, { x: 156, y: 138 }], [both, both, withCmd()], free(ctx));   // released before the last move
+  expectAt(s.at(1), 156, 93); expectAt(s.at(2), 102, 138);                                           // as a plain drag to (156,138)
+  s = rhombusScene();
+  track(select, [{ x: 120, y: 120 }, { x: 156, y: 138 }, { x: 156, y: 138 }], [withCmd(), withCmd(), both], free(ctx));   // pressed, then one more move
+  expectAt(s.at(1), 147, 84); expectAt(s.at(2), 84, 147);                                            // as a ⇧⌥ drag
+});
+
+test('E6, T13: a corner drag brings the width to exactly 1/3 of the tile, silently, grid on or off; ⌘ frees it', () => {
+  for (const c of [ctx, noGrid]) {
+    const s = rhombusScene();
+    const hint = track(select, [{ x: 120, y: 120 }, { x: 129, y: 150 }], [ev(), ev()], c);           // raw: 81 wide (1 px from 80), 102 tall (18 from 120)
+    const b = P.boundsWorld(doc.value, P.getPath(doc.value, s.id)!);
+    expect(b.x1 - b.x0).toBeCloseTo(80, 6); expect(b.y1 - b.y0).toBeCloseTo(102, 6);
+    expect(hint).toBe(null);                                                                        // H10: the size fractions are never hinted
+  }
+  const s = rhombusScene();
+  track(select, [{ x: 120, y: 120 }, { x: 129, y: 150 }], [withCmd(), withCmd()], free(ctx));
+  const b = P.boundsWorld(doc.value, P.getPath(doc.value, s.id)!);
+  expect(b.x1 - b.x0).toBeCloseTo(81, 6);
+});
+
+test('E6: the endpoint hints still show while scaling: an end landing on another path\'s node', () => {
+  rhombusScene((d) => { line(d, [{ u: 98 / 240, v: 0.2 }, { u: 98 / 240, v: 10 / 240 }]); });   // a node at (98, 48)
+  const hint = track(select, [{ x: 120, y: 120 }, { x: 148, y: 148 }], [ev(), ev()], ctx);         // 100 × 100: no fraction near; the first end comes to (98, 48)
+  expect(hint?.label).toBe(STR.snap.node);
+  expectAt(hint!.at, 98, 48);
+});
+
+test('E6: the side handle of a vertical line (a zero-width box) changes nothing and writes no NaN, with any modifiers', () => {
+  let id = '';
+  fresh('freehand', (d) => { id = line(d, [{ u: 0.5, v: 0.2 }, { u: 0.5, v: 0.8 }]).id; });        // (120,48) → (120,192)
+  UI.tool.value = 'select'; UI.selection.value = { kind: 'path', id, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } };
+  expect(hit({ x: 120, y: 120 })).toMatchObject({ kind: 'bbox', h: 6 });                           // both side handles sit on the midpoint
+  for (const e of [ev(), ev({ shiftKey: true }), ev({ altKey: true }), ev({ shiftKey: true, altKey: true })]) {
+    track(select, [{ x: 120, y: 120 }, { x: 150, y: 130 }], [e, e], ctx);
+    expect(doc.value.points.every((q) => Number.isFinite(q.u) && Number.isFinite(q.v))).toBe(true);
+    const p = P.getPath(doc.value, id)!;
+    expectAt(P.nodeWorld(doc.value, p.start), 120, 48); expectAt(P.nodeWorld(doc.value, p.segments[0].to), 120, 192);
+  }
+});

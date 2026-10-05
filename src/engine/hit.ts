@@ -253,15 +253,22 @@ export function bboxHandles(box: Box): BoxHandle[] {
 
 export function scaleMatrix(ax: number, ay: number, sx: number, sy: number): Matrix { return [sx, 0, 0, sy, ax - sx * ax, ay - sy * ay]; }
 
-export function scaleFor(h: BoxHandle, p: XY, free: boolean): { sx: number; sy: number } {
-  const vx = h.x - h.ax, vy = h.y - h.ay;
-  if (!vx && !vy) return { sx: 1, sy: 1 };
+// E6, §6.5 box modifiers: the scale a box handle dragged to p gives, and the fixed point it scales about. `proportional`
+// (⇧) keeps the box's proportions: a corner projects p onto its diagonal, an edge applies its factor to both axes.
+// `fromCentre` (⌥) scales about the box centre instead of the opposite handle. A handle with no extent on an axis (a
+// zero-width or zero-height box) leaves that axis at 1, so nothing divides by zero.
+export type ScaleMods = { proportional: boolean; fromCentre: boolean };
+export function boxScale(box: Box, h: BoxHandle, p: XY, mods: ScaleMods): { sx: number; sy: number; ax: number; ay: number } {
+  const ax = mods.fromCentre ? (box.x0 + box.x1) / 2 : h.ax, ay = mods.fromCentre ? (box.y0 + box.y1) / 2 : h.ay;
+  const vx = h.x - ax, vy = h.y - ay;
+  if (!vx && !vy) return { sx: 1, sy: 1, ax, ay };
   const clamp = (v: number) => (Math.abs(v) < 0.05 ? (v < 0 ? -0.05 : 0.05) : v);
   let sx = 1, sy = 1;
-  if (vx && vy) {
-    if (free) { sx = (p.x - h.ax) / vx; sy = (p.y - h.ay) / vy; }
-    else { const u = ((p.x - h.ax) * vx + (p.y - h.ay) * vy) / (vx * vx + vy * vy); sx = sy = u; }
-  } else if (vx) sx = (p.x - h.ax) / vx;
-  else sy = (p.y - h.ay) / vy;
-  return { sx: clamp(sx), sy: clamp(sy) };
+  if (vx && vy && mods.proportional) sx = sy = ((p.x - ax) * vx + (p.y - ay) * vy) / (vx * vx + vy * vy);
+  else {
+    if (vx) sx = (p.x - ax) / vx;
+    if (vy) sy = (p.y - ay) / vy;
+    if (mods.proportional) { if (vx) sy = sx; else sx = sy; }
+  }
+  return { sx: clamp(sx), sy: clamp(sy), ax, ay };
 }

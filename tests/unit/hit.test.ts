@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import * as P from '../../src/engine/paths';
-import { hitTest, anchorsWorld, snapWorld, pointsInRect, projectOnSegment, bboxHandles, scaleFor, scaleMatrix, seedOf, pathsNear, type HitContext } from '../../src/engine/hit';
+import { hitTest, anchorsWorld, snapWorld, pointsInRect, projectOnSegment, bboxHandles, boxScale, scaleMatrix, seedOf, pathsNear, type HitContext } from '../../src/engine/hit';
 import { orbit, apply, cellMatrix, compose } from '../../src/engine/transform';
 import { windowOffsets } from '../../src/engine/lattice';
 import { computeFaces } from '../../src/engine/regions';
@@ -100,13 +100,16 @@ test('marquee, projection, bbox maths, seedOf', () => {
   const { d, n } = scene();
   expect(pointsInRect(d, { x0: 260, y0: 20, x1: 270, y1: 30 })).toEqual([n.pointId]);
   expect(projectOnSegment({ x: 0, y: 0 }, { x: 100, y: 0 }, { x: -50, y: 9 }).x).toBeCloseTo(5, 9);
-  const hs = bboxHandles({ x0: 0, y0: 0, x1: 100, y1: 50 });
+  const box = { x0: 0, y0: 0, x1: 100, y1: 50 }, hs = bboxHandles(box);
   expect(hs).toHaveLength(8);
-  const u = scaleFor(hs[2], { x: 200, y: 100 }, false); expect(u.sx).toBeCloseTo(2, 9); expect(u.sy).toBeCloseTo(2, 9);
-  const f = scaleFor(hs[2], { x: 200, y: 25 }, true); expect(f.sy).toBeCloseTo(0.5, 9);
-  const flat = bboxHandles({ x0: 0, y0: 10, x1: 100, y1: 10 });   // zero-height box: edge handles coincide with the box centre line
-  expect(scaleFor(flat[4], { x: 50, y: 40 }, false)).toEqual({ sx: 1, sy: 1 });
-  expect(Number.isNaN(scaleFor(flat[0], { x: 200, y: 10 }, false).sx)).toBe(false);
+  const plain = { proportional: false, fromCentre: false };
+  const u = boxScale(box, hs[2], { x: 200, y: 100 }, { ...plain, proportional: true }); expect(u.sx).toBeCloseTo(2, 9); expect(u.sy).toBeCloseTo(2, 9);
+  const f = boxScale(box, hs[2], { x: 200, y: 25 }, plain); expect(f.sx).toBeCloseTo(2, 9); expect(f.sy).toBeCloseTo(0.5, 9);
+  const c = boxScale(box, hs[2], { x: 150, y: 75 }, { ...plain, fromCentre: true }); expect(c).toMatchObject({ ax: 50, ay: 25 }); expect(c.sx).toBeCloseTo(2, 9); expect(c.sy).toBeCloseTo(2, 9);
+  const e = boxScale(box, hs[6], { x: 150, y: 0 }, { ...plain, proportional: true }); expect(e.sx).toBeCloseTo(1.5, 9); expect(e.sy).toBeCloseTo(1.5, 9);   // ⇧ on an edge: both axes
+  const flatBox = { x0: 0, y0: 10, x1: 100, y1: 10 }, flat = bboxHandles(flatBox);   // zero-height box: edge handles coincide with the box centre line
+  expect(boxScale(flatBox, flat[4], { x: 50, y: 40 }, plain)).toMatchObject({ sx: 1, sy: 1 });
+  expect(Number.isNaN(boxScale(flatBox, flat[0], { x: 200, y: 10 }, { proportional: true, fromCentre: true }).sx)).toBe(false);
   expect(apply(scaleMatrix(0, 0, 2, 2), { x: 10, y: 5 })).toEqual({ x: 20, y: 10 });
   expect(seedOf({ x: 300, y: 120 }, d.lattice)).toEqual({ x: 60, y: 120 });
 });

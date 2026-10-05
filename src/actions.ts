@@ -152,7 +152,7 @@ export function setLayer(l: Layer): boolean {
   return true;
 }
 export function toggleGrid(): boolean { UI.prefs.value = { ...UI.prefs.value, grid: !UI.prefs.value.grid }; UI.clearSnap(); return true; }
-export function toggleFreeScale(): boolean { UI.freeScale.value = !UI.freeScale.value; return true; }
+export function toggleKeepProportions(): boolean { UI.keepProportions.value = !UI.keepProportions.value; return true; }
 export function toggleAddToSelection(): boolean { UI.addToSelection.value = !UI.addToSelection.value; return true; }
 export function toggleHelp(): boolean { UI.showHelp.value = !UI.showHelp.value; return true; }
 export function setGridDivisions(n: number): boolean { UI.prefs.value = { ...UI.prefs.value, gridDivisions: Math.max(2, Math.min(16, Math.round(n))) }; return true; }
