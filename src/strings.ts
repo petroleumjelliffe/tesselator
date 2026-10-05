@@ -28,6 +28,7 @@ export const STR = {
     grid: 'grid',
     guide: 'guide',
     traced: 'traced line',
+    angle: (deg: number) => `${deg}°`,
   },
   hint: {
     rotate: 'Rotation: drag to move · pick 1/2, 1/3, 1/4 or 1/6 · clones turn about it · O on a selected path stacks it as a new group',
@@ -37,7 +38,7 @@ export const STR = {
     points: (n: number) => `${n} point${n > 1 ? 's' : ''} selected · drag to move together · ⇧-click adds · ⌫ deletes`,
     instances: (n: number) => `${n} instances · ⌫ deletes their paths`,
     clone: 'Clone: drag its body to move the first element of its first group · drag its anchors to edit the shared shape · drag an anchor on a shared point to pull it off',
-    path: 'Path: click a line to insert a point · drag ◇ to bend · double-click ◇ to straighten · box handles scale (⇧ keeps proportions, ⌥ from the centre, ⌘ frees the size steps) · any copy is editable · Layer chips move it · drag a node to pull it off a shared point',
+    path: 'Path: click a line to insert a point · drag ◇ to bend · double-click ◇ to straighten · box handles scale (⇧ keeps proportions, ⌥ from the centre, ⌘ frees the size steps) · drag just outside a corner to rotate · any copy is editable · Layer chips move it · drag a node to pull it off a shared point',
     select: 'Select: click a point, line, copy or fill · drag a line to move the path · drag empty space to marquee points',
     freehand: 'Freehand: press and drag · release to fit curves · start on an open end on this layer to continue its path · hold ⌥ to trace a line',
     fill: 'Fill: press to preview a closed region · release to colour it · press again to recolour',

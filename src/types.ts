@@ -81,7 +81,7 @@ export type Box = { x0: number; y0: number; x1: number; y1: number };
 
 export type HitTarget =
   | { kind: 'bbox'; h: number }
-  | { kind: 'bboxrot' }
+  | { kind: 'bboxrot'; h: number }                                       // E6a: the rotate zone outside corner h (0–3)
   | { kind: 'diamond'; pathId: string; j: number; copy: Copy }
   | { kind: 'point'; pointId: string; cell: Cell; via?: Copy }
   | { kind: 'canchor'; pathId: string; pointId: string; cell: Cell; copy: Copy }
@@ -104,7 +104,7 @@ export type Drag = DragBase & (
   | { kind: 'body'; pathId: string; copy: Copy; ids: string[]; startPos: Record<string, UV>; frame: { G: Matrix; cell: Cell }; targets: BodyTargets | null; snap: BodySnap | null }
   | { kind: 'canchor'; pathId: string; pointId: string; cell: Cell; copy: Copy; targets: TargetSet; snap: SnapResult | null; unlinked?: boolean }
   | { kind: 'cp'; pathId: string; j: number; copy: Copy; lines: Line[] }
-  | { kind: 'bbox'; mode: 'scale' | 'rot'; h: BoxHandle; box: Box; cx: number; cy: number; pathId: string; copy: Copy; startDoc: Doc; M: Matrix | null; nodes: XY[]; targets: TargetSet; own: Set<string> }
+  | { kind: 'bbox'; mode: 'scale' | 'rot'; h: BoxHandle; box: Box; cx: number; cy: number; a0: number; pathId: string; copy: Copy; startDoc: Doc; M: Matrix | null; nodes: XY[]; targets: TargetSet; own: Set<string> }
   | { kind: 'free'; raw: XY[]; startNode: Node | null; startSnap: SnapResult | null; groups: string[][][]; cloneMatrices: Matrix[]; end: SnapResult | null; pin: { id: string; geom: XY[] } | null; cooldown: { id: string; geom: XY[] } | null }
   | { kind: 'fillpress' }
   | { kind: 'elc'; id: string; u0: number; v0: number }

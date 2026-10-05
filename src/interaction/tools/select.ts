@@ -5,9 +5,9 @@ import * as A from '../../actions';
 import * as P from '../../engine/paths';
 import { commit } from '../../state/history';
 import { copyMatrix, snapTargets } from '../../state/derived';
-import { pointsInRectAll, bboxHandles, boxScale, scaleMatrix } from '../../engine/hit';
+import { pointsInRectAll, bboxHandles, boxScale, scaleMatrix, isOriginal } from '../../engine/hit';
 import { toUV } from '../../engine/lattice';
-import { apply, invert, compose, rotation, cellMatrix, isIdentity } from '../../engine/transform';
+import { apply, invert, compose, rotation, cellMatrix, isIdentity, rotationAngle, angleDeg } from '../../engine/transform';
 import { pickSnap, gridResult, pointCopyMatrices, ownFixedCands, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines } from '../../engine/snap';
 import { CONFIG } from '../../config';
 import { STR } from '../../strings';
@@ -88,15 +88,16 @@ export function pointDown(t: Extract<HitTarget, { kind: 'point' }>, w: XY, e: Po
   startDrag(e, t, w, hitScale, { kind: 'pt', pointId: t.pointId, cell: t.cell, via: t.via, targets: snapTargets.value, snap: null });
 }
 
-function startBBox(t: HitTarget, w: XY, e: PointerEvent, hitScale: number): void {
+function startBBox(t: Extract<HitTarget, { kind: 'bbox' | 'bboxrot' }>, w: XY, e: PointerEvent, hitScale: number): void {
   const s = UI.selection.value;
   if (!s || s.kind !== 'path') return;
   const path = P.getPath(doc.value, s.id);
   if (!path) return;
+  if (t.kind === 'bboxrot' && !isOriginal(s.copy)) return;   // E6a: originals only
   const M = copyMatrix(s.copy), box = P.boundsWorld(doc.value, path, M);
   const cx = (box.x0 + box.x1) / 2, cy = (box.y0 + box.y1) / 2;
-  const h = t.kind === 'bboxrot' ? { x: cx, y: box.y0 - CONFIG.BBOX_ROT_OFFSET / UI.view.value.zoom, ax: cx, ay: cy, cursor: 'grab' } : bboxHandles(box)[(t as Extract<HitTarget, { kind: 'bbox' }>).h];
-  startDrag(e, t, w, hitScale, { kind: 'bbox', mode: t.kind === 'bboxrot' ? 'rot' : 'scale', h, box, cx, cy, pathId: s.id, copy: s.copy, startDoc: doc.value, M: null, nodes: P.pathWorld(doc.value, path).map((q) => apply(M, q)),
+  startDrag(e, t, w, hitScale, { kind: 'bbox', mode: t.kind === 'bboxrot' ? 'rot' : 'scale', h: bboxHandles(box)[t.h], box, cx, cy, a0: Math.atan2(w.y - cy, w.x - cx),
+    pathId: s.id, copy: s.copy, startDoc: doc.value, M: null, nodes: P.pathWorld(doc.value, path).map((q) => apply(M, q)),
     targets: snapTargets.value, own: new Set(P.pathNodes(path).map((n) => n.pointId)) });   // I5: the targets at the press; the path's own nodes move with it
 }
 
@@ -203,9 +204,11 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
       if (!d.moved) return;
       let T;
       if (d.mode === 'rot') {
-        let th = Math.atan2(w.y - d.cy, w.x - d.cx) - Math.atan2(d.h.y - d.cy, d.h.x - d.cx);
-        if (ctx.gridOn) th = Math.round(th / (Math.PI / 12)) * (Math.PI / 12);
+        // E6a, H10: about the box centre, from the angle at the press; 15° steps while G is on (silent quantisation
+        // counts as grid, §6.5, so ⌘ / Ctrl does not free it). The hint shows the angle at the grabbed corner.
+        const th = rotationAngle(Math.atan2(w.y - d.cy, w.x - d.cx) - d.a0, ctx.gridOn ? CONFIG.ROTATE_STEP_DEG : 0);
         T = rotation(th, d.cx, d.cy);
+        UI.snapHint.value = { at: apply(T, { x: d.h.x, y: d.h.y }), label: STR.snap.angle(angleDeg(th)) };
       } else {
         // E6, §6.5: ⇧ keeps proportions, ⌥ scales from the box centre; they combine. The size fractions (T13) snap
         // silently unless ⌘ / Ctrl is held, whatever G says.

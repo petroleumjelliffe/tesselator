@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { IDENTITY, translation, rotation, reflection, compose, invert, apply, power, cellMatrix, matrixOf, isLatticeTranslation, composite, orbit, ownClones, cloneCount, classify, toSvg, mirrorAngle, mirrorDirFromAngle, clonePowers } from '../../src/engine/transform';
+import { IDENTITY, translation, rotation, reflection, compose, invert, apply, power, cellMatrix, matrixOf, isLatticeTranslation, composite, orbit, ownClones, cloneCount, classify, toSvg, mirrorAngle, mirrorDirFromAngle, clonePowers, rotationAngle, angleDeg } from '../../src/engine/transform';
 import { CONFIG } from '../../src/config';
 import type { Element, XY } from '../../src/types';
 
@@ -172,4 +172,14 @@ test('classify recognises each isometry', () => {
 
 test('toSvg formats a matrix attribute', () => {
   expect(toSvg(translation(1, 2))).toBe('matrix(1 0 0 1 1 2)');
+});
+
+test('rotationAngle normalises to (−π, π] and steps; angleDeg reads tenths of a degree', () => {
+  expect(rotationAngle(Math.PI / 2 + 0.05, 15)).toBeCloseTo(Math.PI / 2, 12);
+  expect(rotationAngle((3 * Math.PI) / 2, 0)).toBeCloseTo(-Math.PI / 2, 12);
+  expect(rotationAngle(0.1, 0)).toBeCloseTo(0.1, 12);
+  expect(rotationAngle(Math.PI / 24 - 0.001, 15)).toBe(0);
+  expect(angleDeg(Math.PI / 2)).toBe(90);
+  expect(Object.is(angleDeg(-1e-9), 0)).toBe(true);
+  expect(angleDeg(Math.atan2(41, 46) + Math.PI / 4)).toBe(86.7);
 });

@@ -19,6 +19,7 @@ import { apply } from '../../src/engine/transform';
 import { hitTest, type HitContext } from '../../src/engine/hit';
 import type { ToolModule, ToolCtx } from '../../src/interaction/tools/common';
 import type { Doc, XY, UV } from '../../src/types';
+import { cursorFor, ROTATE_CURSOR } from '../../src/interaction/cursor';
 
 const ev = (over: Partial<PointerEvent> = {}) => ({ pointerId: 1, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, pointerType: 'mouse', ...over }) as unknown as PointerEvent;
 const ctx: ToolCtx = { targetsOn: true, gridOn: true, hitScale: 1, threshold: 12 };
@@ -837,4 +838,90 @@ test('E6: the side handle of a vertical line (a zero-width box) changes nothing 
     const p = P.getPath(doc.value, id)!;
     expectAt(P.nodeWorld(doc.value, p.start), 120, 48); expectAt(P.nodeWorld(doc.value, p.segments[0].to), 120, 192);
   }
+});
+
+// --- E6a, H10: rotation just outside a box corner, originals only, 15° steps following G, an angle hint
+
+test('E6a: hovering just outside a corner of the selected original shows the rotate cursor; inside the box, a repeat or a clone shows none', () => {
+  const s = rhombusScene();
+  const w = { x: 130, y: 38 };                                                                        // 14 px from the corner (120, 48), outside the box
+  hoverAt(w, hit(w), ctx);
+  expect(UI.hover.value).toMatchObject({ kind: 'bboxrot', h: 1 });
+  expect(cursorFor()).toBe(ROTATE_CURSOR);
+  hoverAt({ x: 110, y: 58 }, hit({ x: 110, y: 58 }), ctx);                                            // inside the box
+  expect(cursorFor()).not.toBe(ROTATE_CURSOR);
+  UI.selection.value = { kind: 'path', id: s.id, copy: { cell: { c: 1, r: 0 }, bindingId: null, power: 0 } };   // its repeat, box (288,48)–(360,120)
+  hoverAt({ x: 370, y: 38 }, hit({ x: 370, y: 38 }), ctx);
+  expect(UI.hover.value?.kind).not.toBe('bboxrot');
+  expect(cursorFor()).not.toBe(ROTATE_CURSOR);
+  expect(hit({ x: 360, y: 48 })).toMatchObject({ kind: 'bbox', h: 1 });                              // the repeat still scales
+  let bind = '';
+  const m = rhombusScene((d, rid) => { const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 }); bind = P.addBinding(d, rid, [[el.id]]).id; });
+  UI.selection.value = { kind: 'path', id: m.id, copy: { cell: { c: 0, r: 0 }, bindingId: bind, power: 1 } };   // its mirror clone, box (120,48)–(192,120)
+  hoverAt({ x: 202, y: 38 }, hit({ x: 202, y: 38 }), ctx);
+  expect(UI.hover.value?.kind).not.toBe('bboxrot');
+  expect(hit({ x: 192, y: 48 })).toMatchObject({ kind: 'bbox', h: 1 });
+});
+
+test('E6a: dragging from the rotate zone turns the path about its box centre in 15° steps while G is on, ⌘ or not; the hint shows the angle', () => {
+  for (const [c, e] of [[ctx, ev()], [free(ctx), ev({ metaKey: true })]] as const) {
+    const s = rhombusScene();
+    const hint = track(select, [{ x: 130, y: 38 }, { x: 140, y: 90 }, { x: 130, y: 125 }], [e, e, e], c);   // 86.7° raw: steps to 90°
+    expectAt(s.at(0), 120, 84); expectAt(s.at(1), 84, 120); expectAt(s.at(2), 48, 84); expectAt(s.at(3), 84, 48);
+    expect(hint?.label).toBe(STR.snap.angle(90));
+    expectAt(hint!.at, 120, 120);                                                                      // the grabbed corner (120, 48), turned
+  }
+});
+
+test('E6a: with G off the angle is free, and the hint reads it to a tenth of a degree', () => {
+  const s = rhombusScene();
+  const hint = track(select, [{ x: 130, y: 38 }, { x: 130, y: 125 }], [ev(), ev()], noGrid);
+  const th = Math.atan2(41, 46) + Math.PI / 4;                                                        // from the press angle (−45°)
+  expectAt(s.at(0), 84 + 36 * Math.sin(th), 84 - 36 * Math.cos(th));
+  expect(hint?.label).toBe(STR.snap.angle(Math.round((th * 1800) / Math.PI) / 10));
+});
+
+test('E6a: Esc mid-rotation restores the path and leaves no history entry', () => {
+  rhombusScene();
+  const before = structuredClone(doc.value), p0 = { x: 130, y: 38 };
+  hoverAt(p0, hit(p0), ctx);
+  select.onDown(hit(p0), p0, ev(), ctx);
+  const d = UI.drag.value!; d.moved = true; beginGesture();
+  select.onMove(d, { x: 130, y: 130 }, ev(), ctx);
+  expect(doc.value).not.toEqual(before);
+  UI.drag.value = null; abortGesture();                                                               // what pointer.ts does on Esc mid-drag
+  expect(doc.value).toEqual(before);
+  expect(undo()).toBe(false);
+});
+
+test('E6a (review focus): rotating a path that shares a point with another keeps the point shared; the other path\'s far end stays; one undo', () => {
+  let oId = '';
+  const s = rhombusScene((d, rid) => {
+    const shared = P.getPath(d, rid)!.segments[0].to;                                                 // (120, 84)
+    const o = P.startPath(d, { ...shared, cell: { ...shared.cell } }, { color: '#000', weight: 2 }, d.layers[0].id);
+    P.appendNode(d, o.id, P.addPoint(d, { u: 200 / 240, v: 0.35 }));                                // → (200, 84)
+    oId = o.id;
+  });
+  const before = structuredClone(doc.value);
+  track(select, [{ x: 130, y: 38 }, { x: 130, y: 130 }], [ev(), ev()], ctx);
+  const o = P.getPath(doc.value, oId)!;
+  expect(o.start.pointId).toBe(P.getPath(doc.value, s.id)!.segments[0].to.pointId);
+  expectAt(P.nodeWorld(doc.value, o.start), 84, 120);
+  expectAt(P.nodeWorld(doc.value, o.segments[0].to), 200, 84);
+  undo();
+  expect(doc.value).toEqual(before);
+});
+
+test('E6a (review focus): the rotate zone wins over another path\'s line under it; the rotation leaves that path alone', () => {
+  let lId = '';
+  const s = rhombusScene((d) => { lId = line(d, [{ u: 100 / 240, v: 38 / 240 }, { u: 200 / 240, v: 38 / 240 }]).id; });   // y = 38, through (130, 38)
+  UI.selection.value = null;
+  expect(hit({ x: 130, y: 38 })).toMatchObject({ kind: 'segment', pathId: lId });
+  UI.selection.value = { kind: 'path', id: s.id, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } };
+  expect(hit({ x: 130, y: 38 })).toMatchObject({ kind: 'bboxrot', h: 1 });
+  const lBefore = P.pathNodes(P.getPath(doc.value, lId)!).map((n) => P.nodeWorld(doc.value, n));
+  track(select, [{ x: 130, y: 38 }, { x: 130, y: 130 }], [ev(), ev()], ctx);
+  expectAt(s.at(0), 120, 84);
+  P.pathNodes(P.getPath(doc.value, lId)!).forEach((n, i) => expectAt(P.nodeWorld(doc.value, n), lBefore[i].x, lBefore[i].y));
+  expect(UI.selection.value).toMatchObject({ kind: 'path', id: s.id });
 });

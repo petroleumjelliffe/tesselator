@@ -19,6 +19,9 @@ export function copyMatrixOf(copy: Copy, lat: Lattice, cm: Map<string, (Matrix |
   return M ? compose(Mo, M) : Mo;
 }
 
+// Spec §1: the original is the path as stored, in the tile: no clone and cell (0, 0). A repeat elsewhere is not.
+export const isOriginal = (c: Copy): boolean => !c.bindingId && c.cell.c === 0 && c.cell.r === 0;
+
 const dist = (a: XY, b: XY) => Math.hypot(a.x - b.x, a.y - b.y);
 const mid = (a: XY, b: XY): XY => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 
@@ -114,8 +117,14 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
     const box = boundsWorld(doc, selPath, selM);
     const hs = bboxHandles(box);
     for (let i = 0; i < hs.length; i++) if (dist(w, hs[i]) <= rPoint) return { kind: 'bbox', h: i };
-    const knob = { x: (box.x0 + box.x1) / 2, y: box.y0 - CONFIG.BBOX_ROT_OFFSET / z };
-    if (dist(w, knob) <= rPoint) return { kind: 'bboxrot' };
+    // E6a: just outside a corner handle (outside the box, within BBOX_ROT_ZONE_PX beyond its hit radius) rotates, for the
+    // original only. Like a box handle it beats whatever lies beneath.
+    const inBox = w.x >= box.x0 && w.x <= box.x1 && w.y >= box.y0 && w.y <= box.y1;
+    if (isOriginal(sel.copy) && !inBox) {
+      let best = -1, bd = rPoint + (CONFIG.BBOX_ROT_ZONE_PX * s) / z;
+      for (let i = 0; i < 4; i++) { const dd = dist(w, hs[i]); if (dd <= bd) { bd = dd; best = i; } }
+      if (best >= 0) return { kind: 'bboxrot', h: best };
+    }
   }
   if (ctx.tool === 'select' && selPath && selM && sel && sel.kind === 'path') {
     const Pw = pathWorld(doc, selPath).map((p) => apply(selM, p)), C = pathCpsWorld(doc, selPath).map((c) => c && apply(selM, c));

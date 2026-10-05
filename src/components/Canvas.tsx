@@ -2,8 +2,9 @@ import type { JSX } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import { CONFIG } from '../config';
 import { attachPointer } from '../interaction/pointer';
+import { cursorFor } from '../interaction/cursor';
 import { doc } from '../state/doc';
-import { layer, tool, selection, hover, drag, pen, cursor, view, prefs, space, fillPreview, snapHint } from '../state/ui';
+import { layer, tool, selection, hover, drag, pen, cursor, view, prefs, fillPreview, snapHint } from '../state/ui';
 import { cloneMatrices, visibleCells, copies, copyMatrix, faces, snapTargets } from '../state/derived';
 import { toWorld, nodeUV, windowOffsets, cellPolygon } from '../engine/lattice';
 import { IDENTITY, apply, toSvg } from '../engine/transform';
@@ -146,10 +147,9 @@ function BBox() {
   if (bd && dr.kind === 'bbox' && dr.M) corners = corners.map((c) => apply(dr.M!, c));
   const polys = visibleCells.value.map((o) => { const t = toWorld({ u: o.c, v: o.r }, d.lattice); return <polygon key={cellKey(o)} class={isBase(o) ? 'bbox' : 'bbox ghost'} points={corners.map((c) => `${c.x + t.x},${c.y + t.y}`).join(' ')} />; });
   if (bd) return <g>{polys}</g>;
-  const s = 10 / z, cx = (box.x0 + box.x1) / 2, ry = box.y0 - CONFIG.BBOX_ROT_OFFSET / z;
+  const s = 10 / z;   // E6a: no rotation knob; rotation is the zone just outside a corner (cursor.ts)
   return <g>{polys}
     {bboxHandles(box).map((hd, i) => <rect key={i} class={h && h.kind === 'bbox' && h.h === i ? 'handle hover' : 'handle'} x={hd.x - s / 2} y={hd.y - s / 2} width={s} height={s} />)}
-    <line class="guide" x1={cx} y1={box.y0} x2={cx} y2={ry} /><circle class={hoverIs(h, 'bboxrot') ? 'handle hover' : 'handle'} cx={cx} cy={ry} r={6 / z} />
   </g>;
 }
 
@@ -287,17 +287,6 @@ function SnapMark() {
     {h.label && <text class="snap-label" x={h.at.x + 10 / z} y={h.at.y - 10 / z} font-size={12 / z}>{h.label}</text>}
   </g>;
 }
-
-function cursorFor(): string {
-  const h = hover.value, t = tool.value;
-  if (space.value && pen.value) return 'grab';
-  if (layer.value === 'construction') return h ? (h.kind === 'elrot' || h.kind === 'eltip' ? 'grab' : 'move') : 'default';
-  if (h && h.kind === 'bbox') return bboxCursor(h.h);
-  if (h && (h.kind === 'bboxrot' || h.kind === 'diamond')) return 'grab';
-  if (h && (h.kind === 'point' || h.kind === 'segment' || h.kind === 'canchor' || h.kind === 'fill')) return 'pointer';
-  return t === 'select' || t === 'fill' ? 'default' : 'crosshair';
-}
-const bboxCursor = (i: number) => ['nwse-resize', 'nesw-resize', 'nwse-resize', 'nesw-resize', 'ns-resize', 'ns-resize', 'ew-resize', 'ew-resize'][i];
 
 export function Canvas() {
   const ref = useRef<SVGSVGElement>(null);

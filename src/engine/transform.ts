@@ -156,4 +156,17 @@ export function classify(M: Matrix, eps = 1e-6): Classified {
   return Math.abs(along) < eps ? { kind: 'reflection', line } : { kind: 'glide', line, slide: along };
 }
 
+// E6a: a rotation angle (radians) normalised to (−π, π], rounded to `stepDeg`-degree steps when stepDeg > 0.
+export function rotationAngle(theta: number, stepDeg: number): number {
+  let t = Math.atan2(Math.sin(theta), Math.cos(theta));
+  if (stepDeg > 0) { const k = (stepDeg * Math.PI) / 180; t = Math.round(t / k) * k; }
+  return t <= -Math.PI ? t + 2 * Math.PI : t;
+}
+
+// H10: the angle in degrees for the rotation hint, to one decimal (clockwise on screen is positive).
+export function angleDeg(theta: number): number {
+  const d = Math.round(((theta * 180) / Math.PI) * 10) / 10;
+  return d === 0 ? 0 : d;
+}
+
 export function toSvg(M: Matrix): string { return `matrix(${M.join(' ')})`; }
