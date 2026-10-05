@@ -46,6 +46,7 @@ export function clearSelection(): void { selection.value = null; }
 export function selectedPathId(): string | null { const s = selection.value; return s && s.kind === 'path' ? s.id : null; }
 export function selectedCopy(): Copy | null { const s = selection.value; return s && s.kind === 'path' ? s.copy : null; }
 export function selectedPointIds(): string[] { const s = selection.value; return s && s.kind === 'points' ? s.ids : []; }
+export function selectedInstances(): { id: string; copy: Copy }[] { const s = selection.value; return s && s.kind === 'paths' ? s.items : s && s.kind === 'path' ? [{ id: s.id, copy: s.copy }] : []; }
 export function selectedElementId(): string | null { const s = selection.value; return s && s.kind === 'element' ? s.id : null; }
 
 export function fitView(lat: Lattice): void {

@@ -925,3 +925,70 @@ test('E6a (review focus): the rotate zone wins over another path\'s line under i
   P.pathNodes(P.getPath(doc.value, lId)!).forEach((n, i) => expectAt(P.nodeWorld(doc.value, n), lBefore[i].x, lBefore[i].y));
   expect(UI.selection.value).toMatchObject({ kind: 'path', id: s.id });
 });
+
+// --- S8: a marquee selects the instances it wholly contains; else nodes; ⌥ at release always picks nodes
+
+const base0 = { cell: { c: 0, r: 0 }, bindingId: null, power: 0 };
+// A (24,24) → (72,24), B (24,72) → (72,96), C (150,24) → (216,24). Select tool, nothing selected.
+function threePaths(more: (d: Doc) => void = () => {}) {
+  const ids = { a: '', b: '', c: '' };
+  fresh('freehand', (d) => {
+    ids.a = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.3, v: 0.1 }]).id;
+    ids.b = line(d, [{ u: 0.1, v: 0.3 }, { u: 0.3, v: 0.4 }]).id;
+    ids.c = line(d, [{ u: 0.625, v: 0.1 }, { u: 0.9, v: 0.1 }]).id;
+    more(d);
+  });
+  UI.tool.value = 'select'; UI.selection.value = null;
+  return ids;
+}
+// A marquee drag through the Select tool, from empty space; returns the selection after the release.
+function marquee(from: XY, to: XY, e = ev()) {
+  expect(hit(from)).toBe(null);
+  select.onDown(hit(from), from, e, ctx);
+  const m = UI.drag.value!; m.moved = true;
+  select.onMove(m, to, e, ctx);
+  UI.drag.value = null; select.onUp(m, to, e, ctx);
+  return UI.selection.value;
+}
+
+test('S8: a marquee around two whole paths selects both as paths; around one, that path', () => {
+  const { a, b } = threePaths();
+  expect(marquee({ x: 10, y: 10 }, { x: 90, y: 110 })).toEqual({ kind: 'paths', items: [{ id: a, copy: base0 }, { id: b, copy: base0 }] });
+  expect(marquee({ x: 10, y: 10 }, { x: 90, y: 40 })).toEqual({ kind: 'path', id: a, copy: base0 });
+});
+
+test('S8: whole and partial instances together select only the whole ones; with no whole instance, nodes', () => {
+  const { a, b } = threePaths();
+  expect(marquee({ x: 10, y: 10 }, { x: 170, y: 40 })).toEqual({ kind: 'path', id: a, copy: base0 });   // C's start is inside, its end is not
+  const s = marquee({ x: 40, y: 0 }, { x: 90, y: 110 });                                                  // only A's and B's ends; (40, 0) is clear of A's rotate zone
+  const pa = P.getPath(doc.value, a)!, pb = P.getPath(doc.value, b)!;
+  expect(s && s.kind === 'points' && [...s.ids].sort()).toEqual([pa.segments[0].to.pointId, pb.segments[0].to.pointId].sort());
+});
+
+test('S8: ⌥ held at release selects the nodes even around whole paths', () => {
+  threePaths();
+  const s = marquee({ x: 10, y: 10 }, { x: 90, y: 110 }, ev({ altKey: true }));
+  expect(s?.kind).toBe('points');
+  expect(s && s.kind === 'points' && s.ids.length).toBe(4);
+});
+
+test('S8: a ⇧-marquee adds whole instances to the instances already selected', () => {
+  const { a, c } = threePaths();
+  A.selectPathAt(c);
+  expect(marquee({ x: 10, y: 10 }, { x: 90, y: 40 }, ev({ shiftKey: true }))).toEqual({ kind: 'paths', items: [{ id: c, copy: base0 }, { id: a, copy: base0 }] });
+});
+
+test('S8 (review focus): a path leaving the tile through its right edge is whole in a marquee around where it is drawn, in either tile', () => {
+  let id = '', start = '';
+  fresh('freehand', (d) => {
+    const n = P.addPoint(d, { u: 0.9, v: 0.5 }); start = n.pointId;                                   // (216, 120)
+    const p = P.startPath(d, n, { color: '#000', weight: 2 }, d.layers[0].id);
+    P.appendNode(d, p.id, { ...P.addPoint(d, { u: 0.1, v: 0.5 }), cell: { c: 1, r: 0 } });            // (264, 120), in the next tile
+    id = p.id;
+  });
+  UI.tool.value = 'select'; UI.selection.value = null;
+  expect(marquee({ x: 200, y: 100 }, { x: 280, y: 140 })).toEqual({ kind: 'path', id, copy: base0 });
+  expect(marquee({ x: -40, y: 100 }, { x: 40, y: 140 })).toEqual({ kind: 'path', id, copy: { cell: { c: -1, r: 0 }, bindingId: null, power: 0 } });   // its repeat, (−24,120) → (24,120)
+  const s = marquee({ x: 196, y: 96 }, { x: 250, y: 140 });                                               // only the start is inside
+  expect(s && s.kind === 'points' && s.ids).toEqual([start]);
+});

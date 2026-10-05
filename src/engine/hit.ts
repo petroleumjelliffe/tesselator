@@ -240,6 +240,18 @@ export function pointsInRectAll(doc: Doc, r: Box): { ids: string[]; copies: Reco
   return { ids: [...ids], copies };
 }
 
+// S8: the instances among `copies` (the visible ones) whose every node, where that instance draws it, lies inside the
+// rectangle; in `copies` order. A node in another cell or seen through a via counts at its drawn position.
+export function instancesInRect(doc: Doc, r: Box, copies: CopyInfo[]): { id: string; copy: Copy }[] {
+  const inside = (q: XY) => q.x >= r.x0 && q.x <= r.x1 && q.y >= r.y0 && q.y <= r.y1;
+  const out: { id: string; copy: Copy }[] = [];
+  for (const ci of copies) {
+    const p = getPath(doc, ci.pathId);
+    if (p && pathWorld(doc, p).every((q) => inside(apply(ci.M, q)))) out.push({ id: p.id, copy: ci.copy });
+  }
+  return out;
+}
+
 export function projectOnSegment(A: XY, B: XY, p: XY, tMin = 0.05, tMax = 0.95): XY {
   const dx = B.x - A.x, dy = B.y - A.y, L = dx * dx + dy * dy || 1;
   const t = Math.max(tMin, Math.min(tMax, ((p.x - A.x) * dx + (p.y - A.y) * dy) / L));

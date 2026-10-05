@@ -39,7 +39,7 @@ export const STR = {
     instances: (n: number) => `${n} instances · ⌫ deletes their paths`,
     clone: 'Clone: drag its body to move the first element of its first group · drag its anchors to edit the shared shape · drag an anchor on a shared point to pull it off',
     path: 'Path: click a line to insert a point · drag ◇ to bend · double-click ◇ to straighten · box handles scale (⇧ keeps proportions, ⌥ from the centre, ⌘ frees the size steps) · drag just outside a corner to rotate · any copy is editable · Layer chips move it · drag a node to pull it off a shared point',
-    select: 'Select: click a point, line, copy or fill · drag a line to move the path · drag empty space to marquee points',
+    select: 'Select: click a point, line, copy or fill · drag a line to move the path · drag empty space to select the paths wholly inside (⌥ for their nodes)',
     freehand: 'Freehand: press and drag · release to fit curves · start on an open end on this layer to continue its path · hold ⌥ to trace a line',
     fill: 'Fill: press to preview a closed region · release to colour it · press again to recolour',
     penActive: 'Pen: click to add · click a line to join it there · click a point or clone anchor to connect · click the last point, Esc or ↵ to finish · Space+drag moves the elements',

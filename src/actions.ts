@@ -321,6 +321,15 @@ export function toggleInstance(pathId: string, copy: Copy): boolean {
   return true;
 }
 
+// S8: select whole instances. One is a plain path selection, several the 'paths' selection; duplicates are dropped, order kept.
+export function selectInstances(items: { id: string; copy: Copy }[]): boolean {
+  const u: { id: string; copy: Copy }[] = [];
+  for (const it of items) if (!u.some((x) => x.id === it.id && sameCopy(x.copy, it.copy))) u.push({ id: it.id, copy: { ...it.copy, cell: { ...it.copy.cell } } });
+  UI.selection.value = u.length === 0 ? null : u.length === 1 ? { kind: 'path', id: u[0].id, copy: u[0].copy } : { kind: 'paths', items: u };
+  UI.pendingGroup.value = null;
+  return true;
+}
+
 // --- segments
 
 export function insertNodeOnSegment(pathId: string, j: number, w: XY, copy: Copy, on: boolean): boolean {

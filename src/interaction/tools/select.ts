@@ -4,8 +4,8 @@ import * as UI from '../../state/ui';
 import * as A from '../../actions';
 import * as P from '../../engine/paths';
 import { commit } from '../../state/history';
-import { copyMatrix, snapTargets } from '../../state/derived';
-import { pointsInRectAll, bboxHandles, boxScale, scaleMatrix, isOriginal } from '../../engine/hit';
+import { copyMatrix, snapTargets, copies } from '../../state/derived';
+import { pointsInRectAll, bboxHandles, boxScale, scaleMatrix, isOriginal, instancesInRect } from '../../engine/hit';
 import { toUV } from '../../engine/lattice';
 import { apply, invert, compose, rotation, cellMatrix, isIdentity, rotationAngle, angleDeg } from '../../engine/transform';
 import { pickSnap, gridResult, pointCopyMatrices, ownFixedCands, bodyTargets, snapBodyDelta, snapScale, cpLines, snapToLines } from '../../engine/snap';
@@ -242,6 +242,10 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
   if (d.kind === 'marquee') {
     if (!d.moved) return;
     const r = { x0: Math.min(d.start.x, d.cur.x), x1: Math.max(d.start.x, d.cur.x), y0: Math.min(d.start.y, d.cur.y), y1: Math.max(d.start.y, d.cur.y) };
+    // S8: the instances wholly inside become the selection (one path, or several); ⌥ at the release always picks nodes.
+    // With no whole instance, the nodes inside (S5). ⇧ adds to a selection of the same kind.
+    const whole = e.altKey ? [] : instancesInRect(doc.value, r, copies.value);
+    if (whole.length) { A.selectInstances([...(d.add ? UI.selectedInstances() : []), ...whole]); return; }
     const got = pointsInRectAll(doc.value, r), prev = UI.selection.value;
     const prevCopies = d.add && prev && prev.kind === 'points' ? prev.copies ?? {} : {};
     A.selectPoints([...(d.add ? UI.selectedPointIds() : []), ...got.ids], { ...prevCopies, ...got.copies });
