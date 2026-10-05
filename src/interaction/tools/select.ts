@@ -64,11 +64,14 @@ function joinBody(pathId: string, G: Matrix, s: BodySnap, ids: string[], also: s
   if (r && (r.hit.kind === 'node' || r.hit.kind === 'curve')) A.joinDroppedNode(pathId, s.nodeIndex, r.hit);
 }
 
-// E5b: the instance whose frame moves a path (decided 2026-10-05): a selected original or repeat if there is one, so the
-// original follows the pointer; otherwise the grabbed instance if it is this path's, else the path's first selected clone.
+// E5b: the instance whose frame moves a path (decided 2026-10-05): the grabbed instance if it is a selected original or
+// repeat (so the hint stays in the grabbed tile); else a selected original or repeat if there is one, so the original
+// follows the pointer; otherwise the grabbed instance if it is this path's, else the path's first selected clone.
 function drivingCopy(items: { id: string; copy: Copy }[], pathId: string, grabbed: Copy | null): Copy | null {
   const mine = items.filter((x) => x.id === pathId).map((x) => x.copy);
-  return mine.find((c) => !c.bindingId) ?? (grabbed && mine.some((c) => sameCopy(c, grabbed)) ? grabbed : mine[0] ?? null);
+  const isMine = !!grabbed && mine.some((c) => sameCopy(c, grabbed));
+  if (grabbed && isMine && !grabbed.bindingId) return grabbed;
+  return mine.find((c) => !c.bindingId) ?? (grabbed && isMine ? grabbed : mine[0] ?? null);
 }
 
 // E5b: the other selected paths that ride along a body drag, each once, through its driving instance (the grabbed path

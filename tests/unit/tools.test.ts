@@ -1116,6 +1116,18 @@ test('E5b (review focus): only a clone of a rider selected; the clone follows th
   expectAt(P.nodeWorld(doc.value, p.start), 0, 24); expectAt(P.nodeWorld(doc.value, p.segments[0].to), 48, 24);   // X's original 24 px left, so its selected clone moved 24 px right with the pointer
 });
 
+test('E5b (final review): original and its repeat selected; grabbing the repeat shows the snap hint in the repeat\'s tile, under the pointer', () => {
+  let dId = '';
+  const { a } = threePaths((d) => { dId = line(d, [{ u: 103 / 240, v: 45 / 240 }, { u: 103 / 240, v: 10 / 240 }]).id; });   // a node at (103, 45); its repeat at (343, 45)
+  const rep = { cell: { c: 1, r: 0 }, bindingId: null, power: 0 };
+  UI.selection.value = { kind: 'paths', items: [{ id: a, copy: base0 }, { id: a, copy: rep }] };
+  expect(hit({ x: 288, y: 24 })).toMatchObject({ kind: 'segment', pathId: a, copy: rep });
+  const hint = track(select, [{ x: 288, y: 24 }, { x: 303, y: 34 }, { x: 318, y: 44 }], [ev(), ev(), ev()], noGrid);   // the repeat's end comes to (342, 44)
+  expect(hint).toBeTruthy();
+  expectAt(hint!.at, 343, 45);                                                                       // D's node as the repeat sees it, not (103, 45)
+  expect(P.getPath(doc.value, a)!.segments[0].to.pointId).toBe(P.getPath(doc.value, dId)!.start.pointId);   // the snap and join were right already
+});
+
 test('E5b: a click on a selected instance without a drag selects just that instance', () => {
   const { b } = threePaths();
   marquee({ x: 10, y: 10 }, { x: 90, y: 110 });
