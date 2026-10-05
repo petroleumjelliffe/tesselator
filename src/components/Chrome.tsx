@@ -238,7 +238,8 @@ function Help() {
     <span class="violet">{STR.help.elementsIntro}<K k="[" />{STR.help.elementsBetween}<K k="]" />{STR.help.elementsRest}</span>
     <span>{STR.help.penIntro}<K k="Esc" />{STR.help.penOr}<K k="↵" />{STR.help.penToEnd}<K k="Space" />{STR.help.penSpace}</span>
     <span>{STR.help.freehandIntro}<K k="⌥" />{STR.help.freehandTrace}</span>
-    <span>{STR.help.selectIntro}<K k="⇧" />{STR.help.selectShift}</span>
+    <span>{STR.help.selectIntro}<K k="⇧" />{STR.help.selectShift}<K k="⌥" />{STR.help.selectAlt}</span>
+    <span>{STR.help.boxIntro}<K k="⇧" />{STR.help.boxShift}<K k="⌥" />{STR.help.boxAlt}<K k="⌘" />{STR.help.boxCmd}</span>
     <span>{STR.help.clone}</span>
     <span>{STR.help.fill}</span>
     <span>{STR.help.wheelIntro}<K k="⌘" />{STR.help.wheelZoom}<K k="⌘0" />{STR.help.wheelFit}<K k="⌫" />{STR.help.wheelDelete}<K k="⌘Z" />{STR.help.wheelUndo}<K k="⇧⌘Z" />{STR.help.wheelRedo}</span>

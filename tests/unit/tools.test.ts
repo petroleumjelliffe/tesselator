@@ -1096,3 +1096,25 @@ test('E5b: pressing an unselected path replaces the selection and drags that pat
   expect(UI.selection.value).toEqual({ kind: 'path', id: c, copy: base0 });
   expectAt(startOf(c), 150, 54); expectAt(startOf(a), 24, 24); expectAt(startOf(b), 24, 72);
 });
+
+test('E5b (review focus): a quarter-turn clone rides with its inverse linear part, not the forward rotation (a mirror cannot tell them apart)', () => {
+  let x = '', y = '';
+  fresh('freehand', (d) => {
+    const el = P.addElement(d, { kind: 'rotate', u: 0.5, v: 0.5, n: 4 });                           // centre (120, 120)
+    x = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.3, v: 0.2 }]).id; P.addBinding(d, x, [[el.id]]);        // (48,48) → (72,48); quarter clone (432,48) → (432,72)
+    y = line(d, [{ u: 150 / 240, v: 150 / 240 }, { u: 170 / 240, v: 150 / 240 }]).id;               // (150,150) → (170,150), no clones
+  });
+  UI.tool.value = 'select'; UI.selection.value = null;
+  const t = hit({ x: 432, y: 60 });
+  if (t?.kind !== 'segment') throw new Error(`expected a segment, got ${t?.kind}`);
+  UI.selection.value = { kind: 'paths', items: [{ id: x, copy: t.copy }, { id: y, copy: base0 }] };
+  const px = P.getPath(doc.value, x)!;
+  const cloneBefore = P.pathWorld(doc.value, px).map((q) => apply(copyMatrix(t.copy), q));
+  expectAt(cloneBefore[0], 432, 48); expectAt(cloneBefore[1], 432, 72);
+  expect(hit({ x: 155, y: 150 })).toMatchObject({ kind: 'segment', pathId: y });
+  gesture(select, [{ x: 155, y: 150 }, { x: 172, y: 157 }], ev(), noGrid);                          // Y dragged by (17, 7); nothing within 18 px of either end
+  const cloneAfter = P.pathWorld(doc.value, P.getPath(doc.value, x)!).map((q) => apply(copyMatrix(t.copy), q));
+  for (let i = 0; i < cloneBefore.length; i++) expectAt(cloneAfter[i], cloneBefore[i].x + 17, cloneBefore[i].y + 7);   // the clone followed the pointer exactly
+  const py = P.getPath(doc.value, y)!;
+  expectAt(P.nodeWorld(doc.value, py.start), 167, 157); expectAt(P.nodeWorld(doc.value, py.segments[0].to), 187, 157);
+});

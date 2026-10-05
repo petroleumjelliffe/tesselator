@@ -1,6 +1,6 @@
 # Interaction specification — drawing, selection, editing, snapping, fills
 
-Status: decisions recorded 2026-09-30 and amended through 2026-10-04 (dated inline). The snapping-and-drawing plan and the 2026-10-01 feedback round are built; the rest is ready for planning. Organises every interaction requirement by entity, state and behaviour, and checks them against a use-case list. It consolidates the interaction parts of the engine design (`2026-09-27-engine-rebuild-design.md` §4 Hit-testing, Snapping and Regions, §6), the pen-joins amendment (`2026-09-29-pen-joins-amendment.md`) and the snapping-and-handles amendment (`2026-09-29-snapping-and-handles-amendment.md`), and the user's interaction notes and answers of 2026-09-30. The amendments keep their rationale and maths; where this file and they disagree, this file wins.
+Status: decisions recorded 2026-09-30 and amended through 2026-10-04 (dated inline). The snapping-and-drawing plan, the 2026-10-01 feedback round and the marquee-and-transforms plan (S8, S10, E5b, E6, E6a, E6b, T13, H10) are built; the rest is ready for planning. Organises every interaction requirement by entity, state and behaviour, and checks them against a use-case list. It consolidates the interaction parts of the engine design (`2026-09-27-engine-rebuild-design.md` §4 Hit-testing, Snapping and Regions, §6), the pen-joins amendment (`2026-09-29-pen-joins-amendment.md`) and the snapping-and-handles amendment (`2026-09-29-snapping-and-handles-amendment.md`), and the user's interaction notes and answers of 2026-09-30. The amendments keep their rationale and maths; where this file and they disagree, this file wins.
 
 **Status tags** on every requirement:
 
@@ -66,7 +66,7 @@ Linking copied locations across layers so they move together is on the roadmap (
 | Path, any instance | yes | yes | node, body, box | line | built; targets new |
 | Node / endpoint, any instance | selected instance only (S2); while drawing, paths near the cursor (H8) | yes | yes | point | built |
 | Handle | selected instance | no | yes | — | built |
-| Box handle | single selected instance | no | yes | — | built; T13, modifiers and rotation new |
+| Box handle | single selected instance | no | yes | — | built |
 | In-progress stroke, original | while drawing | no | — | line | built |
 | In-progress stroke, clones and repeats | while drawing (ghosts) | no | — | start: point; body: line | built |
 | Placement node and cursor ghosts | drawing tool armed (H9, D15) | no | — | — | new |
@@ -95,7 +95,7 @@ Pen, Freehand and (later) Shape tools share one rule set for nodes, snapping and
 | State | Contents | Status |
 |---|---|---|
 | Nothing | — | built |
-| Instances | one or more (path, instance) pairs: originals, repeats, clones; by click, `⇧`-click (S4) or marquee (S8) | built; marquee new |
+| Instances | one or more (path, instance) pairs: originals, repeats, clones; by click, `⇧`-click (S4) or marquee (S8) | built |
 | Nodes | one or more (node, instance it was picked through) | built |
 | Element | one symmetry element | built |
 | Fill shape | one | change (was a seed) |
@@ -109,7 +109,7 @@ Pen, Freehand and (later) Shape tools share one rule set for nodes, snapping and
 | Stroke (Freehand) | press | release; `Esc` discards | built |
 | Stroke, pinned | §6.6 | breakaway, `⌥` up, or release | built |
 | Path in progress (Pen) | first click | `Esc`, `Enter`, last point, start point | built |
-| Drag (nodes, handle, box, body, several paths, element) | press and move | release; `Esc` cancels and restores | built; several paths new (E5b) |
+| Drag (nodes, handle, box, body, several paths, element) | press and move | release; `Esc` cancels and restores | built |
 | Marquee | press on empty space in Select and move | release | built |
 | Two-pointer navigation | second pointer | both up | built |
 
@@ -159,7 +159,7 @@ Pen, Freehand and (later) Shape tools share one rule set for nodes, snapping and
 | T10 | The stroke's own clones and repeats: their start and line | point / line | built |
 | T11 | Grid | point (fallback); filters line targets while `G` is on (SN2a) | built; filter new |
 | T12 | Handle guides: axis lines through the anchors, tangents, mirror normals | line | built |
-| T13 | Size fractions: k/n of the tile's width and height, n ≤ `CONFIG.FRACTION_MAX_N` (4 for now; may later grow with zoom). Silent (§6.5). | value | change 2026-10-02 (was: hinted scale fractions) |
+| T13 | Size fractions: k/n of the tile's width and height, n ≤ `CONFIG.FRACTION_MAX_N` (4 for now; may later grow with zoom). Silent (§6.5). | value | built (was: hinted scale fractions) |
 
 Hidden paths and paths on hidden layers are never targets (with layer hiding, §12).
 
@@ -252,22 +252,22 @@ Status: built for Pen, Freehand and Select drags (2026-10-01). A dragged clone i
 | S2 | Nodes show only on the selected instance(s), not on every instance. | built |
 | S3 | `⇧`-click adds or removes a node. | built |
 | S4 | `⇧`-click adds or removes an instance (original, repeat or clone). Delete removes the selected instances' whole paths; per-clone actions wait for the roadmap. | built; open: one selected clone + Delete removes only that clone's binding, but several selected instances delete whole paths — make these consistent? |
-| S5 | Marquee selects nodes of every visible instance inside it; a node picked through a clone moves through that clone's inverse. | built (S8 changes what a marquee selects) |
+| S5 | Marquee selects nodes of every visible instance inside it; a node picked through a clone moves through that clone's inverse. | built; S8 decides between nodes and whole instances |
 | S6 | Where a node and a box handle coincide, the node wins. | built |
 | S7 | With several paths selected (S4), the transform-group panel edits all of them at once (decided 2026-10-02). It shows the groups they share; where they differ, an element shows as mixed. Every change (add or remove an element in group N, add a `+ then` group, remove a group) is applied to each selected path's binding, one undo for the whole change. A path without a binding gets one. Selecting several instances of the same path edits that path once. | open: whether a change applies step by step to each path or copies one path's whole set of groups (2026-10-04: the user will try both before deciding; not in the next build) |
-| S8 | A marquee that contains **every node of a path instance** selects that instance as a path, not its nodes (decided 2026-10-02). If it contains several whole instances, they become a several-paths selection (S4, S7). If the marquee contains no whole instance, it selects nodes as before (S5). If it contains some whole instances and some partial ones, it selects the whole instances only. Holding `⌥` while releasing the marquee always selects nodes. | new |
+| S8 | A marquee that contains **every node of a path instance** selects that instance as a path, not its nodes (decided 2026-10-02). If it contains several whole instances, they become a several-paths selection (S4, S7). If the marquee contains no whole instance, it selects nodes as before (S5). If it contains some whole instances and some partial ones, it selects the whole instances only. Holding `⌥` while releasing the marquee always selects nodes. | built |
 | S9 | Pressing a node of an unselected path drags the whole path (its nodes are not shown, S2); select the path first to drag one node. | built (recorded 2026-10-04) |
-| S10 | With several paths selected, nodes show on every selected instance, and there is no bounding box; scaling and rotating several paths at once is on the roadmap. | new |
+| S10 | With several paths selected, nodes show on every selected instance, and there is no bounding box; scaling and rotating several paths at once is on the roadmap. | built |
 | E1 | Drag a node; all instances follow. | built |
 | E2 | Drag selected nodes as a unit. | built |
 | E3 | Handles move rigidly with a dragged node. | built |
 | E4 | Dragging a node of the selected path pulls it off a shared point. | built |
 | E5 | Drag a path's body; its endpoints snap as they move (§6.3) and join on release (§6.4). | built |
 | E5a | Dragging the body of a clone or repeat moves the **original** path so the grabbed copy follows the pointer; transforms never move (decided 2026-10-01: moving the transform broke rational placement and multiplied copies). Snapping is measured at the grabbed copy. Transforms move only by their own handles. | built 2026-10-01 (change; was: moved the transform) |
-| E5b | With several paths selected (S4, S8), pressing on any selected instance and dragging moves the **whole selection** (decided 2026-10-02). Each selected instance moves by the same on-screen delta: its original moves through that instance's frame (E5a). A path moves once (decided 2026-10-05): if its original (or a repeat) is selected, the original moves by the pointer's delta and its clones follow their transforms, even when a clone is the one grabbed; if only clones of it are selected, the grabbed clone (else the first selected clone) follows the pointer and the original moves by the matching transformed amount. Snapping is measured at the grabbed instance only (§6.3 body row), and only the grabbed path joins on release. One undo. A click on a selected instance without dragging selects just that instance. Pressing an unselected path replaces the selection and drags it alone. | new |
-| E6 | Box handles scale a single selected path; scale snaps silently to size fractions (T13); endpoint hints while scaling; `⇧` keeps proportions, `⌥` scales from the centre (§6.5). | built; T13 and modifiers new |
-| E6a | **Rotation** (decided 2026-10-02): hovering just outside a corner handle of a selected path's box shows the rotate cursor; dragging from there rotates the path about the box centre (only, for now). Only when the selected instance is the **original** (decided 2026-10-04); a selected repeat or clone shows no rotate cursor. A hint shows the angle while rotating. Angle steps follow §6.5. No separate rotation handle. | new |
-| E6b | Resizing a translation element (construction layer) snaps its u and v components silently to size fractions (T13); `⌘` / `Ctrl` frees it. | new 2026-10-02 (was: twelfths, following `G`) |
+| E5b | With several paths selected (S4, S8), pressing on any selected instance and dragging moves the **whole selection** (decided 2026-10-02). Each selected instance moves by the same on-screen delta: its original moves through that instance's frame (E5a). A path moves once (decided 2026-10-05): if its original (or a repeat) is selected, the original moves by the pointer's delta and its clones follow their transforms, even when a clone is the one grabbed; if only clones of it are selected, the grabbed clone (else the first selected clone) follows the pointer and the original moves by the matching transformed amount. Snapping is measured at the grabbed instance only (§6.3 body row), and only the grabbed path joins on release. One undo. A click on a selected instance without dragging selects just that instance. Pressing an unselected path replaces the selection and drags it alone. | built |
+| E6 | Box handles scale a single selected path; scale snaps silently to size fractions (T13); endpoint hints while scaling; `⇧` keeps proportions, `⌥` scales from the centre (§6.5). | built |
+| E6a | **Rotation** (decided 2026-10-02): hovering just outside a corner handle of a selected path's box shows the rotate cursor; dragging from there rotates the path about the box centre (only, for now). Only when the selected instance is the **original** (decided 2026-10-04); a selected repeat or clone shows no rotate cursor. A hint shows the angle while rotating. Angle steps follow §6.5. No separate rotation handle. | built |
+| E6b | Resizing a translation element (construction layer) snaps its u and v components silently to size fractions (T13); `⌘` / `Ctrl` frees it. | built (was: twelfths, following `G`) |
 | E7 | Handle drags snap to axis angles, tangents, mirror normals. | built |
 | E8 | Dropping a node on a node (same layer) merges them. | built |
 | E9 | Dropping a node on a line (same layer) splits the line and shares the node. | built |
@@ -287,7 +287,7 @@ Status: built for Pen, Freehand and Select drags (2026-10-01). A dragged clone i
 | H7 | No hint, no snap (decided 2026-10-01): a target snap happens only if its hint is visible at that moment; otherwise the point lands where the pointer is, or on the grid while `G` is on. A commit never re-picks a snap that was not shown. | built for Pen, Freehand and Select drags |
 | H8 | While Pen or Freehand is selected, nodes are shown only for paths near the cursor (within 48 screen px of any of their instances), not for every path (decided 2026-10-01). The path in progress always shows its nodes. Display only: hidden nodes still snap. | built |
 | H9 | **Placement node** (decided 2026-10-02): while Pen or Freehand is selected and the pointer is on the canvas, a node marker always shows where a click (Pen) or press (Freehand start) would place the point: on the snapped target when one holds (with its usual label), on the nearest grid point when `G` is on and no target holds (no label), otherwise at the raw pointer. It is what a click uses (H6, H7). Drawing only: moving and editing keep the grid silent. | new |
-| H10 | Rotating shows the angle (E6a); scaling with size fractions shows no hint (§6.5). | new |
+| H10 | Rotating shows the angle (E6a); scaling with size fractions shows no hint (§6.5). | built |
 
 ---
 
