@@ -343,7 +343,7 @@ export function windowCopies(doc: Doc, pathId: string): { copy: Copy; M: Matrix 
 // share them), whose targets and adjacent lines are excluded. G is the grabbed copy's base-cell matrix (identity for the
 // original or a repeat). E5a: every copy moves with the original, so the snap is measured at G: an end there is G·p and a
 // copy K of the source is K∘G⁻¹ relative to it. Seen from a clone, the original and its repeats are copies too.
-export function bodyTargets(doc: Doc, set: TargetSet, pathId: string, G: Matrix = [1, 0, 0, 1, 0, 0]): BodyTargets | null {
+export function bodyTargets(doc: Doc, set: TargetSet, pathId: string, G: Matrix = [1, 0, 0, 1, 0, 0], also: readonly string[] = []): BodyTargets | null {
   const path = getPath(doc, pathId);
   if (!path) return null;
   const nodes = pathNodes(path), Pw = pathWorld(doc, path);
@@ -354,7 +354,9 @@ export function bodyTargets(doc: Doc, set: TargetSet, pathId: string, G: Matrix 
   const Gi = invert(G), linear = !isTranslation(G);
   const own: BodyTargets['own'] = [];
   for (const { copy, M } of windowCopies(doc, pathId)) if (copy.bindingId || linear) for (const m of moving) own.push({ K: compose(M, Gi), p: m.p, index: m.index, ...(copy.bindingId ? {} : { neutral: true }) });
-  return { pathId, moving, own, exclude: new Set(nodes.map((n) => n.pointId)), set };
+  // E5b: paths moving with this one (`also`) are not targets either: their nodes and lines are where they were.
+  const alsoPts = also.flatMap((id) => { const q = getPath(doc, id); return q ? pathNodes(q).map((n) => n.pointId) : []; });
+  return { pathId, moving, own, exclude: new Set([...nodes.map((n) => n.pointId), ...alsoPts]), excludePaths: new Set([pathId, ...also]), set };
 }
 
 // The best snap for a raw source-frame delta: each moving end looks for a target (precedence and stickiness as everywhere),
@@ -364,7 +366,7 @@ export function bodyTargets(doc: Doc, set: TargetSet, pathId: string, G: Matrix 
 // the shown hint (and its id, for stickiness) doesn't flip for a sub-pixel pointer change.
 export function snapBodyDelta(T: BodyTargets, raw: XY, threshold: number, sticky: string | null): BodySnap | null {
   const reach = CONFIG.SNAP_STICKY_RELEASE * threshold;
-  const exPaths = new Set([T.pathId]);
+  const exPaths = T.excludePaths;
   let best: BodySnap | null = null;
   const better = (a: SnapResult, b: SnapResult) => (a.id === sticky) || (b.id !== sticky && (a.cls !== b.cls ? a.cls === 'point' : a.d + precedence(a) * 1e-3 * threshold < b.d + precedence(b) * 1e-3 * threshold));
   const sameEvent = (a: XY, b: XY) => dist(a, b) <= 1e-6 * (1 + Math.hypot(a.x, a.y));

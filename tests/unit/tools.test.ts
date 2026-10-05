@@ -1014,3 +1014,85 @@ test('S10: a marquee around a path and a clone of another shows every node of bo
   expect(hit({ x: 82, y: 14 })).toMatchObject({ kind: 'bboxrot' });                                    // ... which A alone has
   expect(multiNodeMarks.value).toEqual([]);
 });
+
+// --- E5b: dragging any selected instance moves the whole selection
+
+const startOf = (id: string) => P.nodeWorld(doc.value, P.getPath(doc.value, id)!.start);
+
+test('E5b: with two paths selected, dragging one moves both by the same delta; the third stays; one undo puts them back', () => {
+  const { a, b, c } = threePaths();
+  marquee({ x: 10, y: 10 }, { x: 90, y: 110 });
+  const before = structuredClone(doc.value);
+  expect(hit({ x: 48, y: 24 })).toMatchObject({ kind: 'segment', pathId: a });
+  gesture(select, [{ x: 48, y: 24 }, { x: 63, y: 34 }, { x: 78, y: 44 }], ev(), noGrid);
+  expectAt(startOf(a), 54, 44); expectAt(startOf(b), 54, 92); expectAt(startOf(c), 150, 24);
+  expect(UI.selection.value?.kind).toBe('paths');
+  undo();
+  expect(doc.value).toEqual(before);
+});
+
+test('E5b: the snap is measured at the grabbed instance and only the grabbed path joins; the other moves by the same delta', () => {
+  let dId = '', fId = '';
+  const { a, b } = threePaths((d) => {
+    dId = line(d, [{ u: 103 / 240, v: 45 / 240 }, { u: 103 / 240, v: 10 / 240 }]).id;              // a node at (103, 45)
+    fId = line(d, [{ u: 104 / 240, v: 118 / 240 }, { u: 150 / 240, v: 118 / 240 }]).id;            // a node at (104, 118)
+  });
+  marquee({ x: 10, y: 10 }, { x: 90, y: 110 });
+  gesture(select, [{ x: 48, y: 24 }, { x: 63, y: 34 }, { x: 78, y: 44 }], ev(), noGrid);           // A's end comes to (102, 44), 1.4 px from D's node
+  const pa = P.getPath(doc.value, a)!, pb = P.getPath(doc.value, b)!;
+  expect(pa.segments[0].to.pointId).toBe(P.getPath(doc.value, dId)!.start.pointId);                 // A joined D
+  expectAt(P.nodeWorld(doc.value, pb.segments[0].to), 103, 117);                                   // B moved by A's snapped delta (31, 21) ...
+  expect(pb.segments[0].to.pointId).not.toBe(P.getPath(doc.value, fId)!.start.pointId);            // ... and joined nothing, 1.4 px from F's node
+});
+
+test('E5b (review focus): original and mirror clone selected; grabbing the clone moves the original by the pointer delta, once', () => {
+  let id = '';
+  fresh('freehand', (d) => {
+    const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });                    // x = 120
+    id = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.3, v: 0.1 }]).id; P.addBinding(d, id, [[el.id]]);       // (24,24) → (72,24); clone (216,24) → (168,24)
+  });
+  UI.tool.value = 'select'; UI.selection.value = null;
+  const s = marquee({ x: 10, y: 10 }, { x: 230, y: 40 });
+  expect(s && s.kind === 'paths' && s.items.map((x) => [x.id, !!x.copy.bindingId])).toEqual([[id, false], [id, true]]);
+  const t = hit({ x: 192, y: 24 });
+  expect(t?.kind === 'segment' && t.copy.bindingId).toBeTruthy();
+  gesture(select, [{ x: 192, y: 24 }, { x: 180, y: 24 }, { x: 168, y: 24 }], ev(), noGrid);         // the clone 24 px left
+  const p = P.getPath(doc.value, id)!;
+  expectAt(P.nodeWorld(doc.value, p.start), 0, 24); expectAt(P.nodeWorld(doc.value, p.segments[0].to), 48, 24);   // the original 24 px left (the pointer's delta), once; its clone follows the mirror
+});
+
+test('E5b (review focus): only a clone of a rider selected; the clone follows the pointer and the original moves the mirrored way', () => {
+  let x = '', y = '';
+  fresh('freehand', (d) => {
+    const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });                    // x = 120
+    x = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.3, v: 0.1 }]).id; P.addBinding(d, x, [[el.id]]);         // (24,24) → (72,24); clone (216,24) → (168,24)
+    y = line(d, [{ u: 0.1, v: 0.3 }, { u: 0.3, v: 0.3 }]).id;                                        // (24,72) → (72,72), no clones
+  });
+  UI.tool.value = 'select';
+  const tc = hit({ x: 192, y: 24 });
+  expect(tc?.kind === 'segment' && tc.copy.bindingId).toBeTruthy();
+  UI.selection.value = { kind: 'paths', items: [{ id: x, copy: tc!.kind === 'segment' ? tc!.copy : base0 }, { id: y, copy: base0 }] };
+  expect(hit({ x: 48, y: 72 })).toMatchObject({ kind: 'segment', pathId: y });
+  gesture(select, [{ x: 48, y: 72 }, { x: 60, y: 72 }, { x: 72, y: 72 }], ev(), noGrid);           // Y 24 px right
+  expectAt(startOf(y), 48, 72);
+  const p = P.getPath(doc.value, x)!;
+  expectAt(P.nodeWorld(doc.value, p.start), 0, 24); expectAt(P.nodeWorld(doc.value, p.segments[0].to), 48, 24);   // X's original 24 px left, so its selected clone moved 24 px right with the pointer
+});
+
+test('E5b: a click on a selected instance without a drag selects just that instance', () => {
+  const { b } = threePaths();
+  marquee({ x: 10, y: 10 }, { x: 90, y: 110 });
+  const t = hit({ x: 48, y: 84 });
+  expect(t).toMatchObject({ kind: 'segment', pathId: b });
+  select.onDown(t, { x: 48, y: 84 }, ev(), ctx);
+  const d = UI.drag.value!; UI.drag.value = null; select.onUp(d, { x: 48, y: 84 }, ev(), ctx);
+  expect(UI.selection.value).toEqual({ kind: 'path', id: b, copy: base0 });
+});
+
+test('E5b: pressing an unselected path replaces the selection and drags that path alone', () => {
+  const { a, b, c } = threePaths();
+  marquee({ x: 10, y: 10 }, { x: 90, y: 110 });
+  gesture(select, [{ x: 183, y: 24 }, { x: 183, y: 39 }, { x: 183, y: 54 }], ev(), noGrid);
+  expect(UI.selection.value).toEqual({ kind: 'path', id: c, copy: base0 });
+  expectAt(startOf(c), 150, 54); expectAt(startOf(a), 24, 24); expectAt(startOf(b), 24, 72);
+});
