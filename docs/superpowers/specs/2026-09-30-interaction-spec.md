@@ -401,6 +401,8 @@ Status: built for Pen, Freehand and Select drags (2026-10-01). A dragged clone i
 16. **Touch tracing toggle** in place of `⌥` (§6.6).
 17. **A cue before a node unlinks** (E4) — the selected path's line moving alone is the only feedback today.
 18. **Automatic deploy** to GitHub Pages on push to `main`.
+19. **Overdraw mode** (requested 2026-10-04): where a new path crosses earlier paths, it is drawn passing over them: a small gap (knockout) in the earlier line at each crossing, in the background colour. Display only; the paths and regions are unchanged. The simpler case of braid mode.
+20. **Braid mode** (requested 2026-10-04): every crossing is resolved as over or under, alternating along each line like a weave or Celtic knot. Possible methods: split the lines at crossings on release and store an over/under flag per crossing; or compute crossings live and keep only a per-crossing toggle. Open: how crossings across clones and repeats stay consistent with the symmetry, and how a user flips one.
 
 ---
 
