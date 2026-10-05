@@ -14,7 +14,7 @@ import { CONFIG } from '../../src/config';
 import { restore } from '../../src/state/persist';
 import { hoverAt } from '../../src/interaction/pointer';
 import { reset, beginGesture, endGesture, abortGesture, undo } from '../../src/state/history';
-import { copies, cloneMatrices, copyMatrix } from '../../src/state/derived';
+import { copies, cloneMatrices, copyMatrix, multiNodeMarks } from '../../src/state/derived';
 import { apply } from '../../src/engine/transform';
 import { hitTest, type HitContext } from '../../src/engine/hit';
 import type { ToolModule, ToolCtx } from '../../src/interaction/tools/common';
@@ -991,4 +991,26 @@ test('S8 (review focus): a path leaving the tile through its right edge is whole
   expect(marquee({ x: -40, y: 100 }, { x: 40, y: 140 })).toEqual({ kind: 'path', id, copy: { cell: { c: -1, r: 0 }, bindingId: null, power: 0 } });   // its repeat, (−24,120) → (24,120)
   const s = marquee({ x: 196, y: 96 }, { x: 250, y: 140 });                                               // only the start is inside
   expect(s && s.kind === 'points' && s.ids).toEqual([start]);
+});
+
+// --- S10: several selected instances show every node; no box, no rotate zone
+
+test('S10: a marquee around a path and a clone of another shows every node of both instances; neither has a box', () => {
+  let a = '', bBind = '';
+  fresh('freehand', (d) => {
+    a = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.3, v: 0.1 }]).id;                                        // (24,24) → (72,24)
+    const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });                      // x = 120
+    const b = line(d, [{ u: 0.75, v: 0.3 }, { u: 0.9, v: 0.4 }]); bBind = P.addBinding(d, b.id, [[el.id]]).id;   // (180,72) → (216,96); clone (60,72) → (24,96)
+  });
+  UI.tool.value = 'select'; UI.selection.value = null;
+  const s = marquee({ x: 10, y: 10 }, { x: 90, y: 110 });
+  expect(s && s.kind === 'paths' && s.items.map((x) => x.copy.bindingId)).toEqual([null, bBind]);
+  const m = multiNodeMarks.value;
+  expect(m.map((x) => x.clone)).toEqual([false, false, true, true]);
+  expectAt(m[0].at, 24, 24); expectAt(m[1].at, 72, 24); expectAt(m[2].at, 60, 72); expectAt(m[3].at, 24, 96);
+  expect(hit({ x: 24, y: 24 })?.kind).toBe('segment');                                                // no box handle on A's box corner
+  expect(hit({ x: 82, y: 14 })).toBe(null);                                                            // no rotate zone either ...
+  A.selectPathAt(a);
+  expect(hit({ x: 82, y: 14 })).toMatchObject({ kind: 'bboxrot' });                                    // ... which A alone has
+  expect(multiNodeMarks.value).toEqual([]);
 });

@@ -5,7 +5,7 @@ import { attachPointer } from '../interaction/pointer';
 import { cursorFor } from '../interaction/cursor';
 import { doc } from '../state/doc';
 import { layer, tool, selection, hover, drag, pen, cursor, view, prefs, fillPreview, snapHint } from '../state/ui';
-import { cloneMatrices, visibleCells, copies, copyMatrix, faces, snapTargets } from '../state/derived';
+import { cloneMatrices, visibleCells, copies, copyMatrix, faces, snapTargets, multiNodeMarks } from '../state/derived';
 import { toWorld, nodeUV, windowOffsets, cellPolygon } from '../engine/lattice';
 import { IDENTITY, apply, toSvg } from '../engine/transform';
 import { getPath, getElement, pathNodes, pathWorld, pathCpsWorld, boundsWorld, nodeWorld, sameNode } from '../engine/paths';
@@ -209,6 +209,12 @@ function Points() {
       out.push(<circle key={`sel:${i}`} class={['pt', isHover && 'hover'].filter(Boolean).join(' ')} cx={w.x} cy={w.y} r={CONFIG.HANDLE_PX / z} />);
     });
   }
+  // S10: several selected instances show every node: a raw instance's as points, a clone's as clone anchors.
+  if (layer.value === 'drawing' && sel && sel.kind === 'paths' && !showAll) multiNodeMarks.value.forEach((m, i) => {
+    out.push(m.clone
+      ? <rect key={`msel:${i}`} class="canchor sel" x={m.at.x - 5 / z} y={m.at.y - 5 / z} width={10 / z} height={10 / z} rx={2 / z} />
+      : <circle key={`msel:${i}`} class="pt" cx={m.at.x} cy={m.at.y} r={CONFIG.HANDLE_PX / z} />);
+  });
   return <g class={layer.value === 'drawing' ? undefined : 'inactive-layer'}>{out}</g>;
 }
 

@@ -1,13 +1,14 @@
 import { computed, signal, effect } from '@preact/signals';
 import { CONFIG } from '../config';
 import { doc } from './doc';
-import { view, viewport, drag } from './ui';
+import { view, viewport, drag, selection } from './ui';
 import { visibleOffsets } from '../engine/lattice';
-import { cellMatrix, compose, orbit, ownClones } from '../engine/transform';
+import { cellMatrix, compose, orbit, ownClones, apply } from '../engine/transform';
 import { anchorsWorld } from '../engine/hit';
 import { computeFaces } from '../engine/regions';
 import { buildTargets } from '../engine/snap';
-import type { Matrix, Cell, Copy, CopyInfo, Doc, Face } from '../types';
+import { getPath, pathNodes, pathWorld } from '../engine/paths';
+import type { Matrix, Cell, Copy, CopyInfo, Doc, Face, XY } from '../types';
 
 export const cloneMatrices = computed(() => {
   const d = doc.value, m = new Map<string, (Matrix | null)[]>();
@@ -60,4 +61,19 @@ effect(() => {
   if (drag.value || scheduled) return;
   scheduled = true;
   raf(() => { scheduled = false; faces.value = computeFaces(doc.peek()); });
+});
+
+// S10: with several instances selected, every node of each, where that instance draws it. A clone instance's via nodes
+// are left out, as CloneAnchors does for a single clone.
+export type NodeMark = { at: XY; clone: boolean };
+export const multiNodeMarks = computed<NodeMark[]>(() => {
+  const s = selection.value, d = doc.value, out: NodeMark[] = [];
+  if (!s || s.kind !== 'paths') return out;
+  for (const it of s.items) {
+    const p = getPath(d, it.id);
+    if (!p) continue;
+    const M = copyMatrix(it.copy, d), clone = !!it.copy.bindingId, W = pathWorld(d, p);
+    pathNodes(p).forEach((n, i) => { if (!(clone && n.via)) out.push({ at: apply(M, W[i]), clone }); });
+  }
+  return out;
 });
