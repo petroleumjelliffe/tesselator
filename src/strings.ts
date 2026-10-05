@@ -33,7 +33,7 @@ export const STR = {
   hint: {
     rotate: 'Rotation: drag to move · pick 1/2, 1/3, 1/4 or 1/6 · clones turn about it · O on a selected path stacks it as a new group',
     mirror: 'Mirror: drag to move · knob or [ ] rotates · put a translation after it in a chain for a glide',
-    translate: 'Translation: drag the diamond to set the vector · snaps to twelfths of the lattice',
+    translate: 'Translation: drag the diamond to set the vector · snaps to quarters, thirds and halves of the tile · hold ⌘ or Ctrl for any length',
     construction: 'Construction layer: add or drag elements and lattice handles · the drawing is locked · Tab to go back',
     points: (n: number) => `${n} point${n > 1 ? 's' : ''} selected · drag to move together · ⇧-click adds · ⌫ deletes`,
     instances: (n: number) => `${n} instances · ⌫ deletes their paths`,

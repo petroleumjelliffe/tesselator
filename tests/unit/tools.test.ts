@@ -8,6 +8,7 @@ import * as A from '../../src/actions';
 import * as pen from '../../src/interaction/tools/pen';
 import * as freehand from '../../src/interaction/tools/freehand';
 import * as select from '../../src/interaction/tools/select';
+import * as construct from '../../src/interaction/tools/construct';
 import { STR } from '../../src/strings';
 import { CONFIG } from '../../src/config';
 import { restore } from '../../src/state/persist';
@@ -707,4 +708,36 @@ test('E5a: a mirror clone grabbed and meeting the original is labelled neutrally
   };
   expect(drag({ x: 180, y: 80 }, { x: 122, y: 80 })).toBe(STR.snap.meetsMirrorCopy);
   expect(drag({ x: 60, y: 80 }, { x: 118, y: 80 })).toBe(STR.snap.meetsMirror);
+});
+
+// --- E6b: a translation element's u and v snap silently to k/n of the tile (T13); ⌘ / Ctrl frees them; G is ignored
+
+function translateScene(u = 0.5, v = 0) {
+  let id = '';
+  fresh('pen', (d) => { id = P.addElement(d, { kind: 'translate', u, v }).id; });
+  UI.layer.value = 'construction';
+  const el = () => { const e = P.getElement(doc.value, id)!; if (e.kind !== 'translate') throw new Error('not a translation'); return e; };
+  return { id, el };
+}
+
+test('E6b: dragging a translation tip near (1/2, 1/4) lands exactly there, grid on or off, with no hint', () => {
+  for (const c of [ctx, noGrid]) {
+    const { el } = translateScene();
+    expect(hit({ x: 120, y: 0 })).toMatchObject({ kind: 'eltip' });
+    gesture(construct, [{ x: 120, y: 0 }, { x: 121, y: 40 }, { x: 122, y: 61 }], ev(), c);   // u = 0.508, v = 0.254
+    expect(el().u).toBe(0.5); expect(el().v).toBe(0.25);
+    expect(UI.snapHint.value).toBe(null);
+  }
+});
+
+test('E6b: with ⌘ held the tip lands where the pointer is, even with the grid on', () => {
+  const { el } = translateScene();
+  gesture(construct, [{ x: 120, y: 0 }, { x: 121, y: 40 }, { x: 122, y: 61 }], ev({ metaKey: true }), free(ctx));
+  expect(el().u).toBeCloseTo(122 / 240, 9); expect(el().v).toBeCloseTo(61 / 240, 9);
+});
+
+test('E6b: a component more than the threshold from every fraction stays free; the other still snaps', () => {
+  const { el } = translateScene();
+  gesture(construct, [{ x: 120, y: 0 }, { x: 60, y: 60 }, { x: 24, y: 121 }], ev(), ctx);   // u = 0.1 (24 px from 0), v = 0.504
+  expect(el().u).toBeCloseTo(0.1, 9); expect(el().v).toBe(0.5);
 });

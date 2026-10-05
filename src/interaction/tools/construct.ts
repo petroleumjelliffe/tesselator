@@ -3,7 +3,7 @@ import { doc } from '../../state/doc';
 import * as UI from '../../state/ui';
 import * as A from '../../actions';
 import * as P from '../../engine/paths';
-import { toUV, isDegenerate } from '../../engine/lattice';
+import { toUV, isDegenerate, fractionWithin } from '../../engine/lattice';
 import { mirrorDirFromAngle } from '../../engine/transform';
 import { CONFIG } from '../../config';
 import { startDrag, snapElement, type ToolModule } from './common';
@@ -26,8 +26,6 @@ export const onDown: ToolModule['onDown'] = (t, w, e, ctx) => {
     default: startDrag(e, t, w, ctx.hitScale, { kind: 'click' });
   }
 };
-
-const twelfths = (x: number) => Math.round(x * 12) / 12;
 
 export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
   if (!d.moved) return;
@@ -52,8 +50,12 @@ export const onMove: ToolModule['onMove'] = (d, w, e, ctx) => {
     case 'eltip': {
       A.mutate((dd) => {
         const el = P.getElement(dd, d.id); if (!el || el.kind !== 'translate') return false;
-        let { u, v } = toUV(w, dd.lattice);
-        if (ctx.gridOn) { u = twelfths(u); v = twelfths(v); }
+        const lat = dd.lattice;
+        let { u, v } = toUV(w, lat);
+        if (ctx.targetsOn) {   // E6b, T13: silent k/n of the tile; ignores G; ⌘ / Ctrl frees
+          u = fractionWithin(u, Math.hypot(lat.ax, lat.ay), CONFIG.FRACTION_MAX_N, ctx.threshold) ?? u;
+          v = fractionWithin(v, Math.hypot(lat.bx, lat.by), CONFIG.FRACTION_MAX_N, ctx.threshold) ?? v;
+        }
         el.u = u; el.v = v;
       });
       return;

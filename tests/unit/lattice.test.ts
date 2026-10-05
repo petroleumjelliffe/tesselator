@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { toWorld, toUV, cellOf, nodeUV, windowOffsets, visibleOffsets, snapGrid, snapFraction, isDegenerate, cellPolygon, latticeAngle } from '../../src/engine/lattice';
+import { toWorld, toUV, cellOf, nodeUV, windowOffsets, visibleOffsets, snapGrid, snapFraction, isDegenerate, cellPolygon, latticeAngle, nearestFraction, fractionWithin } from '../../src/engine/lattice';
 import { CONFIG } from '../../src/config';
 
 const sq = CONFIG.LATTICE_PRESETS.Square, rh = CONFIG.LATTICE_PRESETS['Rhombus 60°'];
@@ -44,4 +44,17 @@ test('isDegenerate, cellPolygon and latticeAngle', () => {
   expect(cellPolygon({ c: 1, r: 0 }, sq)[2]).toEqual({ x: 480, y: 240 });
   expect(latticeAngle(rh)).toBeCloseTo(60, 1);
   expect(latticeAngle(sq)).toBeCloseTo(90, 9);
+});
+
+test('nearestFraction: the nearest k/n with n ≤ maxN, any integer k; fractionWithin applies a world tolerance', () => {
+  expect(nearestFraction(0.26, 4)).toBe(0.25);
+  expect(nearestFraction(0.32, 4)).toBeCloseTo(1 / 3, 12);
+  expect(nearestFraction(0.55, 4)).toBe(0.5);
+  expect(nearestFraction(1.26, 4)).toBe(1.25);
+  expect(nearestFraction(-0.26, 4)).toBe(-0.25);
+  expect(nearestFraction(0.1, 4)).toBe(0);
+  expect(nearestFraction(0.32, 2)).toBe(0.5);                 // thirds are not offered when maxN is 2
+  expect(fractionWithin(0.508, 240, 4, 12)).toBe(0.5);        // 2 world px away
+  expect(fractionWithin(0.1, 240, 4, 12)).toBe(null);         // 24 px from 0
+  expect(fractionWithin(0.1, 240, 4, 30)).toBe(0);
 });

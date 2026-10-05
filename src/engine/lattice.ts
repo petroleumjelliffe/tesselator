@@ -49,6 +49,22 @@ export function snapFraction(uv: UV, div: number, lat: Lattice): UV {
   return Math.hypot(wa.x - p.x, wa.y - p.y) <= Math.hypot(wb.x - p.x, wb.y - p.y) ? a : b;
 }
 
+// Spec T13: the nearest k/n to x (k any integer, 1 ≤ n ≤ maxN). Ties keep the smaller n.
+export function nearestFraction(x: number, maxN: number): number {
+  let best = Math.round(x), bd = Math.abs(x - best);
+  for (let n = 2; n <= maxN; n++) {
+    const q = Math.round(x * n) / n, dd = Math.abs(x - q);
+    if (dd < bd - 1e-12) { bd = dd; best = q; }
+  }
+  return best;
+}
+
+// T13, silent: x snapped to its nearest k/n when that is within `tol` world units, one unit of x being `unit` long.
+export function fractionWithin(x: number, unit: number, maxN: number, tol: number): number | null {
+  const q = nearestFraction(x, maxN);
+  return Math.abs(x - q) * unit <= tol ? q : null;
+}
+
 export function isDegenerate(lat: Lattice, min = 400): boolean {
   return Math.abs(lat.ax * lat.by - lat.bx * lat.ay) < min;
 }

@@ -25,6 +25,7 @@ export const CONFIG = {
   SNAP_STICKY_MARGIN: 0.5,
   NODE_REVEAL_PX: 48,    // H8: while Pen/Freehand is active, a path's nodes show only within this many screen px of it
   SCALE_FRACTIONS: [1, 1 / 2, 1 / 3] as const,   // bounding-box scale snaps to these fractions of each lattice span
+  FRACTION_MAX_N: 4,     // T13: size fractions k/n of the tile, n ≤ this (may later grow with zoom)
   TRACE_BREAKAWAY_PX: 24,   // a traced stroke lets go of its line beyond this distance (screen px)
   MIN_LATTICE_DET: 400,
   VISIBLE_CELL_RADIUS: 3,
