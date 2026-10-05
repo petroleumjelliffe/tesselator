@@ -33,7 +33,7 @@ The five failure modes the spec implies, no existing test covers, and a user is 
 2. **Rotating a path that shares a point with another path.** The point must stay shared, the other path's unshared end must not move, and one undo must restore both. Test: Task 3, "rotating a path that shares a point".
 3. **The rotate zone over another path's line.** In a dense design the zone outside a corner often lies on a neighbour's line: the zone must win (like a box handle) and the rotation must leave the neighbour alone. Test: Task 3, "the rotate zone wins over another path's line".
 4. **A marquee over a path whose nodes span cells.** A path that leaves the tile through an edge has nodes in two cells; the marquee must judge the instance where it is drawn, in either tile. Test: Task 4, "a path leaving the tile through its right edge".
-5. **E5b with a clone and its original both selected.** The path must move exactly once, through the grabbed clone, not twice and not cancelled out. Test: Task 6, "a path selected through its original and its mirror clone moves once".
+5. **E5b with a clone and its original both selected.** The path must move exactly once, through its original (the original follows the pointer, the clone follows its transform), even when the clone is the one grabbed. With only a clone selected, the clone follows the pointer and the original moves by the matching transformed amount. Tests: Task 6, "original and mirror clone selected" and "only a clone of a rider selected".
 
 Also pinned (lower risk): `Esc` mid-rotate restores the path and leaves no history entry (Task 3); a zero-width box (a vertical line) writes no NaN under any modifier (Task 2).
 
@@ -1205,7 +1205,7 @@ git -C ~/Developer/personal/tesselator commit -m "S10: several selected instance
 
 ### Task 6: Dragging any selected instance moves the whole selection (E5b)
 
-Today a body drag moves only the pressed path (`onDown` `segment` case, `select.ts` lines 107–111; `onMove` `body` case, lines 169–184; `joinBody`, lines 57–64), whatever is selected. After this task, with a `paths` selection, pressing a selected instance and dragging moves every selected path: the grabbed one exactly as E5a, the others ("riders") by the grabbed instance's on-screen delta through their own instance's frame. A path selected through several instances moves once (the grabbed instance if it is one of them, else the first). Snapping is measured at the grabbed instance only, with every rider excluded from the targets, and only the grabbed path joins. One undo. A click without a drag narrows to the clicked instance (already the `segment` branch of `onUp`, pinned here). Pressing an unselected path replaces the selection on the first move and drags it alone.
+Today a body drag moves only the pressed path (`onDown` `segment` case, `select.ts` lines 107–111; `onMove` `body` case, lines 169–184; `joinBody`, lines 57–64), whatever is selected. After this task, with a `paths` selection, pressing a selected instance and dragging moves every selected path: the grabbed one exactly as E5a, the others ("riders") by the grabbed instance's on-screen delta through their own instance's frame. A path moves once, through its **driving instance** (decided by the user 2026-10-05): a selected original or repeat if there is one, so the original follows the pointer and its clones follow their transforms; otherwise the grabbed instance if it is one of the path's, else its first selected clone, so that clone follows the pointer and the original moves by the matching transformed amount. When the grabbed instance is a clone whose original is also selected, the drag's frame (snapping and hint) is the original's. Snapping is measured at the grabbed instance only, with every rider excluded from the targets, and only the grabbed path joins. One undo. A click without a drag narrows to the clicked instance (already the `segment` branch of `onUp`, pinned here). Pressing an unselected path replaces the selection on the first move and drags it alone.
 
 **Files:**
 - Modify: `src/types.ts` (add `BodyRider`; `BodyTargets`, line 76; `body` drag, line 104)
@@ -1256,7 +1256,7 @@ test('E5b: the snap is measured at the grabbed instance and only the grabbed pat
   expect(pb.segments[0].to.pointId).not.toBe(P.getPath(doc.value, fId)!.start.pointId);            // ... and joined nothing, 1.4 px from F's node
 });
 
-test('E5b (review focus): a path selected through its original and its mirror clone moves once, through the grabbed clone', () => {
+test('E5b (review focus): original and mirror clone selected; grabbing the clone moves the original by the pointer delta, once', () => {
   let id = '';
   fresh('freehand', (d) => {
     const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });                    // x = 120
@@ -1269,7 +1269,25 @@ test('E5b (review focus): a path selected through its original and its mirror cl
   expect(t?.kind === 'segment' && t.copy.bindingId).toBeTruthy();
   gesture(select, [{ x: 192, y: 24 }, { x: 180, y: 24 }, { x: 168, y: 24 }], ev(), noGrid);         // the clone 24 px left
   const p = P.getPath(doc.value, id)!;
-  expectAt(P.nodeWorld(doc.value, p.start), 48, 24); expectAt(P.nodeWorld(doc.value, p.segments[0].to), 96, 24);   // the original 24 px right, once
+  expectAt(P.nodeWorld(doc.value, p.start), 0, 24); expectAt(P.nodeWorld(doc.value, p.segments[0].to), 48, 24);   // the original 24 px left (the pointer's delta), once; its clone follows the mirror
+});
+
+test('E5b (review focus): only a clone of a rider selected; the clone follows the pointer and the original moves the mirrored way', () => {
+  let x = '', y = '';
+  fresh('freehand', (d) => {
+    const el = P.addElement(d, { kind: 'mirror', u: 0.5, v: 0.5, du: 0, dv: 1 });                    // x = 120
+    x = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.3, v: 0.1 }]).id; P.addBinding(d, x, [[el.id]]);         // (24,24) → (72,24); clone (216,24) → (168,24)
+    y = line(d, [{ u: 0.1, v: 0.3 }, { u: 0.3, v: 0.3 }]).id;                                        // (24,72) → (72,72), no clones
+  });
+  UI.tool.value = 'select';
+  const tc = hit({ x: 192, y: 24 });
+  expect(tc?.kind === 'segment' && tc.copy.bindingId).toBeTruthy();
+  UI.selection.value = { kind: 'paths', items: [{ id: x, copy: tc!.kind === 'segment' ? tc!.copy : base0 }, { id: y, copy: base0 }] };
+  expect(hit({ x: 48, y: 72 })).toMatchObject({ kind: 'segment', pathId: y });
+  gesture(select, [{ x: 48, y: 72 }, { x: 60, y: 72 }, { x: 72, y: 72 }], ev(), noGrid);           // Y 24 px right
+  expectAt(startOf(y), 48, 72);
+  const p = P.getPath(doc.value, x)!;
+  expectAt(P.nodeWorld(doc.value, p.start), 0, 24); expectAt(P.nodeWorld(doc.value, p.segments[0].to), 48, 24);   // X's original 24 px left, so its selected clone moved 24 px right with the pointer
 });
 
 test('E5b: a click on a selected instance without a drag selects just that instance', () => {
@@ -1359,10 +1377,17 @@ function joinBody(pathId: string, G: Matrix, s: BodySnap, ids: string[], also: s
   if (r && (r.hit.kind === 'node' || r.hit.kind === 'curve')) A.joinDroppedNode(pathId, s.nodeIndex, r.hit);
 }
 
-// E5b: the other selected paths that ride along a body drag, each once, through its first selected instance (the
-// grabbed path itself moves with the grab). Each follows the grabbed instance's on-screen delta through its own
-// instance's frame (E5a), so its original moves by Li (the inverse of that instance's linear part). A point already
-// moved by the grabbed path or an earlier rider is not moved twice.
+// E5b: the instance whose frame moves a path (decided 2026-10-05): a selected original or repeat if there is one, so the
+// original follows the pointer; otherwise the grabbed instance if it is this path's, else the path's first selected clone.
+function drivingCopy(items: { id: string; copy: Copy }[], pathId: string, grabbed: Copy | null): Copy | null {
+  const mine = items.filter((x) => x.id === pathId).map((x) => x.copy);
+  return mine.find((c) => !c.bindingId) ?? (grabbed && mine.some((c) => sameCopy(c, grabbed)) ? grabbed : mine[0] ?? null);
+}
+
+// E5b: the other selected paths that ride along a body drag, each once, through its driving instance (the grabbed path
+// itself moves with the grab). Each follows the grabbed path's on-screen delta through its driving instance's frame
+// (E5a), so its original moves by Li (the inverse of that instance's linear part). A point already moved by the grabbed
+// path or an earlier rider is not moved twice.
 function ridersFor(items: { id: string; copy: Copy }[], grabbedId: string, claimed: Set<string>): BodyRider[] {
   const out: BodyRider[] = [], seen = new Set([grabbedId]);
   for (const it of items) {
@@ -1372,7 +1397,7 @@ function ridersFor(items: { id: string; copy: Copy }[], grabbedId: string, claim
     if (!p) continue;
     const ids = [...new Set(P.pathNodes(p).map((n) => n.pointId))].filter((id) => !claimed.has(id));
     for (const id of ids) claimed.add(id);
-    const M = copyMatrix(it.copy);
+    const M = copyMatrix(drivingCopy(items, it.id, null) ?? it.copy);
     out.push({ pathId: it.id, ids, startPos: P.snapshotPositions(doc.value, ids), Li: invert([M[0], M[1], M[2], M[3], 0, 0]) });
   }
   return out;
@@ -1390,7 +1415,8 @@ Replace the `segment` case of `onDown` (lines 107–111) with:
       const s = UI.selection.value, multi = s && s.kind === 'paths' ? s.items : null;
       const inSel = !!multi && multi.some((x) => x.id === t.pathId && sameCopy(x.copy, t.copy));
       const riders = multi && inSel ? ridersFor(multi, t.pathId, new Set(ids)) : [];
-      return startDrag(e, t, w, ctx.hitScale, { kind: 'body', pathId: t.pathId, copy: t.copy, ids, startPos: P.snapshotPositions(doc.value, ids), frame: bodyFrame(t.pathId, t.copy), targets: null, snap: null, riders, replace: !!multi && !inSel });
+      const drive = (multi && inSel ? drivingCopy(multi, t.pathId, t.copy) : null) ?? t.copy;   // a selected original drives its clone's grab
+      return startDrag(e, t, w, ctx.hitScale, { kind: 'body', pathId: t.pathId, copy: drive, ids, startPos: P.snapshotPositions(doc.value, ids), frame: bodyFrame(t.pathId, drive), targets: null, snap: null, riders, replace: !!multi && !inSel });
     }
 ```
 
@@ -1577,7 +1603,8 @@ git -C ~/Developer/personal/tesselator commit -m "Docs: help sheet, CLAUDE.md an
 10. **"Visible instance" for S8** means the instances in the visible cells (`copies`), as drawn; S5's node marquee keeps its 3×3 window.
 11. **S10 nodes are display only.** Pressing one presses that instance's line (E5b); to edit a node, click the instance first (S9 precedent).
 12. **E5b "pressing an unselected path replaces the selection"** applies when a several-path selection is active, and happens on the first move; a single-path selection keeps today's behaviour.
-13. **Shared points between selected paths** move once, with the first path that claims them (the grabbed path first). The other selected paths are excluded from the grabbed instance's targets and from its join.
+13. **Repeats count as originals for E5b's driving instance** (they share the original's orientation), so a selected repeat also makes the original follow the pointer.
+14. **Shared points between selected paths** move once, with the first path that claims them (the grabbed path first). The other selected paths are excluded from the grabbed instance's targets and from its join.
 
 ## Self-Review
 
