@@ -117,13 +117,19 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
     const box = boundsWorld(doc, selPath, selM);
     const hs = bboxHandles(box);
     for (let i = 0; i < hs.length; i++) if (dist(w, hs[i]) <= rPoint) return { kind: 'bbox', h: i };
-    // E6a: just outside a corner handle (outside the box, within BBOX_ROT_ZONE_PX beyond its hit radius) rotates, for the
-    // original only. Like a box handle it beats whatever lies beneath.
-    const inBox = w.x >= box.x0 && w.x <= box.x1 && w.y >= box.y0 && w.y <= box.y1;
-    if (isOriginal(sel.copy) && !inBox) {
-      let best = -1, bd = rPoint + (CONFIG.BBOX_ROT_ZONE_PX * s) / z;
+    // E6a: just outside a corner handle rotates, for the original only. The zone starts a segment hit width outside the
+    // box (rSeg on at least one axis), so a press beside the path's own line near a corner, or beside a degenerate (line)
+    // box, is not in it, and reaches BBOX_ROT_ZONE_PX screen px beyond the corner's hit radius, the same on touch. Like a
+    // box handle it beats other paths beneath; the selected instance's own line still wins (a body drag).
+    const out = Math.max(box.x0 - w.x, w.x - box.x1, box.y0 - w.y, w.y - box.y1);
+    if (isOriginal(sel.copy) && out >= rSeg) {
+      let best = -1, bd = rPoint + CONFIG.BBOX_ROT_ZONE_PX / z;
       for (let i = 0; i < 4; i++) { const dd = dist(w, hs[i]); if (dd <= bd) { bd = dd; best = i; } }
-      if (best >= 0) return { kind: 'bboxrot', h: best };
+      if (best >= 0) {
+        const Pw = pathWorld(doc, selPath).map((q) => apply(selM, q)), C = pathCpsWorld(doc, selPath).map((c) => c && apply(selM, c));
+        for (let j = 0; j < selPath.segments.length; j++) if (segmentDistance(Pw[j], Pw[j + 1], C[j], w) <= rSeg) return { kind: 'segment', pathId: selPath.id, j, copy: sel.copy };
+        return { kind: 'bboxrot', h: best };
+      }
     }
   }
   if (ctx.tool === 'select' && selPath && selM && sel && sel.kind === 'path') {

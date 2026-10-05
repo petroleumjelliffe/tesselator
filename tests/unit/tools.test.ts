@@ -32,8 +32,8 @@ function line(d: Doc, pts: UV[], layerId = d.layers[0].id) {
   for (const uv of pts.slice(1)) P.appendNode(d, p.id, P.addPoint(d, uv));
   return p;
 }
-const hctx = (): HitContext => ({ layer: UI.layer.value, tool: UI.tool.value, selection: UI.selection.value, pen: UI.pen.value, zoom: 1, hitScale: 1, copies: copies.value, cloneMatrices: cloneMatrices.value, faces: [] });
-const hit = (w: XY) => hitTest(doc.value, hctx(), w);
+const hctx = (hitScale = 1): HitContext => ({ layer: UI.layer.value, tool: UI.tool.value, selection: UI.selection.value, pen: UI.pen.value, zoom: 1, hitScale, copies: copies.value, cloneMatrices: cloneMatrices.value, faces: [] });
+const hit = (w: XY, hitScale = 1) => hitTest(doc.value, hctx(hitScale), w);
 // pointer.ts: hover, then press, optional moves (the gesture opens on the first), release.
 function gesture(tool: ToolModule, pts: XY[], e = ev(), c = ctx, release = pts[pts.length - 1]) {
   hoverAt(pts[0], hit(pts[0]), c);
@@ -924,6 +924,43 @@ test('E6a (review focus): the rotate zone wins over another path\'s line under i
   expectAt(s.at(0), 120, 84);
   P.pathNodes(P.getPath(doc.value, lId)!).forEach((n, i) => expectAt(P.nodeWorld(doc.value, n), lBefore[i].x, lBefore[i].y));
   expect(UI.selection.value).toMatchObject({ kind: 'path', id: s.id });
+});
+
+test('E6a (final review): a selected horizontal line body-drags from 1 px off its stroke, for mouse and touch; it never rotates there', () => {
+  let id = '';
+  fresh('freehand', (d) => { id = line(d, [{ u: 0.2, v: 0.5 }, { u: 0.5, v: 0.5 }]).id; });         // (48,120) → (120,120), a zero-height box
+  UI.tool.value = 'select'; A.selectPathAt(id);
+  const handles = [48, 84, 120];                                                                      // corner, edge and side handles, nodes and the diamond
+  for (const hs of [1, 2]) {
+    const rPoint = (CONFIG.HANDLE_PX + 2) * hs;
+    for (let x = 50; x <= 118; x++) {
+      const t = hit({ x, y: 121 }, hs);
+      expect(t?.kind).not.toBe('bboxrot');
+      if (handles.every((hx) => Math.hypot(x - hx, 1) > rPoint)) expect(t).toMatchObject({ kind: 'segment', pathId: id });
+    }
+  }
+  const touch: ToolCtx = { ...noGrid, hitScale: 2, threshold: 24 };
+  const p0 = { x: 66, y: 121 };
+  expect(hit(p0, 2)).toMatchObject({ kind: 'segment', pathId: id });
+  hoverAt(p0, hit(p0, 2), touch);
+  select.onDown(hit(p0, 2), p0, ev({ pointerType: 'touch' }), touch);
+  const d = UI.drag.value!; d.moved = true; beginGesture();
+  select.onMove(d, { x: 66, y: 161 }, ev({ pointerType: 'touch' }), touch);
+  UI.drag.value = null; try { select.onUp(d, { x: 66, y: 161 }, ev({ pointerType: 'touch' }), touch); } finally { endGesture(); }
+  expectAt(startOf(id), 48, 160); expectAt(P.nodeWorld(doc.value, P.getPath(doc.value, id)!.segments[0].to), 120, 160);
+});
+
+test('E6a (final review): 1 px outside a selected square\'s edge near a corner is its line; 20 px diagonally out of the corner rotates', () => {
+  let id = '';
+  fresh('freehand', (d) => { id = line(d, [{ u: 0.2, v: 0.2 }, { u: 0.5, v: 0.2 }, { u: 0.5, v: 0.5 }, { u: 0.2, v: 0.5 }, { u: 0.2, v: 0.2 }]).id; });   // (48,48)–(120,120)
+  UI.tool.value = 'select'; A.selectPathAt(id);
+  for (const hs of [1, 2]) {
+    expect(hit({ x: 66, y: 47 }, hs)).toMatchObject({ kind: 'segment', pathId: id });
+    expect(hit({ x: 47, y: 66 }, hs)).toMatchObject({ kind: 'segment', pathId: id });
+    expect(hit({ x: 48 - 14.2, y: 48 - 14.2 }, hs)).toMatchObject({ kind: 'bboxrot', h: 0 });
+  }
+  hoverAt({ x: 66, y: 47 }, hit({ x: 66, y: 47 }), ctx);
+  expect(cursorFor()).not.toBe(ROTATE_CURSOR);
 });
 
 // --- S8: a marquee selects the instances it wholly contains; else nodes; ⌥ at release always picks nodes

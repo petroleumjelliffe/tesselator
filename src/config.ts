@@ -5,7 +5,7 @@ export const CONFIG = {
   HANDLE_PX: 6,          // radius of point / handle hit circles
   HIT_WIDTH: 14,         // segment hit width
   DRAG_THRESHOLD_PX: 3,
-  BBOX_ROT_ZONE_PX: 18,  // E6a: the rotate zone reaches this many screen px beyond a corner handle's hit radius, outside the box
+  BBOX_ROT_ZONE_PX: 18,  // E6a: the rotate zone reaches this many screen px (mouse and touch alike) beyond a corner handle's hit radius, outside the box
   ROTATE_STEP_DEG: 15,   // E6a, §6.5: rotation steps while G is on (silent quantisation counts as grid)
   ELEMENT_ROT_OFFSET: 70,
   TOUCH_HIT_SCALE: 2,
