@@ -43,14 +43,6 @@ function segmentDistance(a: XY, b: XY, cp: XY | null, p: XY): number {
   return best;
 }
 
-// Which points are drawn (and therefore hittable): all while drawing; else the selected path's, the selected points.
-export function visiblePointIds(doc: Doc, ctx: HitContext): Set<string> | null {
-  if (ctx.pen || ctx.tool === 'freehand' || ctx.tool === 'pen') return null;
-  const s = ctx.selection, set = new Set<string>();
-  if (s && s.kind === 'points') for (const id of s.ids) if (!s.copies?.[id]) set.add(id);
-  return set;
-}
-
 // H8: paths with an instance (original, repeat or clone) within `radius` world units of `w`, so Pen/Freehand can draw
 // a path's nodes only when it is worth looking at. Reads the already-built target lines (the cached `snapTargets`,
 // which carry every copy's line as a `LineTarget` with `source.pathId`) rather than rebuilding geometry, so this is
@@ -141,11 +133,11 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
       if (dist(w, h) <= rPoint) return { kind: 'diamond', pathId: selPath.id, j, copy: sel.copy };
     }
   }
+  // Every raw point in the window is hittable (S2, 2026-10-06: in Select a node of an unselected path is hinted near the
+  // cursor and can be clicked, ⇧-clicked, dragged or deleted without selecting its path first).
   if (ctx.tool !== 'fill') {
-    const vis = visiblePointIds(doc, ctx);
     let best: HitTarget | null = null, bd = rPoint;
     for (const cell of windowOffsets()) for (const pt of doc.points) {
-      if (vis && !vis.has(pt.id)) continue;
       const d = dist(w, toWorld(nodeUV(pt, cell), lat));
       if (d < bd) { bd = d; best = { kind: 'point', pointId: pt.id, cell }; }
     }
@@ -170,9 +162,9 @@ export function hitTest(doc: Doc, ctx: HitContext, w: XY): HitTarget | null {
       for (let i = 0; i < nodes.length; i++) if (!nodes[i].via && dist(w, Pw[i]) <= rPoint) return { kind: 'canchor', pathId: p.id, pointId: nodes[i].pointId, cell: nodes[i].cell, copy };   // a via node's image is a copy of a copy: not an anchor
       return null;
     };
-    if (ctx.tool === 'pen') {
-      for (const ci of ctx.copies) { if (!ci.copy.bindingId) continue; const p = getPath(doc, ci.pathId); const t = p && anchorsOf(p, ci.copy, ci.M); if (t) return t; }
-    }
+    // A clone's nodes, for Pen (join targets) and Select (S2: hinted near the cursor; click, ⇧-click, drag or delete them
+    // like a raw node). A selected clone instance's own nodes were already returned above.
+    for (const ci of ctx.copies) { if (!ci.copy.bindingId) continue; const p = getPath(doc, ci.pathId); const t = p && anchorsOf(p, ci.copy, ci.M); if (t) return t; }
   }
   if (ctx.tool === 'select' || ctx.tool === 'pen') {
     let best: HitTarget | null = null, bd = rSeg;

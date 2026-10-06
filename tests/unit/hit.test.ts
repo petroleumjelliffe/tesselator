@@ -45,7 +45,7 @@ test('segments of any copy are hit and report their copy', () => {
   expect(clone).toMatchObject({ kind: 'segment', copy: { bindingId: b.id, power: 1 } });
 });
 
-test('priority: bbox handle beats point beats segment; points are only hit when visible', () => {
+test('priority: bbox handle beats point beats segment; every raw node is hittable (S2, 2026-10-06)', () => {
   const { d, path } = scene();
   const sel: Selection = { kind: 'path', id: path.id, copy: { cell: { c: 0, r: 0 }, bindingId: null, power: 0 } };
   const ctx = ctxFor(d, { selection: sel });
@@ -56,7 +56,7 @@ test('priority: bbox handle beats point beats segment; points are only hit when 
   expect(hitTest(d, ctxFor(d, { tool: 'pen', selection: sel }), { x: 50, y: 70 })).toBe(null);   // Pen never hits diamonds
   expect(hitTest(d, ctxFor(d, { tool: 'freehand' }), { x: 216, y: 216 })).toBe(null);           // Freehand never hits clone anchors
   const noSel = ctxFor(d);
-  expect(hitTest(d, noSel, { x: 24, y: 24 })!.kind).toBe('segment');  // point not visible with nothing selected
+  expect(hitTest(d, noSel, { x: 24, y: 24 })!.kind).toBe('point');    // an unselected path's node is hit too (hinted near the cursor, S2)
   const penCtx = ctxFor(d, { tool: 'pen' });
   expect(hitTest(d, penCtx, { x: 24, y: 24 })).toMatchObject({ kind: 'point', cell: { c: 0, r: 0 } });
   expect(hitTest(d, penCtx, { x: 264, y: 24 })).toMatchObject({ kind: 'point', cell: { c: 1, r: 0 } });
@@ -147,7 +147,7 @@ test('a via node of the selected path is hit as a point carrying its via', () =>
   expect(t).toMatchObject({ kind: 'point', pointId: path.start.pointId, via });
 });
 
-test('S2/S6: a selected instance\'s nodes are hit there and only there, before its box handles', () => {
+test('S2/S6: a selected instance\'s nodes are hit there, before its box handles; the base cell\'s copy is hit as its own point', () => {
   const d = makeDoc();
   const n0 = P.addPoint(d, { u: 0.2, v: 0.2 });
   const p = P.startPath(d, n0, { color: '#000', weight: 2 }, 'L1');
@@ -155,7 +155,7 @@ test('S2/S6: a selected instance\'s nodes are hit there and only there, before i
   const sel = { kind: 'path' as const, id: p.id, copy: { cell: { c: 1, r: 0 }, bindingId: null, power: 0 } };
   const ctx = ctxFor(d, { selection: sel });
   expect(hitTest(d, ctx, { x: 288, y: 48 })).toEqual({ kind: 'point', pointId: n0.pointId, cell: { c: 1, r: 0 } });   // the node beats the coincident box corner
-  expect(hitTest(d, ctx, { x: 48, y: 48 })?.kind).not.toBe('point');                                                    // the same node in the base cell is not shown
+  expect(hitTest(d, ctx, { x: 48, y: 48 })).toEqual({ kind: 'point', pointId: n0.pointId, cell: { c: 0, r: 0 } });   // the same node in the base cell, in its own frame (S2, 2026-10-06)
 });
 
 test('the clone image of a via node is neither an anchor nor a canchor hit; the plain nodes of the same clone still are', () => {

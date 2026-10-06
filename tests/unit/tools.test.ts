@@ -1100,7 +1100,7 @@ test('S10: a marquee around a path and a clone of another shows every node of bo
   const m = multiNodeMarks.value;
   expect(m.map((x) => x.clone)).toEqual([false, false, true, true]);
   expectAt(m[0].at, 24, 24); expectAt(m[1].at, 72, 24); expectAt(m[2].at, 60, 72); expectAt(m[3].at, 24, 96);
-  expect(hit({ x: 24, y: 24 })?.kind).toBe('segment');                                                // no box handle on A's box corner
+  expect(hit({ x: 24, y: 24 })?.kind).toBe('point');                                                  // no box handle on A's box corner: its node (S2)
   expect(hit({ x: 82, y: 14 })).toBe(null);                                                            // no rotate zone either ...
   A.selectPathAt(a);
   expect(hit({ x: 82, y: 14 })).toMatchObject({ kind: 'bboxrot' });                                    // ... which A alone has
@@ -1215,10 +1215,66 @@ test('E5b (review focus): a quarter-turn clone rides with its inverse linear par
   const px = P.getPath(doc.value, x)!;
   const cloneBefore = P.pathWorld(doc.value, px).map((q) => apply(copyMatrix(t.copy), q));
   expectAt(cloneBefore[0], 432, 48); expectAt(cloneBefore[1], 432, 72);
-  expect(hit({ x: 155, y: 150 })).toMatchObject({ kind: 'segment', pathId: y });
-  gesture(select, [{ x: 155, y: 150 }, { x: 172, y: 157 }], ev(), noGrid);                          // Y dragged by (17, 7); nothing within 18 px of either end
+  expect(hit({ x: 160, y: 150 })).toMatchObject({ kind: 'segment', pathId: y });                    // mid-line, clear of both nodes (hittable since S2, 2026-10-06)
+  gesture(select, [{ x: 160, y: 150 }, { x: 177, y: 157 }], ev(), noGrid);                          // Y dragged by (17, 7); nothing within 18 px of either end
   const cloneAfter = P.pathWorld(doc.value, P.getPath(doc.value, x)!).map((q) => apply(copyMatrix(t.copy), q));
   for (let i = 0; i < cloneBefore.length; i++) expectAt(cloneAfter[i], cloneBefore[i].x + 17, cloneBefore[i].y + 7);   // the clone followed the pointer exactly
   const py = P.getPath(doc.value, y)!;
   expectAt(P.nodeWorld(doc.value, py.start), 167, 157); expectAt(P.nodeWorld(doc.value, py.segments[0].to), 187, 157);
+});
+
+// --- 2026-10-06: nodes of unselected paths are hinted and hittable in Select (S2, S3, S9 revised); a clone's nodes too
+
+const selClick = (w: XY, e = ev()) => { gesture(select, [w], e); return UI.selection.value; };
+// A (24,24) → (48,24) → (72,24) with a translate (0.5, 0) group: its clone is (144,24) → (168,24) → (192,24).
+function clonedLine() {
+  const r = { id: '', a: '', m: '', b: '', bind: '' };
+  fresh('freehand', (d) => {
+    const el = P.addElement(d, { kind: 'translate', u: 0.5, v: 0 });
+    const p = line(d, [{ u: 0.1, v: 0.1 }, { u: 0.2, v: 0.1 }, { u: 0.3, v: 0.1 }]);
+    r.id = p.id; r.a = p.start.pointId; r.m = p.segments[0].to.pointId; r.b = p.segments[1].to.pointId; r.bind = P.addBinding(d, p.id, [[el.id]]).id;
+  });
+  UI.tool.value = 'select'; UI.selection.value = null;
+  return r;
+}
+const cloneCopy = (bind: string) => ({ cell: { c: 0, r: 0 }, bindingId: bind, power: 1 });
+
+test('S2/S3: in Select a node of an unselected path hits as a point; a click selects it and ⇧-click adds another path\'s node', () => {
+  const { a, b } = threePaths();
+  const aStart = P.getPath(doc.value, a)!.start.pointId, bStart = P.getPath(doc.value, b)!.start.pointId;
+  expect(hit({ x: 24, y: 24 })).toMatchObject({ kind: 'point', pointId: aStart });
+  expect(selClick({ x: 24, y: 24 })).toEqual({ kind: 'points', ids: [aStart] });
+  expect(hit({ x: 24, y: 72 })).toMatchObject({ kind: 'point', pointId: bStart });
+  expect(selClick({ x: 24, y: 72 }, ev({ shiftKey: true }))).toEqual({ kind: 'points', ids: [aStart, bStart] });
+});
+
+test('S9 (revised): pressing a node of an unselected path and dragging moves that node, not the path', () => {
+  const { a } = threePaths();
+  gesture(select, [{ x: 24, y: 24 }, { x: 27, y: 35 }, { x: 30, y: 45 }], ev(), noGrid);
+  const p = P.getPath(doc.value, a)!;
+  expectAt(P.nodeWorld(doc.value, p.start), 30, 45); expectAt(P.nodeWorld(doc.value, p.segments[0].to), 72, 24);
+});
+
+test('S2/S3: a clone\'s node of an unselected path hits as a clone anchor; a click selects the point through the clone, ⇧-click adds a raw node', () => {
+  const { a, b, bind } = clonedLine();
+  expect(hit({ x: 144, y: 24 })).toMatchObject({ kind: 'canchor', pointId: a, copy: cloneCopy(bind) });
+  expect(selClick({ x: 144, y: 24 })).toEqual({ kind: 'points', ids: [a], copies: { [a]: cloneCopy(bind) } });
+  expect(selClick({ x: 72, y: 24 }, ev({ shiftKey: true }))).toEqual({ kind: 'points', ids: [a, b], copies: { [a]: cloneCopy(bind) } });
+  expect(selClick({ x: 144, y: 24 }, ev({ shiftKey: true }))).toEqual({ kind: 'points', ids: [b] });
+});
+
+test('Delete: ⌫ with a clone\'s node hovered removes that node, whether the original or the clone is selected', () => {
+  for (const selectAt of [{ x: 36, y: 24 }, { x: 156, y: 24 }]) {
+    const { id, m, bind } = clonedLine();
+    expect(selClick(selectAt)).toMatchObject({ kind: 'path', id });
+    const t = hit({ x: 168, y: 24 });
+    expect(t).toMatchObject({ kind: 'canchor', pointId: m, copy: cloneCopy(bind) });
+    hoverAt({ x: 168, y: 24 }, t, ctx);
+    expect(A.deleteHoveredOrSelection()).toBe(true);
+    const p = P.getPath(doc.value, id)!;
+    expect(p).toBeTruthy();
+    expect(P.pathNodes(p).map((n) => n.pointId)).not.toContain(m);
+    expect(P.pathNodes(p)).toHaveLength(2);
+    expect(doc.value.bindings.map((x) => x.id)).toEqual([bind]);
+  }
 });

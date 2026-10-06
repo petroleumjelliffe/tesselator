@@ -64,7 +64,7 @@ Linking copied locations across layers so they move together is on the roadmap (
 | Intersection of two target lines (axis × axis, axis × edge, path × axis, path × edge) | not drawn | no | no | point | new |
 | Grid point | `G` on | no | no | point (fallback); filters lines (SN2a) | built; filter new |
 | Path, any instance | yes | yes | node, body, box | line | built; targets new |
-| Node / endpoint, any instance | selected instance only (S2); while drawing, paths near the cursor (H8) | yes | yes | point | built |
+| Node / endpoint, any instance | selected instance(s); otherwise paths near the cursor, in Select as while drawing (S2, H8) | yes | yes | point | built |
 | Handle | selected instance | no | yes | — | built |
 | Box handle | single selected instance | no | yes | — | built |
 | In-progress stroke, original | while drawing | no | — | line | built |
@@ -249,14 +249,14 @@ Status: built for Pen, Freehand and Select drags (2026-10-01). A dragged clone i
 | ID | Requirement | Status |
 |---|---|---|
 | S1 | Click a line of any instance selects the path at that instance. | built |
-| S2 | Nodes show only on the selected instance(s), not on every instance. | built |
-| S3 | `⇧`-click adds or removes a node. | built |
-| S4 | `⇧`-click adds or removes an instance (original, repeat or clone). Delete removes the selected instances' whole paths; per-clone actions wait for the roadmap. | built; open: one selected clone + Delete removes only that clone's binding, but several selected instances delete whole paths — make these consistent? |
+| S2 | Nodes show on the selected instance(s), not on every instance. In Select, an unselected path's nodes (raw nodes and clone anchors alike) are hinted while the cursor is near the path, by the same reveal as while drawing (H8), so a node can be clicked, `⇧`-clicked, dragged or deleted without selecting its path first (decided 2026-10-06). | built |
+| S3 | `⇧`-click adds or removes a node, on any instance: a hinted node of an unselected path, or a clone's node, which is picked through that clone (S5). A plain click on a clone's node selects that point through the clone. | built |
+| S4 | `⇧`-click adds or removes an instance (original, repeat or clone). Delete removes the selected instances' whole paths; per-clone actions wait for the roadmap. `⌫` with a node hovered (on any instance, a clone's node included) deletes that node, not the selection (2026-10-06). | built; open: one selected clone + Delete removes only that clone's binding, but several selected instances delete whole paths — make these consistent? |
 | S5 | Marquee selects nodes of every visible instance inside it; a node picked through a clone moves through that clone's inverse. | built; S8 decides between nodes and whole instances |
 | S6 | Where a node and a box handle coincide, the node wins. | built |
 | S7 | With several paths selected (S4), the transform-group panel edits all of them at once (decided 2026-10-02). It shows the groups they share; where they differ, an element shows as mixed. Every change (add or remove an element in group N, add a `+ then` group, remove a group) is applied to each selected path's binding, one undo for the whole change. A path without a binding gets one. Selecting several instances of the same path edits that path once. | open: whether a change applies step by step to each path or copies one path's whole set of groups (2026-10-04: the user will try both before deciding; not in the next build) |
 | S8 | A marquee that contains **every node of a path instance** selects that instance as a path, not its nodes (decided 2026-10-02). If it contains several whole instances, they become a several-paths selection (S4, S7). If the marquee contains no whole instance, it selects nodes as before (S5). If it contains some whole instances and some partial ones, it selects the whole instances only. Holding `⌥` while releasing the marquee always selects nodes. | built |
-| S9 | Pressing a node of an unselected path drags the whole path (its nodes are not shown, S2); select the path first to drag one node. | built (recorded 2026-10-04) |
+| S9 | Pressing a hinted node of an unselected path drags that node (revised 2026-10-06; until then its nodes were hidden and the press dragged the whole path). Pressing the line still drags the path. | built |
 | S10 | With several paths selected, nodes show on every selected instance, and there is no bounding box; scaling and rotating several paths at once is on the roadmap. | built |
 | E1 | Drag a node; all instances follow. | built |
 | E2 | Drag selected nodes as a unit. | built |
@@ -285,7 +285,7 @@ Status: built for Pen, Freehand and Select drags (2026-10-01). A dragged clone i
 | H5 | Hints update every pointer move, and while dragging or scaling they show at the selection's endpoints. | built |
 | H6 | What you see is what you get: if a hint is showing when the pointer goes down or up, that is the snap used, including a sticky hold beyond the plain threshold (SN4). | built for Pen, Freehand and Select drags |
 | H7 | No hint, no snap (decided 2026-10-01): a target snap happens only if its hint is visible at that moment; otherwise the point lands where the pointer is, or on the grid while `G` is on. A commit never re-picks a snap that was not shown. | built for Pen, Freehand and Select drags |
-| H8 | While Pen or Freehand is selected, nodes are shown only for paths near the cursor (within 48 screen px of any of their instances), not for every path (decided 2026-10-01). The path in progress always shows its nodes. Display only: hidden nodes still snap. | built |
+| H8 | While Pen or Freehand is selected, nodes are shown only for paths near the cursor (within 48 screen px of any of their instances), not for every path (decided 2026-10-01). The path in progress always shows its nodes. Display only: hidden nodes still snap. In Select the same reveal hints unselected paths' nodes (S2, 2026-10-06); the selected instance's nodes always show. | built |
 | H9 | **Placement node** (decided 2026-10-02): while Pen or Freehand is selected and the pointer is on the canvas, a node marker always shows where a click (Pen) or press (Freehand start) would place the point: on the snapped target when one holds (with its usual label), on the nearest grid point when `G` is on and no target holds (no label), otherwise at the raw pointer. It is what a click uses (H6, H7). Drawing only: moving and editing keep the grid silent. | new |
 | H10 | Rotating shows the angle (E6a); scaling with size fractions shows no hint (§6.5). | built |
 
@@ -370,6 +370,7 @@ Status: built for Pen, Freehand and Select drags (2026-10-01). A dragged clone i
 | Grid vs targets (2026-10-01) | `G` is the grid only; targets always on; `⌘` / `Ctrl` frees a gesture (§6.5). |
 | No hint, no snap (2026-10-01) | H7; the grid and size fractions are the silent exceptions. |
 | Nodes while drawing (2026-10-01) | Only near the cursor (H8). |
+| Nodes in Select (2026-10-06) | Unselected paths' nodes, clone anchors included, are hinted near the cursor and act as nodes: click, `⇧`-click, drag, `⌫` (S2, S3, S9). |
 | Dragging a copy (2026-10-01) | Moves the original; transforms never move (E5a). |
 | Grid and lines (2026-10-02) | The grid filters lines to grid-line crossings, everywhere (SN2a). |
 | Drawing feedback (2026-10-02) | Placement node, including grid points (H9). |

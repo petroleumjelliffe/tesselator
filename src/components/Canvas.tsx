@@ -166,8 +166,9 @@ function Points() {
   if (sel && sel.kind === 'points') for (const id of sel.ids) if (!sel.copies?.[id]) show.add(id);
   const penPath = pn ? getPath(d, pn.pathId) : null, selPath = sel && sel.kind === 'path' ? getPath(d, sel.id) : null;
   if (penPath) for (const n of pathNodes(penPath)) show.add(n.pointId);
-  // H8: while drawing, don't show every path's nodes — only those of paths with an instance near the cursor.
-  if (showAll && cursor.value) {
+  // H8: while drawing, don't show every path's nodes — only those of paths with an instance near the cursor. In Select
+  // the same reveal hints the nodes of unselected paths (S2, 2026-10-06), so one can be clicked, ⇧-clicked or dragged.
+  if ((showAll || (layer.value === 'drawing' && tool.value === 'select')) && cursor.value) {
     const near = pathsNear(snapTargets.value.lines, cursor.value, CONFIG.NODE_REVEAL_PX / z);
     for (const p of d.paths) if (near.has(p.id)) for (const n of pathNodes(p)) show.add(n.pointId);
   }
@@ -220,15 +221,13 @@ function CloneAnchors() {
   if (layer.value !== 'drawing') return null;
   const d = doc.value, z = view.value.zoom, sel = selection.value, h = hover.value, s = 10 / z, pn = pen.value, out: JSX.Element[] = [];
   const drawingTool = tool.value === 'freehand' || tool.value === 'pen';
-  // H8: while drawing, a clone's anchors show only for the path in progress or a path near the cursor.
-  const near = drawingTool && cursor.value ? pathsNear(snapTargets.value.lines, cursor.value, CONFIG.NODE_REVEAL_PX / z) : null;
+  // H8: while drawing, a clone's anchors show only for the path in progress or a path near the cursor; in Select the
+  // same reveal hints an unselected path's clone nodes (S2, 2026-10-06).
+  const near = (drawingTool || tool.value === 'select') && cursor.value ? pathsNear(snapTargets.value.lines, cursor.value, CONFIG.NODE_REVEAL_PX / z) : null;
   for (const ci of copies.value) {
     if (!ci.copy.bindingId) continue;
     const selected = !!sel && sel.kind === 'path' && sel.id === ci.pathId && sameCopy(sel.copy, ci.copy);
-    if (!selected) {
-      if (!drawingTool) continue;
-      if (ci.pathId !== pn?.pathId && !near?.has(ci.pathId)) continue;
-    }
+    if (!selected && ci.pathId !== pn?.pathId && !near?.has(ci.pathId)) continue;
     const p = getPath(d, ci.pathId); if (!p) continue;
     const P = pathWorld(d, p).map((q) => apply(ci.M, q));
     pathNodes(p).forEach((n, i) => {

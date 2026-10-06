@@ -380,9 +380,11 @@ export function deleteSelection(): boolean {
   return ok;
 }
 
+// ⌫ with a node hovered deletes that node (a clone's node, hovered as a clone anchor, is the same point: 2026-10-06);
+// otherwise the selection.
 export function deleteHoveredOrSelection(): boolean {
   const h = UI.hover.value, s = UI.selection.value;
-  if (h && h.kind === 'point' && !(s && s.kind === 'points')) {
+  if (h && (h.kind === 'point' || h.kind === 'canchor') && !(s && s.kind === 'points')) {
     const ok = mutate((d) => { P.deletePoints(d, [h.pointId]); });
     UI.hover.value = null;
     if (s && s.kind === 'path' && !P.getPath(doc.value, s.id)) UI.selection.value = null;

@@ -319,7 +319,9 @@ export const onUp: ToolModule['onUp'] = (d, w, e, ctx) => {
       if (s && s.kind === 'path' && s.id === t.pathId && sameCopy(s.copy, t.copy)) A.insertNodeOnSegment(t.pathId, t.j, w, t.copy, ctx.gridOn);
       else A.selectPathAt(t.pathId, t.copy);
       return;
-    case 'canchor': A.selectPathAt(t.pathId, t.copy); return;
+    case 'canchor':   // S2/S3: a clone's node is a node: a click selects the point through that clone, ⇧-click toggles it
+      if (add) A.togglePointSelection(t.pointId, t.copy); else A.selectPoints([t.pointId], { [t.pointId]: t.copy });
+      return;
     case 'fill': A.selectFill(t.fillId); return;
     default:
   }
